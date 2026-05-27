@@ -1,0 +1,49 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: claude-md-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: claude_md
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app_password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: claude-md-backend
+    restart: unless-stopped
+    depends_on:
+      - db
+    env_file:
+      - ../backend/.env.example
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app
+      - ../backend/uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: claude-md-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend:/app
+
+volumes:
+  mysql_data:
