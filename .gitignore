@@ -47,3 +47,6 @@ backend/uploads/
 
 # Docker
 docker/**/data/
+
+# Temporary / scratch files (analysis runs, downloaded audio, etc.)
+tmp/
