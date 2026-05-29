@@ -33,12 +33,15 @@ flowchart TD
 | 項目 | 選択 | 代替案 | 理由 |
 | --- | --- | --- | --- |
 | 配布形態 | Claude Code skill | カスタムCLI / Webサービス | ユーザー導線が最短（Claude Code 内で完結） |
-| 音声解析 | 行わない（自己申告ベース） | サードパーティライブラリ呼び出し | 追加セットアップを要求すると NFR-02 を満たせない |
+| 音声解析 | **librosaベースのPythonツール `tools/audio_analyzer.py`** | 自己申告のみ / Web版API連携 | f0/key/tempo/ビブラート/ロングトーン安定度などを実測でき、FB精度が大幅に向上。Web版バックエンドを起動せずに完結 |
+| 音声デコード | `imageio-ffmpeg` のバンドルffmpeg | システムffmpeg / brew導入 | `brew` 利用不可環境でも `pip install` だけでセットアップ完了 |
+| 原曲取得 | `yt-dlp` でYouTubeからwav抽出 | 手動DL / 著作物コピー | カバーFBに必要なリファレンスを自動取得。ローカル解析で外部に音声を送らない |
 | FB品質仕様 | skill本体の SKILL.md に集約 | 外部ファイル参照 | 単一ファイルで完結し、改修が容易 |
 | 履歴永続化 | しない（同セッション限り） | ローカルJSON / Web版API | MVPスコープ外。NFR-03（プライバシー）にも適合 |
 
 ### 2.2 トレードオフ
-- **音声解析しない方針**: 精度は自己申告に左右されるが、導入摩擦ゼロで MVP価値を最速で届けられる。将来は Web版API連携で精度向上の余地を残す（5.2参照）
+- **解析パイプライン採用**: 初回セットアップで `backend/.venv` への依存導入（~150MB）が必要となるが、それと引き換えに自己申告非依存の客観評価が可能になる。NFR-02（利用容易性）は「初回のみセットアップ要、以降は自然言語呼び出しのみ」へと再定義
+- **librosa の推定モデル限界**: f0 (pyin) はモノフォニー前提でアカペラやハモリで誤推定する。chroma によるキー推定は多義になりやすい。tempo は half/double-time の誤判定がある → SKILL.md の「モデル推定の限界」セクションで両論併記原則を規定
 - **履歴を持たない方針**: 比較機能（FR-05）は同セッション内のみ。長期成長追跡をしたいユーザーは Web版に誘導する
 
 ## 3. skill 設計
@@ -89,13 +92,26 @@ flowchart TD
 
 ### 3.4 スコア算出ルール
 - 各軸の出力は 0-100 の整数
-- 根拠は以下の優先順位で決まる（**自己申告は4材料のうち1つに過ぎない** ことに注意）
-  1. **曲特性・難易度の客観事実**（重み 40%）: 曲名・キー・テンポ・尺・原曲難度
-  2. **申告の一貫性チェック由来の情報**（重み 25%）: 例: 「ハーモニーをつけられる」→ 相対音感とリズム精度の下限を推定
-  3. **一般的な独学者の典型パターン**（重み 20%）
-  4. **ユーザーの自己申告（断定部分のみ）**（重み 15%）: 質問形・疑問形はトレーナー側で判断
-- 自己申告と独自判断が乖離する場合は **独自判断側を優先** し、FB本文で両論を提示すること（「ご自身ではX、ただしYの可能性が高い」）
+- 根拠は以下の優先順位で決まる（**解析データが取れた場合はそれが主材料**）
+
+| 優先 | 材料 | 重み（解析あり / なし） |
+| --- | --- | --- |
+| 1 | **実測解析データ**（`tools/audio_analyzer.py`） | 50% / 0% |
+| 2 | **曲特性・難易度の客観事実** | 25% / 45% |
+| 3 | **申告の一貫性チェック由来の情報** | 15% / 25% |
+| 4 | **一般的な独学者の典型パターン** | 5% / 20% |
+| 5 | **ユーザーの自己申告（断定部分のみ）** | 5% / 10% |
+
+- 自己申告と独自判断が乖離する場合は **解析データ・独自判断側を優先** し、FB本文で両論を提示すること（「ご自身ではX、ただしYの可能性が高い」）
 - `total_score` = `pitch * 0.35 + rhythm * 0.30 + expression * 0.35`（小数点以下四捨五入）
+
+### 3.4.1 解析指標と4軸スコアの対応
+| 軸 | 解析指標 | 評価基準（目安） |
+| --- | --- | --- |
+| 音程 (pitch) | `f0_jitter_cents`, `f0_median_diff_semitones`, `estimated_key` 一致 | jitter 5以下=プロ精度、5-15=安定、15-30=やや揺れ、30+=不安定 |
+| リズム (rhythm) | `tempo_bpm` 差分, `onset_rate_per_sec` 差分 | ±2BPM以内=同等、それ以上は逸脱 |
+| 表現 (expression) | `rms_db_range`, `rms_crest_db`, `vibrato_rate_hz`, `vibrato_depth_cents` | 動的レンジが原曲より小=平板、ビブラート 4-7Hz / 30-80cents=人間典型 |
+| 発声（音程・表現に分散反映） | `voiced_ratio`, `long_tone_stability`, `spectral_centroid_hz` | long_tone 30以下=安定、80+=崩れ |
 
 ### 3.5 FB生成テンプレ（FR-04対応）
 出力 Markdown:
@@ -162,6 +178,7 @@ flowchart TD
 | FBトーン | 温かく・具体的 | 同じ | skill `口調` セクションで規定 |
 | スコア範囲 | 0-100 | 0-100 | 同じ |
 | 失敗時の挙動 | `failed` ステータス + エラー文 | エラーメッセージ + 再入力依頼 | 共通の文言指針（次節） |
+| 解析実装 | **乱数プレースホルダ（要置換）** | librosa ベース実装済（`tools/audio_analyzer.py`） | 5.2 拡張で Web版 `evaluation_service.py` を本パイプラインに置換予定 |
 
 ### 4.2 共通文言指針（再掲）
 - 音声形式不正: 「対応形式は wav / mp3 / m4a です」
@@ -198,6 +215,43 @@ flowchart TD
 3. 寄せ方を1つ提示（解剖学アプローチ または 聴き取り課題）
 4. ユーザーが完全コピー不可能な要素（声質）には完全コピーを強制しない
 
+### 4.5 解析パイプライン (`tools/audio_analyzer.py`)
+
+#### 4.5.1 構成
+- 単一ファイル Python スクリプト（依存: librosa, numpy, scipy, soundfile）
+- 実行: `backend/.venv/bin/python tools/audio_analyzer.py <user.wav> [<ref.wav>]`
+- 出力: stdout に JSON、stderr に進捗ログ
+
+#### 4.5.2 解析指標一覧
+| カテゴリ | キー | 算出方法 |
+| --- | --- | --- |
+| 長さ | `duration_sec` | `librosa.get_duration` |
+| 発声 | `voiced_ratio` | `librosa.pyin` の voiced_flag 平均 |
+| 発声 | `f0_median_hz` | voiced f0 の中央値 |
+| 発声 | `f0_jitter_cents` | voiced f0 のフレーム間絶対差中央値（cents） |
+| 発声 | `vibrato_rate_hz`, `vibrato_depth_cents` | 最長voiced区間で FFT、3-10Hz 帯のピーク |
+| 発声 | `long_tone_stability` | 0.6秒以上のvoiced区間内の f0 std 平均（cents） |
+| 発声 | `spectral_centroid_hz` | `librosa.feature.spectral_centroid` 平均 |
+| リズム | `tempo_bpm` | `librosa.beat.beat_track` |
+| リズム | `onset_rate_per_sec` | onset数 / duration |
+| 音感 | `estimated_key`, `estimated_mode` | chroma_cqt + Krumhansl テンプレート相関 |
+| 表現 | `rms_mean`, `rms_db_range`, `rms_crest_db` | RMS の平均 / 5-95%レンジ / ピーク dB |
+
+#### 4.5.3 比較セクション (`compare`)
+2引数指定時のみ生成。主要指標について差分（ユーザー − リファレンス）を算出：
+- `duration_diff_sec`, `tempo_diff_bpm`, `f0_median_diff_semitones`
+- `key_match`, `voiced_ratio_diff`, `rms_db_range_diff`
+- `long_tone_stability_diff_cents`, `vibrato_rate_diff_hz`, `vibrato_depth_diff_cents`
+- `spectral_centroid_diff_hz`, `onset_rate_diff`
+
+#### 4.5.4 同一音源検出（補助スクリプト）
+- 主要指標が小数点まで一致した場合は同一音源を疑い、RMS包絡相関（時間ずれ探索つき）でクロスチェックする
+- 相関 > 0.95 で同一音源と判定し、ユーザーに本人歌唱の再提出を求める
+
+#### 4.5.5 前処理
+- 入力が mp3/m4a/webm の場合、`imageio-ffmpeg` のバンドルffmpegで mono 22050Hz wav に変換
+- YouTube URL の場合は `yt-dlp --ffmpeg-location <path> -x --audio-format wav` で取得
+
 ## 5. 拡張ポイント
 
 ### 5.1 履歴永続化（v1.1候補）
@@ -206,11 +260,12 @@ flowchart TD
 - セッション開始時に直近N件を読み込み、長期比較に使う
 - 実装判断は CEO スキルで承認後
 
-### 5.2 Web版API連携（v1.2候補）
-- skill 内から Web版 `/api/v1/recordings` を呼び出して波形解析スコアを取得
-- 自己申告ベースのスコアと波形解析スコアを併記
-- 前提: Web版がローカルで起動していること（`docker compose up`）
-- 認証トークンの skill 側保管設計が必要（要 アーキテクト再設計）
+### 5.2 解析パイプラインの高度化（v1.2候補）
+基本パイプラインは 4.5 で実装済み。今後の高度化候補：
+- **DTW アライメント**: ユーザー録音と原曲のフレーム単位対応を取り、フレーズ別の差分FBを可能に
+- **声種分離**: ユーザー側の音源が伴奏混入の場合、Demucs等のソースセパレーションで声だけ抽出
+- **キー自動判定の精度向上**: 原曲既知時は事前知識を入れる。VAD（音声活動検出）を経た上での chroma で精度を上げる
+- **Web版バックエンドへ移植**: `backend/app/services/evaluation_service.py` の乱数プレースホルダを本パイプラインに置き換え、両チャネルでスコア体系を完全統一
 
 ### 5.3 楽譜入力（将来）
 - MIDI / MusicXML を受け付け、音程比較の基準として利用
@@ -223,6 +278,7 @@ flowchart TD
 sequenceDiagram
     actor U as ユーザー
     participant S as vocal-trainer skill
+    participant A as analyzer (librosa)
     U->>S: 音声パス or テキストを渡す
     S->>S: ユーザー録音検証 (FR-01)
     S->>U: 原曲参照を要求 (FR-01b)
@@ -231,11 +287,15 @@ sequenceDiagram
     Note over S: 不足なら再要求
     S->>U: ヒアリング質問
     U->>S: 自己評価などを回答
-    S->>S: スコア算出 (FR-03)
-    S->>S: 原曲との4軸比較 (FR-04b)
+    Note over S: 原曲がURLの場合は yt-dlp で wav 抽出
+    S->>A: tools/audio_analyzer.py 起動 (FR-Analyze)
+    A->>S: 解析JSON (user/ref/compare)
+    Note over S: 同一音源検出時は中断し再提出を要求
+    S->>S: スコア算出 (FR-03、解析データ優先)
+    S->>S: 原曲との4軸比較 (FR-04b、実測差分ベース)
     S->>S: 「らしさ」アプローチ生成 (FR-04c)
     S->>S: FB生成 (FR-04)
-    S->>U: スコア + 比較 + アプローチ + 練習 + 注記
+    S->>U: 解析データ + スコア + 比較 + アプローチ + 練習 + 注記
 ```
 
 ### 6.2 過去比較フロー（2回目以降）
@@ -260,6 +320,10 @@ sequenceDiagram
 | ヒアリング情報不足 | 追加質問または推定値で進めるか確認 | 「もう少し情報をいただけるとより的確なFBができます」 |
 | 原曲参照未提出（カバー時） | FB本体に進まず再提出を求める | 「カバー曲のFBには原曲の特定が必須です。音源パス・URL・アーティスト+曲名（両方）のいずれかをご提供ください」 |
 | 原曲参照が不完全（アーティスト or 曲名のみ） | 不足部分を明示し再要求 | 「曲名は確認できましたが、アーティスト名もお願いします。同名異曲の取り違えを防ぐためです」 |
+| yt-dlp での原曲取得失敗 | 解析を諦め、自己申告ベースFBへフォールバック | 「原曲音源の取得に失敗しました。お申告ベースのFBに切り替えます」 |
+| `audio_analyzer.py` の実行失敗 | 解析を諦め、自己申告ベースFBへフォールバック | 「音声解析に失敗しました（理由: ...）。お申告ベースのFBに切り替えます」 |
+| 同一音源検出（解析後） | FB中断、本人歌唱の再提出を求める | 「ご提出いただいた録音と原曲が同一音源と推定されました。ご自身の歌唱録音を別途お送りください」 |
+| 解析ライブラリ未導入 | 自己申告ベースFBへフォールバック | 「解析環境（backend/.venv）が見つかりません。お申告ベースのFBに切り替えます」 |
 | ユーザーが途中離脱 | 状態を保持しないでクリーンに終了 | （明示メッセージ不要） |
 
 ## 8. 性能・可用性考慮
@@ -268,9 +332,11 @@ sequenceDiagram
 - ローカル動作のため可用性は Claude Code 自体の可用性に従う
 
 ## 9. セキュリティ考慮
-- 音声ファイルはユーザーローカルから移動しない（読み取りのみ、必要があればメタ情報取得）
-- FB内容はセッション外に出ない
-- 拡張（5.2）でWeb版API呼び出しを実装する場合は、認証トークンの取り扱いを別途設計
+- ユーザー録音はローカルから外部に送信しない（librosa による完全ローカル解析）
+- 原曲取得時の yt-dlp は YouTube への通常リクエストのみ。認証情報は送らない
+- 解析結果 JSON はセッション内に閉じる（永続化しない）
+- 一時 wav は `tmp/audio/` に保存され `.gitignore` で除外。必要に応じセッション終了時に削除すること（NFR-03 適合のため）
+- 拡張（5.2 Web版バックエンド移植）でクラウド送信が発生する場合は、認証・暗号化を別途設計
 
 ## 10. テスト方針
 - QAスキルにて `docs/NN_テスト計画_ClaudeCode版FB.md` を別途作成

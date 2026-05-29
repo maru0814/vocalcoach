@@ -8,3 +8,11 @@ python-multipart==0.0.12
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 email-validator==2.2.0
+
+# audio analysis pipeline (tools/audio_analyzer.py)
+librosa==0.11.0
+numpy==2.4.6
+scipy==1.17.1
+soundfile==0.13.1
+yt-dlp==2026.3.17
+imageio-ffmpeg==0.6.0
