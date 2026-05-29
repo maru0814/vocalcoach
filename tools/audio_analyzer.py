@@ -5,7 +5,12 @@ Audio analyzer for vocal-trainer skill.
 発声・リズム・音感・表現の4軸で解析・比較する JSON を出力する。
 
 使い方:
-    python tools/audio_analyzer.py <user.wav> [<reference.wav>]
+    python tools/audio_analyzer.py <user.wav> [<reference.wav>] \
+        [--user-start 0:15] [--user-end 0:45] \
+        [--ref-start 1:30] [--ref-end 2:00]
+
+時間指定は "mm:ss" または秒数（"15", "1.5"）のいずれかを受け付ける。
+指定しない場合はトラック全体を解析する。
 
 依存:
     librosa, numpy, scipy, soundfile
@@ -13,6 +18,7 @@ Audio analyzer for vocal-trainer skill.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from dataclasses import dataclass, asdict
@@ -181,8 +187,29 @@ def long_tone_stability(f0_hz: np.ndarray, hop_sec: float, min_dur_sec: float = 
     return float(np.mean(stds))
 
 
-def analyze_track(path: Path) -> TrackAnalysis:
-    y, sr = librosa.load(str(path), sr=SR, mono=True)
+def parse_time(value: str | None) -> float | None:
+    """Parse 'mm:ss', 'm:ss', or a numeric string as seconds. Returns None for None/empty."""
+    if value is None or value == "":
+        return None
+    if ":" in value:
+        parts = value.split(":")
+        if len(parts) != 2:
+            raise ValueError(f"invalid time format: {value!r}, expected mm:ss")
+        m, s = parts
+        return int(m) * 60 + float(s)
+    return float(value)
+
+
+def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | None = None) -> TrackAnalysis:
+    # librosa.load supports offset & duration for partial loading
+    offset = start_sec if start_sec is not None else 0.0
+    if end_sec is not None:
+        if start_sec is not None and end_sec <= start_sec:
+            raise ValueError(f"end_sec ({end_sec}) must be > start_sec ({start_sec})")
+        load_duration = end_sec - offset
+    else:
+        load_duration = None
+    y, sr = librosa.load(str(path), sr=SR, mono=True, offset=offset, duration=load_duration)
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     # f0 via pyin (probabilistic YIN)
@@ -294,22 +321,44 @@ def compare(user: TrackAnalysis, ref: TrackAnalysis) -> dict:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
-        print("usage: audio_analyzer.py <user.wav> [<reference.wav>]", file=sys.stderr)
-        return 1
+    parser = argparse.ArgumentParser(
+        description="Analyze a user recording (and optional reference) for vocal coaching."
+    )
+    parser.add_argument("user", help="Path to user recording (wav recommended; mp3/m4a auto-decoded)")
+    parser.add_argument("reference", nargs="?", help="Path to original/reference audio")
+    parser.add_argument("--user-start", help="Start time of user clip (mm:ss or seconds)")
+    parser.add_argument("--user-end", help="End time of user clip (mm:ss or seconds)")
+    parser.add_argument("--ref-start", help="Start time of reference clip (mm:ss or seconds)")
+    parser.add_argument("--ref-end", help="End time of reference clip (mm:ss or seconds)")
+    args = parser.parse_args()
 
-    user_path = Path(sys.argv[1])
-    ref_path = Path(sys.argv[2]) if len(sys.argv) >= 3 else None
+    user_path = Path(args.user)
+    ref_path = Path(args.reference) if args.reference else None
 
-    print(f"[analyzing] user: {user_path.name}", file=sys.stderr)
-    user = analyze_track(user_path)
+    try:
+        u_start = parse_time(args.user_start)
+        u_end = parse_time(args.user_end)
+        r_start = parse_time(args.ref_start)
+        r_end = parse_time(args.ref_end)
+    except ValueError as e:
+        print(f"[error] {e}", file=sys.stderr)
+        return 2
 
-    result: dict = {"user": asdict(user)}
+    range_label_user = f"[{args.user_start or '0:00'}–{args.user_end or 'EOF'}]"
+    print(f"[analyzing] user: {user_path.name} {range_label_user}", file=sys.stderr)
+    user = analyze_track(user_path, start_sec=u_start, end_sec=u_end)
+
+    result: dict = {
+        "user": asdict(user),
+        "user_range": {"start_sec": u_start, "end_sec": u_end},
+    }
 
     if ref_path:
-        print(f"[analyzing] ref:  {ref_path.name}", file=sys.stderr)
-        ref = analyze_track(ref_path)
+        range_label_ref = f"[{args.ref_start or '0:00'}–{args.ref_end or 'EOF'}]"
+        print(f"[analyzing] ref:  {ref_path.name} {range_label_ref}", file=sys.stderr)
+        ref = analyze_track(ref_path, start_sec=r_start, end_sec=r_end)
         result["reference"] = asdict(ref)
+        result["reference_range"] = {"start_sec": r_start, "end_sec": r_end}
         result["compare"] = compare(user, ref)
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
