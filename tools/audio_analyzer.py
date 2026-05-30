@@ -200,7 +200,118 @@ def parse_time(value: str | None) -> float | None:
     return float(value)
 
 
-def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | None = None) -> TrackAnalysis:
+def extract_timeline(
+    y: np.ndarray,
+    sr: int,
+    f0_hz: np.ndarray,
+    voiced_flag: np.ndarray,
+    hop_sec: float,
+    window_sec: float = 1.0,
+    sustain_min_sec: float = 0.6,
+) -> dict:
+    """Per-second metrics and sustained-note segments (with start/end seconds).
+
+    All seconds are clip-relative (i.e. 0 = first frame of the loaded clip).
+    Callers can add the analysis offset back to get absolute song timestamps.
+    """
+    rms = librosa.feature.rms(y=y, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)[0]
+    centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=HOP_LENGTH)[0]
+    rolloff85 = librosa.feature.spectral_rolloff(y=y, sr=sr, hop_length=HOP_LENGTH, roll_percent=0.85)[0]
+
+    per_window = []
+    window_frames = max(1, int(window_sec / hop_sec))
+    for start_frame in range(0, len(voiced_flag), window_frames):
+        end_frame = min(start_frame + window_frames, len(voiced_flag))
+        seg_voiced = voiced_flag[start_frame:end_frame]
+        seg_f0 = f0_hz[start_frame:end_frame]
+        seg_f0_valid = seg_f0[~np.isnan(seg_f0)]
+        seg_rms = rms[start_frame:end_frame] if start_frame < len(rms) else np.array([])
+        seg_centroid = centroid[start_frame:end_frame] if start_frame < len(centroid) else np.array([])
+        seg_rolloff = rolloff85[start_frame:end_frame] if start_frame < len(rolloff85) else np.array([])
+        per_window.append({
+            "t_sec": round(start_frame * hop_sec, 1),
+            "voiced_ratio": round(float(np.mean(seg_voiced)), 2),
+            "f0_mean_hz": round(float(np.mean(seg_f0_valid)), 1) if len(seg_f0_valid) else None,
+            "rms_db": (
+                round(float(20 * np.log10(np.mean(seg_rms) + 1e-9)), 1)
+                if len(seg_rms) else None
+            ),
+            "spectral_centroid_hz": (
+                round(float(np.mean(seg_centroid)), 0) if len(seg_centroid) else None
+            ),
+            "spectral_rolloff85_hz": (
+                round(float(np.mean(seg_rolloff)), 0) if len(seg_rolloff) else None
+            ),
+        })
+
+    # Sustained voiced segments (≥ sustain_min_sec)
+    sustained = []
+    diffs = np.diff(voiced_flag.astype(int))
+    starts = np.where(diffs == 1)[0] + 1
+    ends = np.where(diffs == -1)[0] + 1
+    if voiced_flag[0]:
+        starts = np.insert(starts, 0, 0)
+    if voiced_flag[-1]:
+        ends = np.append(ends, len(voiced_flag))
+    min_frames = max(1, int(sustain_min_sec / hop_sec))
+    for s, e in zip(starts, ends):
+        if e - s < min_frames:
+            continue
+        seg = f0_hz[s:e]
+        valid = seg[~np.isnan(seg)]
+        if len(valid) < min_frames:
+            continue
+        cents = hz_to_cents(valid)
+        cents_detrended = cents - np.median(cents)
+        f0_std_cents = float(np.std(cents_detrended))
+        # End drift: median of last 25% vs first 25% (in cents)
+        q = max(1, len(valid) // 4)
+        head_med = float(np.median(valid[:q]))
+        tail_med = float(np.median(valid[-q:]))
+        end_drift_cents = (
+            round(1200 * float(np.log2(tail_med / head_med)), 1) if head_med > 0 else None
+        )
+        # Spectral centroid / rolloff over this segment
+        cent_seg = centroid[s : min(e, len(centroid))]
+        cent_avg = float(np.mean(cent_seg)) if len(cent_seg) > 0 else None
+        roll_seg = rolloff85[s : min(e, len(rolloff85))]
+        roll_avg = float(np.mean(roll_seg)) if len(roll_seg) > 0 else None
+
+        # Voice type heuristic: rolloff85 / mean_f0 ratio
+        # 純粋地声(chest): 6-10倍 / ミックス(mix): 4-6倍 / 純粋裏声(head): 2-4倍
+        mean_f0 = float(np.mean(valid))
+        voice_type = None
+        rolloff_to_f0 = None
+        if mean_f0 > 0 and roll_avg:
+            rolloff_to_f0 = roll_avg / mean_f0
+            if rolloff_to_f0 >= 6.0:
+                voice_type = "chest"
+            elif rolloff_to_f0 >= 4.0:
+                voice_type = "mix"
+            else:
+                voice_type = "head"
+
+        sustained.append({
+            "start_sec": round(s * hop_sec, 2),
+            "end_sec": round(e * hop_sec, 2),
+            "duration_sec": round((e - s) * hop_sec, 2),
+            "mean_f0_hz": round(mean_f0, 1),
+            "f0_std_cents": round(f0_std_cents, 1),
+            "end_drift_cents": end_drift_cents,
+            "spectral_centroid_hz": round(cent_avg, 0) if cent_avg else None,
+            "spectral_rolloff85_hz": round(roll_avg, 0) if roll_avg else None,
+            "rolloff_to_f0_ratio": round(rolloff_to_f0, 2) if rolloff_to_f0 else None,
+            "voice_type_estimate": voice_type,
+        })
+
+    return {
+        "window_sec": window_sec,
+        "per_window": per_window,
+        "sustained_segments": sustained,
+    }
+
+
+def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | None = None) -> tuple[TrackAnalysis, dict]:
     # librosa.load supports offset & duration for partial loading
     offset = start_sec if start_sec is not None else 0.0
     if end_sec is not None:
@@ -262,6 +373,8 @@ def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | N
     vib_rate, vib_depth = detect_vibrato(f0_hz, hop_sec)
     lts = long_tone_stability(f0_hz, hop_sec)
 
+    timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
+
     return TrackAnalysis(
         duration_sec=round(duration, 2),
         voiced_ratio=round(voiced_ratio, 3),
@@ -278,7 +391,7 @@ def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | N
         vibrato_rate_hz=round(vib_rate, 2) if vib_rate else None,
         vibrato_depth_cents=round(vib_depth, 1) if vib_depth else None,
         long_tone_stability=round(lts, 1) if lts else None,
-    )
+    ), timeline
 
 
 def compare(user: TrackAnalysis, ref: TrackAnalysis) -> dict:
@@ -346,19 +459,21 @@ def main() -> int:
 
     range_label_user = f"[{args.user_start or '0:00'}–{args.user_end or 'EOF'}]"
     print(f"[analyzing] user: {user_path.name} {range_label_user}", file=sys.stderr)
-    user = analyze_track(user_path, start_sec=u_start, end_sec=u_end)
+    user, user_timeline = analyze_track(user_path, start_sec=u_start, end_sec=u_end)
 
     result: dict = {
         "user": asdict(user),
         "user_range": {"start_sec": u_start, "end_sec": u_end},
+        "user_timeline": user_timeline,
     }
 
     if ref_path:
         range_label_ref = f"[{args.ref_start or '0:00'}–{args.ref_end or 'EOF'}]"
         print(f"[analyzing] ref:  {ref_path.name} {range_label_ref}", file=sys.stderr)
-        ref = analyze_track(ref_path, start_sec=r_start, end_sec=r_end)
+        ref, ref_timeline = analyze_track(ref_path, start_sec=r_start, end_sec=r_end)
         result["reference"] = asdict(ref)
         result["reference_range"] = {"start_sec": r_start, "end_sec": r_end}
+        result["reference_timeline"] = ref_timeline
         result["compare"] = compare(user, ref)
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
