@@ -50,3 +50,7 @@ docker/**/data/
 
 # Temporary / scratch files (analysis runs, downloaded audio, etc.)
 tmp/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
