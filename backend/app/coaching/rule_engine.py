@@ -90,11 +90,12 @@ def handle_text(state: dict, text: str) -> tuple[list[dict], dict]:
         updates.update(u)
         merged = {**state, **u}
         have_url = bool(merged.get("song_ref_url"))
-        have_range = bool(merged.get("user_range"))
+        shown_range = merged.get("ref_range") or merged.get("user_range")
+        have_range = bool(shown_range)
         if have_url and have_range:
             out.append(coach_msg(
                 "text",
-                f"ありがとうございます！原曲と区間（{merged['user_range']}）を確認しました。\n"
+                f"ありがとうございます！原曲と区間（{shown_range}）を確認しました。\n"
                 f"それでは、同じ区間をあなたが歌った録音を送ってください🎤"
                 f"（下のマイクボタンで録音、または📎でファイルを送れます）",
             ))

@@ -66,3 +66,75 @@ export async function listRecordings() {
 export async function getRecording(id: string | number) {
   return request<RecordingDetail>(`/api/v1/recordings/${id}`);
 }
+
+// ---------- Coach (chat) ----------
+export const COACH_API_BASE = API_BASE;
+
+export type CoachMessage = {
+  id: number;
+  role: "coach" | "user";
+  type: "text" | "audio" | "feedback" | "practice" | "judge" | "progress";
+  text?: string | null;
+  audio_url?: string | null;
+  payload?: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type ChatResponse = {
+  phase: string;
+  current_task: string | null;
+  messages: CoachMessage[];
+};
+
+export type SessionSummary = {
+  id: number;
+  song_title: string | null;
+  phase: string;
+  current_task: string | null;
+  updated_at: string;
+};
+
+export type SessionDetail = {
+  id: number;
+  song_title: string | null;
+  song_ref_url: string | null;
+  user_range: string | null;
+  phase: string;
+  current_task: string | null;
+  messages: CoachMessage[];
+};
+
+export async function createCoachSession() {
+  return request<ChatResponse>("/api/v1/coach/sessions", { method: "POST" });
+}
+
+export async function listCoachSessions() {
+  return request<SessionSummary[]>("/api/v1/coach/sessions");
+}
+
+export async function getCoachSession(id: string | number) {
+  return request<SessionDetail>(`/api/v1/coach/sessions/${id}`);
+}
+
+export async function sendCoachText(id: string | number, text: string) {
+  return request<ChatResponse>(`/api/v1/coach/sessions/${id}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function sendCoachAudio(
+  id: string | number,
+  blob: Blob,
+  kind: "song" | "practice",
+  filename = "recording.webm",
+) {
+  const fd = new FormData();
+  fd.append("audio_file", blob, filename);
+  fd.append("kind", kind);
+  return request<ChatResponse>(`/api/v1/coach/sessions/${id}/audio`, {
+    method: "POST",
+    body: fd,
+  });
+}
