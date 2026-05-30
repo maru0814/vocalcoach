@@ -26,6 +26,9 @@ class Settings(BaseSettings):
 
     # Upload / storage
     uploads_dir: str = "uploads"
+    coach_audio_dir: str = "uploads/coach"
+    reference_cache_dir: str = "uploads/reference"
+    max_audio_mb: int = 20
 
 
 settings = Settings()
