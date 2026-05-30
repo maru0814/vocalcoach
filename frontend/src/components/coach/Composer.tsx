@@ -76,36 +76,43 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  const mm = String(Math.floor(elapsed / 60)).padStart(1, "0");
+  const ss = String(elapsed % 60).padStart(2, "0");
+
   if (recording) {
     return (
-      <div className="flex items-center gap-3 border-t bg-white p-3">
-        <span className="flex items-center gap-2 text-rose-600">
-          <span className="h-3 w-3 animate-pulse rounded-full bg-rose-500" />
-          録音中 {elapsed}s / {MAX_SEC}s
-        </span>
-        <div className="ml-auto flex gap-2">
-          <button onClick={cancelRecording} className="rounded-lg border px-3 py-2 text-sm">
-            ✕ キャンセル
-          </button>
-          <button onClick={stopRecording} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white">
-            ■ 停止して送信
-          </button>
+      <div className="glass border-t border-white/40 p-3">
+        <div className="flex items-center gap-3 rounded-2xl bg-rose-50 px-4 py-3">
+          <span className="relative flex h-3 w-3">
+            <span className="absolute inline-flex h-full w-full animate-pulse-ring rounded-full bg-rose-400" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
+          </span>
+          <span className="font-bold text-rose-600">録音中</span>
+          <span className="font-mono text-sm text-rose-500">{mm}:{ss} / 1:00</span>
+          <div className="ml-auto flex gap-2">
+            <button onClick={cancelRecording} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+              ✕
+            </button>
+            <button onClick={stopRecording} className="rounded-xl bg-brand-gradient px-4 py-2 text-sm font-bold text-white shadow-soft">
+              ■ 送信
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="border-t bg-white p-3">
-      {error && <div className="mb-2 text-xs text-rose-600">{error}</div>}
+    <div className="glass border-t border-white/40 p-3">
+      {error && <div className="mb-2 px-1 text-xs text-rose-600">{error}</div>}
       <div className="flex items-end gap-2">
         <button
           type="button"
           aria-label="録音開始"
           disabled={disabled}
           onClick={startRecording}
-          className="rounded-full bg-rose-500 p-2 text-white disabled:opacity-40"
           title="録音"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-lg text-white shadow-soft transition active:scale-90 disabled:opacity-40"
         >
           🎙
         </button>
@@ -114,18 +121,12 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
           aria-label="ファイルを選ぶ"
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="rounded-full border p-2 disabled:opacity-40"
           title="アップロード"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-lg transition active:scale-90 disabled:opacity-40"
         >
           📎
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="audio/*"
-          onChange={onFile}
-          className="hidden"
-        />
+        <input ref={fileInputRef} type="file" accept="audio/*" onChange={onFile} className="hidden" />
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -138,14 +139,15 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
           rows={1}
           placeholder="メッセージを入力（曲URL・区間など）"
           disabled={disabled}
-          className="max-h-32 flex-1 resize-none rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-40"
+          className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:shadow-glow disabled:opacity-40"
         />
         <button
           onClick={submitText}
           disabled={disabled || !text.trim()}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white disabled:opacity-40"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-soft transition active:scale-90 disabled:opacity-40"
+          aria-label="送信"
         >
-          送信
+          ➤
         </button>
       </div>
     </div>

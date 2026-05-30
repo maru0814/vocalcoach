@@ -12,6 +12,7 @@ import {
 import { MessageBubble } from "@/components/coach/Bubbles";
 import { PhaseStepper } from "@/components/coach/PhaseStepper";
 import { Composer } from "@/components/coach/Composer";
+import { TrainerAvatar } from "@/components/brand/Brand";
 
 export default function CoachChatPage() {
   const params = useParams();
@@ -22,6 +23,7 @@ export default function CoachChatPage() {
   const [songTitle, setSongTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState("考えています");
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -49,14 +51,14 @@ export default function CoachChatPage() {
       const obj = JSON.parse((e as Error).message);
       return obj.message || "エラーが発生しました";
     } catch {
-      return "エラーが発生しました。もう一度試してください。";
+      return "うまく処理できませんでした。もう一度試してください。";
     }
   }
 
   async function handleText(text: string) {
     setBusy(true);
+    setBusyLabel("考えています");
     setError(null);
-    // 楽観的にユーザー発話を表示
     setMessages((m) => [
       ...m,
       { id: Date.now(), role: "user", type: "text", text, created_at: new Date().toISOString() },
@@ -74,6 +76,7 @@ export default function CoachChatPage() {
 
   async function handleAudio(blob: Blob, filename: string) {
     setBusy(true);
+    setBusyLabel("あなたの歌を聴いています");
     setError(null);
     const kind = phase === "C" || phase === "D" ? "practice" : "song";
     try {
@@ -88,29 +91,62 @@ export default function CoachChatPage() {
   }
 
   if (loading) {
-    return <div className="p-6 text-slate-500">読み込み中…</div>;
+    return (
+      <div className="bg-studio flex h-[100dvh] items-center justify-center">
+        <div className="flex items-center gap-2 text-slate-400">
+          <span className="h-2 w-2 animate-bounce-dot rounded-full bg-brand-400" />
+          <span className="h-2 w-2 animate-bounce-dot rounded-full bg-brand-400" style={{ animationDelay: "0.2s" }} />
+          <span className="h-2 w-2 animate-bounce-dot rounded-full bg-brand-400" style={{ animationDelay: "0.4s" }} />
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col">
-      <div className="flex items-center justify-between bg-white px-3 py-2">
-        <Link href="/coach" className="text-sm text-indigo-600">← 一覧</Link>
-        <span className="text-sm font-semibold">ボイストレーナー</span>
+    <div className="bg-studio flex h-[100dvh] flex-col">
+      {/* ヘッダー */}
+      <div className="glass flex items-center justify-between border-b border-white/40 px-3 py-2.5">
+        <Link href="/coach" className="flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-brand-600">
+          ← 一覧
+        </Link>
+        <div className="flex items-center gap-2">
+          <TrainerAvatar size={28} />
+          <div className="leading-none">
+            <div className="text-sm font-bold text-slate-800">トレーナー</div>
+            <div className="text-[10px] text-brand-600">オンライン</div>
+          </div>
+        </div>
         <span className="w-10" />
       </div>
+
       <PhaseStepper phase={phase} songTitle={songTitle} />
 
-      <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50 p-3">
-        {messages.map((m) => (
-          <MessageBubble key={`${m.id}-${m.type}`} m={m} />
+      {/* メッセージ */}
+      <div className="scroll-soft flex-1 space-y-4 overflow-y-auto px-3 py-4">
+        {messages.map((m, i) => (
+          <div key={`${m.id}-${m.type}-${i}`} className="animate-fade-in-up">
+            <MessageBubble m={m} />
+          </div>
         ))}
+
         {busy && (
-          <div className="flex items-start">
-            <div className="rounded-2xl bg-slate-100 px-4 py-2 text-slate-400">…</div>
+          <div className="flex items-end gap-2">
+            <TrainerAvatar size={32} />
+            <div className="glass flex items-center gap-2 rounded-2xl rounded-bl-md px-4 py-3 shadow-card">
+              <span className="text-xs text-slate-400">{busyLabel}</span>
+              <span className="flex gap-1">
+                <span className="h-1.5 w-1.5 animate-bounce-dot rounded-full bg-brand-400" />
+                <span className="h-1.5 w-1.5 animate-bounce-dot rounded-full bg-brand-400" style={{ animationDelay: "0.2s" }} />
+                <span className="h-1.5 w-1.5 animate-bounce-dot rounded-full bg-brand-400" style={{ animationDelay: "0.4s" }} />
+              </span>
+            </div>
           </div>
         )}
+
         {error && (
-          <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+          <div className="mx-auto max-w-sm rounded-2xl bg-rose-50 px-4 py-3 text-center text-sm text-rose-700 shadow-card">
+            {error}
+          </div>
         )}
         <div ref={bottomRef} />
       </div>

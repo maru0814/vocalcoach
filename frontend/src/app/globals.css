@@ -2,6 +2,65 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --font-rounded: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", system-ui, sans-serif;
+}
+
 body {
-  @apply bg-gray-50 text-gray-900;
+  @apply text-slate-800 antialiased;
+  font-family: var(--font-rounded);
+}
+
+/* やわらかいスタジオ風グラデーション背景 */
+.bg-studio {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(167, 139, 250, 0.25), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(244, 114, 182, 0.18), transparent 55%),
+    radial-gradient(900px 700px at 50% 120%, rgba(99, 102, 241, 0.16), transparent 60%),
+    linear-gradient(180deg, #faf9ff 0%, #f4f2fb 100%);
+}
+
+.bg-brand-gradient {
+  background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 45%, #ec4899 110%);
+}
+
+.text-brand-gradient {
+  background: linear-gradient(120deg, #7c3aed, #ec4899);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ガラス風カード */
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* スクロールバーを細く */
+.scroll-soft::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-soft::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.2);
+  border-radius: 999px;
+}
+.scroll-soft::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* シマー（スケルトン用） */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: shimmer 1.4s infinite;
 }
