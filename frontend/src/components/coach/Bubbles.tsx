@@ -48,6 +48,12 @@ function FeedbackCard({ p }: { p: Record<string, any> }) {
         </div>
       )}
 
+      {p.rhythm_note && (
+        <div className="rounded-lg bg-amber-50 p-2 text-sm text-amber-800">
+          🥁 リズム: {p.rhythm_note}
+        </div>
+      )}
+
       {p.today_task && (
         <div className="rounded-lg bg-indigo-50 p-2">
           <div className="text-sm font-semibold text-indigo-700">今日のポイント: {p.today_task.label}</div>

@@ -142,6 +142,36 @@ def _achieve_pitch_wobble(a: dict) -> bool:
     return j is not None and j <= 15
 
 
+def _diag_rhythm_lag(a: dict, c: Optional[dict]) -> bool:
+    align = (c or {}).get("alignment") if c else None
+    if align and align.get("mean_lag_sec") is not None:
+        return abs(align["mean_lag_sec"]) >= 0.25
+    # アライメントが無ければテンポ差で代替（half/double誤判定は除外）
+    if c and c.get("tempo_diff_bpm") is not None:
+        td = abs(c["tempo_diff_bpm"])
+        return 6 < td < 40
+    return False
+
+
+def _reason_rhythm_lag(a: dict, c: Optional[dict]) -> str:
+    align = (c or {}).get("alignment") if c else None
+    if align and align.get("mean_lag_sec") is not None:
+        lag = align["mean_lag_sec"]
+        dir_ = "遅れ気味（モタり）" if lag > 0 else "早め（走り）"
+        spots = align.get("worst_segments") or []
+        extra = ""
+        if spots:
+            extra = "特に " + "、".join(f"{w['user_sec']:.0f}秒あたり" for w in spots[:2]) + " でズレています。"
+        return f"原曲と比べてリズムが約{abs(lag):.2f}秒{dir_}です。{extra}"
+    return "原曲とテンポがずれ気味です。拍に合わせる練習をしましょう。"
+
+
+def _achieve_rhythm_lag(a: dict) -> bool:
+    # 単体録音では判定材料が乏しいので、ジッターが安定していれば良しとする簡易判定
+    j = a.get("f0_jitter_cents")
+    return j is not None and j <= 20
+
+
 def _diag_expression_flat(a: dict, c: Optional[dict]) -> bool:
     if c and c.get("rms_db_range_diff") is not None:
         return c["rms_db_range_diff"] < -8  # 原曲より強弱が小さい
@@ -275,6 +305,28 @@ TASKS: list[dict] = [
                 ],
                 "checkpoint": "音が一定の速さで規則正しくゆれていれば成功。",
                 "video": {"title": "ビブラートのかけ方と練習方法", "url": "https://www.youtube.com/watch?v=dH1Ouz1gMXI"},
+            },
+        ],
+    },
+    {
+        "id": "rhythm_lag",
+        "label": "リズム（拍の合わせ方）を整える",
+        "priority": 4,
+        "diagnose": _diag_rhythm_lag,
+        "reason": _reason_rhythm_lag,
+        "achieve": _achieve_rhythm_lag,
+        "achieve_label": "拍に合わせて安定して歌える",
+        "practices": [
+            {
+                "name": "メトロノーム手拍子 → 歌",
+                "steps": [
+                    "スマホのメトロノームを60BPMに設定する（無料アプリでOK）。",
+                    "まず拍に合わせて手拍子だけを30秒。",
+                    "次に、歌詞の頭の音を手拍子のタイミングにぴったり合わせて歌う。",
+                    "走りやすい人は『拍より少し後ろ』、モタる人は『拍ぴったり』を意識。",
+                ],
+                "checkpoint": "歌い出しの音が、毎回同じタイミングで拍に乗っていれば成功。",
+                "video": {"title": "リズム感を鍛える練習（スタッカート発声法）", "url": "https://www.youtube.com/watch?v=xpV4GO4kpds"},
             },
         ],
     },

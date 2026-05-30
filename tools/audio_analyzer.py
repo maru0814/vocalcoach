@@ -7,10 +7,13 @@ Audio analyzer for vocal-trainer skill.
 使い方:
     python tools/audio_analyzer.py <user.wav> [<reference.wav>] \
         [--user-start 0:15] [--user-end 0:45] \
-        [--ref-start 1:30] [--ref-end 2:00]
+        [--ref-start 1:30] [--ref-end 2:00] \
+        [--isolate-vocal-ref]
 
 時間指定は "mm:ss" または秒数（"15", "1.5"）のいずれかを受け付ける。
 指定しない場合はトラック全体を解析する。
+--isolate-vocal-ref を付けると原曲に軽量声分離(HPSS+帯域)を適用し、
+伴奏(ベース)由来の f0/キー誤判定を緩和。2音源指定時は DTW アライメントも出力。
 
 依存:
     librosa, numpy, scipy, soundfile
@@ -200,6 +203,65 @@ def parse_time(value: str | None) -> float | None:
     return float(value)
 
 
+def isolate_vocal(y: np.ndarray, sr: int, hard_cut_hz: float = 130.0,
+                  low_hz: float = 200.0, high_hz: float = 5000.0, margin: float = 3.0) -> np.ndarray:
+    """HPSS + ボーカル帯域強調で伴奏を抑える（torch不要の軽量分離）。"""
+    n_fft, hop = 2048, 512
+    S_full, phase = librosa.magphase(librosa.stft(y, n_fft=n_fft, hop_length=hop))
+    H, P = librosa.decompose.hpss(S_full, margin=margin)
+    S_harm = S_full * (H / (H + P + 1e-8))
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+    band = np.ones_like(freqs)
+    band[freqs < hard_cut_hz] = 0.02
+    ramp = (freqs >= hard_cut_hz) & (freqs < low_hz)
+    band[ramp] = 0.02 + 0.98 * (freqs[ramp] - hard_cut_hz) / (low_hz - hard_cut_hz)
+    band[freqs > high_hz] = 0.4
+    y_voc = librosa.istft(S_harm * band[:, np.newaxis] * phase, hop_length=hop, length=len(y))
+    peak = np.max(np.abs(y_voc)) + 1e-9
+    return (y_voc / peak * (np.max(np.abs(y)) + 1e-9)).astype(np.float32)
+
+
+def align_dtw(user_y, ref_y, sr, lag_threshold_sec=0.25, max_segments=3):
+    """ユーザーと原曲のクロマ系列を DTW で対応付け、フレーズずれを秒数で抽出。"""
+    hop_sec = HOP_LENGTH / sr
+    if len(user_y) / sr < 3 or len(ref_y) / sr < 3:
+        return None
+    ratio = (len(user_y) / sr) / (len(ref_y) / sr)
+    if ratio < 0.5 or ratio > 2.0:
+        return None
+    cu = librosa.feature.chroma_cqt(y=user_y, sr=sr, hop_length=HOP_LENGTH)
+    cr = librosa.feature.chroma_cqt(y=ref_y, sr=sr, hop_length=HOP_LENGTH)
+    if cu.shape[1] < 8 or cr.shape[1] < 8:
+        return None
+    try:
+        _, wp = librosa.sequence.dtw(X=cu, Y=cr, metric="cosine")
+    except Exception:
+        return None
+    wp = wp[::-1]
+    n = len(wp)
+    if n < 10:
+        return None
+    lo, hi = int(n * 0.1), int(n * 0.9)
+    user_t = wp[lo:hi, 0] * hop_sec
+    ref_t = wp[lo:hi, 1] * hop_sec
+    rel_lag = (user_t - ref_t) - np.median(user_t - ref_t)
+    worst, seen = [], set()
+    for idx in np.argsort(-np.abs(rel_lag)):
+        l = float(rel_lag[idx])
+        if abs(l) < lag_threshold_sec:
+            break
+        b = int(user_t[idx])
+        if b in seen:
+            continue
+        seen.add(b)
+        worst.append({"user_sec": round(float(user_t[idx]), 1),
+                      "ref_sec": round(float(ref_t[idx]), 1), "lag_sec": round(l, 2)})
+        if len(worst) >= max_segments:
+            break
+    worst.sort(key=lambda w: w["user_sec"])
+    return {"mean_lag_sec": round(float(np.mean(rel_lag)), 2), "worst_segments": worst}
+
+
 def extract_timeline(
     y: np.ndarray,
     sr: int,
@@ -311,7 +373,8 @@ def extract_timeline(
     }
 
 
-def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | None = None) -> tuple[TrackAnalysis, dict]:
+def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | None = None,
+                  isolate: bool = False, return_signal: bool = False):
     # librosa.load supports offset & duration for partial loading
     offset = start_sec if start_sec is not None else 0.0
     if end_sec is not None:
@@ -321,6 +384,8 @@ def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | N
     else:
         load_duration = None
     y, sr = librosa.load(str(path), sr=SR, mono=True, offset=offset, duration=load_duration)
+    if isolate and len(y) > sr:
+        y = isolate_vocal(y, sr)
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     # f0 via pyin (probabilistic YIN)
@@ -375,7 +440,7 @@ def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | N
 
     timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
 
-    return TrackAnalysis(
+    analysis = TrackAnalysis(
         duration_sec=round(duration, 2),
         voiced_ratio=round(voiced_ratio, 3),
         f0_median_hz=round(f0_median, 1) if f0_median else None,
@@ -391,7 +456,10 @@ def analyze_track(path: Path, start_sec: float | None = None, end_sec: float | N
         vibrato_rate_hz=round(vib_rate, 2) if vib_rate else None,
         vibrato_depth_cents=round(vib_depth, 1) if vib_depth else None,
         long_tone_stability=round(lts, 1) if lts else None,
-    ), timeline
+    )
+    if return_signal:
+        return analysis, timeline, y, sr
+    return analysis, timeline
 
 
 def compare(user: TrackAnalysis, ref: TrackAnalysis) -> dict:
@@ -443,6 +511,8 @@ def main() -> int:
     parser.add_argument("--user-end", help="End time of user clip (mm:ss or seconds)")
     parser.add_argument("--ref-start", help="Start time of reference clip (mm:ss or seconds)")
     parser.add_argument("--ref-end", help="End time of reference clip (mm:ss or seconds)")
+    parser.add_argument("--isolate-vocal-ref", action="store_true",
+                        help="原曲に軽量声分離を適用し、伴奏由来の誤判定を緩和する")
     args = parser.parse_args()
 
     user_path = Path(args.user)
@@ -459,7 +529,9 @@ def main() -> int:
 
     range_label_user = f"[{args.user_start or '0:00'}–{args.user_end or 'EOF'}]"
     print(f"[analyzing] user: {user_path.name} {range_label_user}", file=sys.stderr)
-    user, user_timeline = analyze_track(user_path, start_sec=u_start, end_sec=u_end)
+    user, user_timeline, user_y, sr = analyze_track(
+        user_path, start_sec=u_start, end_sec=u_end, return_signal=True
+    )
 
     result: dict = {
         "user": asdict(user),
@@ -469,12 +541,20 @@ def main() -> int:
 
     if ref_path:
         range_label_ref = f"[{args.ref_start or '0:00'}–{args.ref_end or 'EOF'}]"
-        print(f"[analyzing] ref:  {ref_path.name} {range_label_ref}", file=sys.stderr)
-        ref, ref_timeline = analyze_track(ref_path, start_sec=r_start, end_sec=r_end)
+        iso = " (vocal-isolated)" if args.isolate_vocal_ref else ""
+        print(f"[analyzing] ref:  {ref_path.name} {range_label_ref}{iso}", file=sys.stderr)
+        ref, ref_timeline, ref_y, _ = analyze_track(
+            ref_path, start_sec=r_start, end_sec=r_end,
+            isolate=args.isolate_vocal_ref, return_signal=True
+        )
         result["reference"] = asdict(ref)
         result["reference_range"] = {"start_sec": r_start, "end_sec": r_end}
         result["reference_timeline"] = ref_timeline
         result["compare"] = compare(user, ref)
+        try:
+            result["alignment"] = align_dtw(user_y, ref_y, sr)
+        except Exception:
+            result["alignment"] = None
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

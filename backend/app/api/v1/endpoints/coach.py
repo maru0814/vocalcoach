@@ -211,17 +211,11 @@ def send_audio(
 
     u_start, u_end = _parse_range(s.user_range)
     phase = s.phase
-
-    try:
-        user_analysis = analyzer.analyze_file(wav_path, u_start, u_end)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail={"code": "ANALYSIS_FAILED", "message": f"音声の解析に失敗しました: {e}"},
-        )
-
     compare_data = None
+    alignment = None
     needs_ref = phase in ("A", "B") and kind == "song"
+
+    ref_wav = None
     if needs_ref:
         ref_wav = s.song_ref_path
         if not ref_wav and s.song_ref_url:
@@ -235,27 +229,42 @@ def send_audio(
                     status_code=502,
                     detail={"code": "REFERENCE_FETCH_FAILED", "message": str(e)},
                 )
-        if ref_wav:
+
+    try:
+        if needs_ref and ref_wav:
+            # 原曲は声分離（軽量）して解析 + DTWアライメント
             r_start, r_end = _parse_range(s.ref_range or s.user_range)
-            try:
-                ref_analysis = analyzer.analyze_file(ref_wav, r_start, r_end)
-                compare_data = analyzer.compare(user_analysis, ref_analysis)
-                if analyzer.is_same_source(user_analysis, ref_analysis):
-                    same_msg = {
-                        "role": "coach", "type": "text",
-                        "text": "ご提出いただいた録音が原曲と同じ音源のようです🎤 "
-                                "あなたが歌った録音を送ってくださいね。",
-                    }
-                    rows = _persist_coach_messages(db, s.id, [same_msg])
-                    db.commit()
-                    for r in rows:
-                        db.refresh(r)
-                    return ChatResponse(phase=s.phase, current_task=s.current_task,
-                                        messages=[_msg_out(r) for r in rows])
-            except HTTPException:
-                raise
-            except Exception:
-                compare_data = None  # 比較失敗時はユーザー単体解析で続行
+            paired = analyzer.analyze_pair(
+                wav_path, ref_wav, user_range=(u_start, u_end), ref_range=(r_start, r_end)
+            )
+            user_analysis = paired["user"]
+            ref_analysis = paired["reference"]
+            compare_data = paired["compare"]
+            alignment = paired.get("alignment")
+            if analyzer.is_same_source(user_analysis, ref_analysis):
+                same_msg = {
+                    "role": "coach", "type": "text",
+                    "text": "ご提出いただいた録音が原曲と同じ音源のようです🎤 "
+                            "あなたが歌った録音を送ってくださいね。",
+                }
+                rows = _persist_coach_messages(db, s.id, [same_msg])
+                db.commit()
+                for r in rows:
+                    db.refresh(r)
+                return ChatResponse(phase=s.phase, current_task=s.current_task,
+                                    messages=[_msg_out(r) for r in rows])
+        else:
+            user_analysis = analyzer.analyze_file(wav_path, u_start, u_end)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "ANALYSIS_FAILED", "message": f"音声の解析に失敗しました: {e}"},
+        )
+
+    if alignment is not None:
+        compare_data = {**(compare_data or {}), "alignment": alignment}
 
     msgs, updates = rule_engine.handle_audio(_session_state(s), user_analysis, compare_data, kind)
     _apply_updates(s, updates)

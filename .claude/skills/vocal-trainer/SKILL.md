@@ -99,6 +99,8 @@ Phase E: 曲の再録音 + 改善判定 → 改善なら次のステップ、未
 - 前処理: 非wav入力は ffmpeg (imageio-ffmpeg バンドル) で mono 22050Hz wav に変換
 - YouTube取得: `yt-dlp --ffmpeg-location <path> -x --audio-format wav -o '<name>.%(ext)s' <URL>`
 - 出力JSONの主要キーは「原則」の「解析データの読み解き方」を参照
+- **原曲（伴奏混在）は `--isolate-vocal-ref` を付ける**: HPSS+ボーカル帯域強調の軽量声分離でベース由来の f0/キー誤判定を緩和（torch不要）。原曲のf0が極端に低い（ベースを拾っている）と感じたら必ず付ける
+- **リズムは DTW の `alignment` を優先**: 2音源指定時に出力される `alignment.mean_lag_sec`（＋=モタり/−=走り）と `worst_segments`（ずれの大きい秒数）を使い、「○秒あたりで△秒走っている」と指摘する。テンポBPM差は25秒程度の短区間では half/double 誤判定が出るため、DTWラグを主たるリズム根拠とする
 
 ## 課題タクソノミー（診断 → 基礎練 → 参考動画クエリ）
 

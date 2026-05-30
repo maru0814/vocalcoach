@@ -70,6 +70,25 @@ def build_analysis_table(a: dict, c: Optional[dict]) -> list[dict]:
     return rows
 
 
+def build_rhythm_note(c: Optional[dict]) -> Optional[str]:
+    """DTWアライメントからリズムの走り/モタりを秒数つきで説明。"""
+    align = (c or {}).get("alignment")
+    if not align:
+        return None
+    lag = align.get("mean_lag_sec")
+    notes = []
+    if lag is not None and abs(lag) >= 0.1:
+        if lag > 0:
+            notes.append(f"原曲より全体的に約{abs(lag):.2f}秒遅れ気味（モタり）です。")
+        else:
+            notes.append(f"原曲より全体的に約{abs(lag):.2f}秒早め（走り）です。")
+    worst = align.get("worst_segments") or []
+    if worst:
+        spots = "、".join(f"{w['user_sec']:.0f}秒あたり（{'遅れ' if w['lag_sec']>0 else '走り'}{abs(w['lag_sec']):.2f}秒）" for w in worst[:3])
+        notes.append(f"特にズレが大きいのは {spots} です。")
+    return " ".join(notes) if notes else None
+
+
 def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict]) -> dict:
     scores = scoring.compute_scores(a, c)
     payload = {
@@ -77,6 +96,7 @@ def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict]) -> 
         "analysis_table": build_analysis_table(a, c),
         "good_points": build_good_points(a),
         "today_task": None,
+        "rhythm_note": build_rhythm_note(c),
     }
     if task:
         payload["today_task"] = {

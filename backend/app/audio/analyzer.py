@@ -196,8 +196,9 @@ def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain
     return {"window_sec": window_sec, "per_window": per_window, "sustained_segments": sustained}
 
 
-def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: float | None = None) -> dict:
-    """Analyze a single audio clip and return a metrics dict (+ timeline)."""
+def load_clip(path: str | Path, start_sec: float | None = None, end_sec: float | None = None,
+              isolate_vocal: bool = False) -> tuple[np.ndarray, int]:
+    """Load an audio clip (optionally vocal-isolated). Returns (y, sr)."""
     offset = start_sec if start_sec is not None else 0.0
     if end_sec is not None:
         if start_sec is not None and end_sec <= start_sec:
@@ -205,8 +206,21 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         load_duration = end_sec - offset
     else:
         load_duration = None
-
     y, sr = librosa.load(str(path), sr=SR, mono=True, offset=offset, duration=load_duration)
+    if isolate_vocal and len(y) > sr:  # >1s のときだけ分離
+        from app.audio.separation import isolate_vocal as _iso
+        y = _iso(y, sr)
+    return y, sr
+
+
+def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: float | None = None,
+                 isolate_vocal: bool = False, return_signal: bool = False):
+    """Analyze a single audio clip and return a metrics dict (+ timeline).
+
+    isolate_vocal: 原曲など伴奏混在音源で True にすると軽量声分離を前処理する。
+    return_signal: True なら (result_dict, y, sr) を返す（DTW用に波形を再利用）。
+    """
+    y, sr = load_clip(path, start_sec, end_sec, isolate_vocal=isolate_vocal)
     duration = float(librosa.get_duration(y=y, sr=sr))
     if duration < 0.3:
         raise ValueError("audio too short to analyze (<0.3s)")
@@ -251,7 +265,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     lts = long_tone_stability(f0_hz, hop_sec)
     timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
 
-    return {
+    result = {
         "duration_sec": round(duration, 2),
         "voiced_ratio": round(voiced_ratio, 3),
         "f0_median_hz": round(f0_median, 1) if f0_median else None,
@@ -268,7 +282,32 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "vibrato_depth_cents": round(vib_depth, 1) if vib_depth else None,
         "long_tone_stability": round(lts, 1) if lts else None,
         "timeline": timeline,
+        "vocal_isolated": bool(isolate_vocal),
     }
+    if return_signal:
+        return result, y, sr
+    return result
+
+
+def analyze_pair(user_path, ref_path, user_range=None, ref_range=None):
+    """ユーザー録音と原曲（声分離）を解析し、compare + DTWアライメントを付与して返す。
+
+    返り値: {"user": ..., "reference": ..., "compare": ..., "alignment": ...}
+    """
+    from app.audio import alignment as _align
+
+    u_start, u_end = user_range or (None, None)
+    r_start, r_end = ref_range or (None, None)
+
+    user, uy, usr = analyze_file(user_path, u_start, u_end, isolate_vocal=False, return_signal=True)
+    ref, ry, rsr = analyze_file(ref_path, r_start, r_end, isolate_vocal=True, return_signal=True)
+
+    out = {"user": user, "reference": ref, "compare": compare(user, ref)}
+    try:
+        out["alignment"] = _align.align(uy, ry, usr)
+    except Exception:
+        out["alignment"] = None
+    return out
 
 
 def compare(user: dict, ref: dict) -> dict:

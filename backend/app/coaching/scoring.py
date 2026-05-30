@@ -36,9 +36,6 @@ def rhythm_score(a: dict, c: Optional[dict]) -> int:
     base = 75
     if c and c.get("tempo_diff_bpm") is not None:
         td = abs(c["tempo_diff_bpm"])
-        # half/double-time の誤判定を緩和
-        if td > 40:
-            td = min(td, abs(td - 0))  # leave as-is; large diff likely model artifact
         if td <= 2:
             base = 88
         elif td <= 6:
@@ -47,6 +44,16 @@ def rhythm_score(a: dict, c: Optional[dict]) -> int:
             base = 68
         else:
             base = 60
+    # DTWアライメントの平均ラグも加味（フレーズの走り/モタり）
+    align = (c or {}).get("alignment")
+    if align and align.get("mean_lag_sec") is not None:
+        lag = abs(align["mean_lag_sec"])
+        if lag <= 0.1:
+            base += 5
+        elif lag >= 0.4:
+            base -= 10
+        elif lag >= 0.25:
+            base -= 5
     return _clamp(base)
 
 

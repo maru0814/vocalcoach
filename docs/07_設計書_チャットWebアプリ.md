@@ -252,3 +252,41 @@ sequenceDiagram
 - 既存の auth / recordings には影響なし（新規追加のみ）
 - `tools/audio_analyzer.py` のコアを `app/audio/analyzer.py` に共有化。Claude Code版skillは引き続き `tools/` 経由で利用（同一ロジック）
 - Web版MVP（`docs/02`）の評価機能（乱数プレースホルダ）は本設計の `scoring.py` で置換可能（v1.1）
+
+## 13. v1.2: 軽量声分離 + DTWアライメント（追加実装）
+
+### 13.1 背景・課題
+原曲（商業ミックス）は伴奏（ベース・ドラム）が支配的なため、`pyin` のf0推定が低音に引っ張られ、キー・テンポ・f0中央値が誤推定される（前回FBで「リズム60/キー誤判定」として観測）。これを **追加コストゼロ（torch不要）** で改善する。
+
+### 13.2 軽量声分離（vocal isolation）
+- 実装: `app/audio/separation.py`（librosaのみ）
+- 手法（2段階）:
+  1. **HPSS**（`librosa.effects.hpss`）でハーモニック成分を抽出し、打楽器（ドラム）の影響を除く
+  2. **ボーカル帯域の強調フィルタ**: STFTで概ね 150〜4000Hz 帯（人声の基音+第1〜3フォルマント）以外を減衰させ、低域のベースを抑える
+- 適用対象: **原曲（リファレンス）解析時のみ**（ユーザー録音は元々ボーカル単体なので不要）
+- `analyze_file(path, start, end, isolate_vocal=False)` の引数で切替。原曲は `isolate_vocal=True`
+- トレードオフ: Demucs級の分離精度は出ないが、低音由来のf0/キー誤判定を緩和。完全分離ではないため「推定値」である旨は引き続き明示
+
+### 13.3 DTWアライメント
+- 実装: `app/audio/alignment.py`（`librosa.sequence.dtw`）
+- 手法:
+  1. ユーザーと原曲（声分離後）の **chroma_cqt** を時間方向に DTW で対応付け
+  2. ワーピングパスから各時刻の対応を取り、**局所的なテンポずれ（早い/遅い）** を算出
+  3. ずれが閾値を超える区間を「フレーズずれ」として秒数つきで抽出
+- 出力: `alignment` セクション
+  - `mean_lag_sec`: 全体の平均的な時間ずれ（＋は遅れ、−は走り）
+  - `worst_segments`: ずれが大きい区間 `[{user_sec, ref_sec, lag_sec}]`
+- 区間長が極端に違う（例: ユーザー全体 vs 原曲クリップ）の場合はDTWをスキップしてnullを返す（誤対応防止）
+
+### 13.4 ルールエンジン / FBへの反映
+- `taxonomy.py` のリズム課題診断に `alignment.mean_lag_sec` を加味（テンポBPM差の補助）
+- `feedback_builder.py` に「フレーズずれ」表示（worst_segmentsを秒数つきで）
+- リズムスコア（`scoring.py`）はテンポBPM差に加え mean_lag_sec も考慮
+
+### 13.5 性能影響
+- HPSS + 帯域フィルタ: 25秒区間で +1〜2秒程度
+- DTW: chroma系列同士で軽量、+1秒未満
+- 合計でも同期リクエスト内（NFR-01の15秒目標）に収まる
+
+### 13.6 共有
+- `tools/audio_analyzer.py` にも同じ `--isolate-vocal` / DTW を反映し、Claude Code版と指標を統一
