@@ -92,6 +92,7 @@ def _session_state(s: ChatSession) -> dict:
         "focus_task": s.focus_task,
         "avoid_task": s.avoid_task,
         "baseline_analysis": s.baseline_analysis,
+        "last_analysis": s.last_analysis,
         "d_retry_count": s.d_retry_count,
     }
 
@@ -301,7 +302,7 @@ def send_audio(
     phase = s.phase
     compare_data = None
     alignment = None
-    needs_ref = phase in ("A", "B") and kind == "song"
+    needs_ref = phase in ("A", "B") and kind != "practice"
 
     ref_wav = None
     if needs_ref:
@@ -351,6 +352,12 @@ def send_audio(
 
     if alignment is not None:
         compare_data = {**(compare_data or {}), "alignment": alignment}
+
+    # 種類が明示されていなければ（"auto"）、音声から曲/基礎練を自動判定する
+    if kind not in ("song", "practice"):
+        kind = rule_engine.classify_kind(user_analysis)
+    # 最新の録音の解析を保持（会話の文脈は常に最新録音を参照する）
+    s.last_analysis = user_analysis
 
     msgs, updates = rule_engine.handle_audio(
         _session_state(s), user_analysis, compare_data, kind, history=history

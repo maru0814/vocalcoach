@@ -24,6 +24,7 @@ class ChatSession(Base):
     focus_task: Mapped[str | None] = mapped_column(String(50), nullable=True)
     avoid_task: Mapped[str | None] = mapped_column(String(50), nullable=True)
     baseline_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     d_retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)

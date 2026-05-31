@@ -135,7 +135,7 @@ export async function sendCoachText(id: string | number, text: string) {
 export async function sendCoachAudio(
   id: string | number,
   blob: Blob,
-  kind: "song" | "practice",
+  kind: "song" | "practice" | "auto",
   filename = "recording.webm",
 ) {
   const fd = new FormData();

@@ -9,12 +9,13 @@ DB保存・解析実行は endpoint 側が担当し、解析結果はここに�
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Optional
 
 from app.coaching import feedback_builder, llm
 from app.coaching.persona import COACH_NAME
-from app.coaching.taxonomy import diagnose_task, get_task, projection_point
+from app.coaching.taxonomy import diagnose_task, get_task, list_weaknesses, projection_point
 
 
 # フェーズは「行動を縛るゲート」ではなく「現在地を示すソフトラベル」。
@@ -242,6 +243,29 @@ def _llm_or(text_fallback: str, facts: str, instruction: str, history: Optional[
     return reply or text_fallback
 
 
+def classify_kind(analysis: dict) -> str:
+    """録音が「曲」か「基礎練(単純な発声練習)」かを音声特徴から推定する。
+
+    基礎練（ロングトーン/ハミング/リップロール/単音スケール等）は音数が少なく音域も狭い。
+    曲はメロディがあり音数・音域が広い。誤検出時の害を抑えるため「曲」寄りにバイアスする
+    （曲を基礎練と誤ると「達成おめでとう」誤発火につながるため）。
+    """
+    pw = analysis.get("timeline", {}).get("per_window", [])
+    midis = []
+    for w in pw:
+        f0 = w.get("f0_mean_hz")
+        if f0 and f0 >= 100:
+            midis.append(round(69 + 12 * math.log2(f0 / 440.0)))
+    if not midis:
+        return "song"
+    distinct = len(set(midis))
+    span = max(midis) - min(midis)
+    # 明確に単純（異なる音が3つ以下 かつ 音域が4半音以下）なときだけ基礎練。
+    if distinct <= 3 and span <= 4:
+        return "practice"
+    return "song"
+
+
 def _projection_note(analysis: dict) -> Optional[str]:
     """張りどころ（曲の山）で声を張れているかを、コメント用の事実文にする。"""
     pp = projection_point(analysis)
@@ -280,20 +304,29 @@ def _audio_diagnose(
 
     if task:
         prac = task["practices"][0]
-        reason = (fb_payload.get("today_task") or {}).get("reason", "")
+        scores = fb_payload.get("scores", {})
         goods = "／".join(fb_payload.get("good_points", [])[:2])
         proj = _projection_note(analysis)
+        issues = list_weaknesses(analysis, compare_data, limit=3, exclude=[avoid] if avoid else [])
+        issue_lines = "\n".join(f"  ・[{w['axis']}] {w['reason']}" for w in issues) or "  ・大きな弱点は少ない"
+        ref_note = "" if compare_data else (
+            "原曲リンクが無いので、リズムの走り/モタりや音程の正確さは厳密には比較できない"
+            "（手元の安定度・声の質で判断している）。"
+        )
         facts = (
-            f"歌を解析した。今いちばん伸ばせる弱点は「{task['label']}」。根拠: {reason}\n"
+            "歌を解析した。\n"
+            f"スコア(0-100): 音程{scores.get('pitch_score')} / リズム{scores.get('rhythm_score')} / 表現{scores.get('expression_score')} / 総合{scores.get('total_score')}\n"
             f"良かった点: {goods}\n"
-            + (f"張りどころの状況: {proj}\n" if proj else "")
-            + f"おすすめの基礎練: 『{prac['name']}』（目安: {prac.get('checkpoint','')}）。詳しい手順カードはこの後に表示される。"
+            + (f"張りどころ: {proj}\n" if proj else "")
+            + f"気になる点（観点つき・優先度順）:\n{issue_lines}\n"
+            + (f"{ref_note}\n" if ref_note else "")
+            + f"今日の最優先課題: 「{task['label']}」。おすすめ基礎練『{prac['name']}』（目安: {prac.get('checkpoint','')}）。手順カードはこの後に表示される。"
         )
         instr = (
-            "解析の結果としてこの弱点をやさしく具体的に伝え、続けてこの基礎練を一緒にやってみようと前向きに促してください。"
-            "良かった点や張りどころにも一言触れて構いません。"
-            "音量が上下すること自体は表現（ダイナミクス）なので欠点扱いせず、"
-            "支え不足や張りどころで張れていない場合のみ具体的に指摘してください。"
+            "録音の講評を、発声・リズム・音感・表現(ビブラート/しゃくり等)の4観点を意識してバランスよく伝えてください。"
+            "良い点と気になる点は、できるだけ具体的な秒数（と音名）を添えて話します。"
+            "ロングトーンなど1つの観点だけに偏らないこと。音量の上下そのものは表現なので欠点にしません。"
+            "最後に、今日の最優先課題の基礎練を1つだけ前向きに勧めてください。"
         )
         fallback = (
             f"今日のポイントは「{task['label']}」ですね。これに効く基礎練を用意したので、一緒にやってみましょう👇"
@@ -308,10 +341,20 @@ def _audio_diagnose(
         ))
         updates = {"phase": LESSON, "current_task": task["id"], "baseline_analysis": analysis, "avoid_task": None}
     else:
+        scores = fb_payload.get("scores", {})
+        goods = "／".join(fb_payload.get("good_points", [])[:3])
         proj = _projection_note(analysis)
-        facts = "歌を解析したが、大きな弱点は見当たらなかった。とても良い状態。" + (f"\n{proj}" if proj else "")
+        ref_note = "" if compare_data else "原曲リンクが無いのでリズム/音程の正確さは厳密には比較できない。\n"
+        facts = (
+            "歌を解析したが、大きな弱点は見当たらなかった。とても良い状態。\n"
+            f"スコア(0-100): 音程{scores.get('pitch_score')} / リズム{scores.get('rhythm_score')} / 表現{scores.get('expression_score')} / 総合{scores.get('total_score')}\n"
+            f"良かった点: {goods}\n"
+            + (f"張りどころ: {proj}\n" if proj else "")
+            + ref_note
+        )
         instr = (
-            "大きな弱点が無いことを一緒に喜び、張りどころに触れつつ、さらに伸ばすなら表現の幅づくりに挑戦してみようと前向きに促してください。"
+            "発声・リズム・音感・表現の4観点に軽く触れて、良い状態であることを一緒に喜んでください。"
+            "良い点は秒数（と音名）を添えて具体的に。さらに伸ばすなら表現（強弱やビブラート等）の幅づくりを前向きに勧めてください。"
         )
         fallback = "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ さらに伸ばすなら、表現の幅づくりに挑戦してみましょう。"
         out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
