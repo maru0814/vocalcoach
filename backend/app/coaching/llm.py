@@ -1,16 +1,16 @@
 """
-ソラ先生の自然言語チャット応答（Anthropic Claude）。
+ソラ先生の自然言語チャット応答（Google Gemini）。
 
 ハイブリッド構成:
   - 重い音声解析・採点・課題診断はルールベース（rule_engine / taxonomy）のまま。
   - ユーザーのテキスト質問への「返答だけ」を LLM に通し、ChatGPT のように自然に答える。
-  - ANTHROPIC_API_KEY 未設定 or API エラー時は None を返し、呼び出し側が
+  - GEMINI_API_KEY 未設定 or API エラー時は None を返し、呼び出し側が
     ルールベース応答（rule_engine.answer_question）にフォールバックする。
 
 コスト最適化:
-  - 安価なモデル（既定 Haiku 4.5）。
-  - 不変のシステムプロンプト（ペルソナ＋方針）に prompt caching を効かせる。
-  - 出力トークンは短く制限（コーチの一言返答想定）。
+  - 最安クラスの Gemini Flash-Lite（無料枠あり）を既定モデルに。
+  - thinking(思考)を無効化してコスト・レイテンシを抑制（短いコーチ返答に十分）。
+  - 出力トークンは短く制限。
 """
 
 from __future__ import annotations
@@ -24,8 +24,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# 不変のシステムプロンプト（プレフィックス＝prompt cache 対象）。
-# ここを書き換えるとキャッシュが無効化されるので、揮発的な情報は入れない。
+# 不変のシステムプロンプト（ペルソナ＋会話方針）。
 SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}です。サービス「{SERVICE_NAME}」の中で、
 ユーザーが録音した歌に寄り添い、上達を一緒に喜ぶ専属コーチとして会話します。
 
@@ -37,7 +36,7 @@ SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}
 # 会話のルール
 - ユーザーの質問・つぶやきに、その場で自然に・具体的に答える。テンプレ的な定型文は避ける。
 - 返答は短く。2〜4文、長くても120字程度。チャットのテンポを大切にする。
-- 「# 現在のレッスン状況」に解析結果（指摘箇所・秒数・課題・基礎練）が与えられたら、それを根拠に答える。
+- 「現在のレッスン状況」に解析結果（指摘箇所・秒数・課題・基礎練）が与えられたら、それを根拠に答える。
   与えられていない数値や秒数を勝手に作らない。憶測で断定しない。
 - まだ録音やデータが無くて具体的に答えられないときは、正直にそう伝え、
   「まずは歌った録音を送ってくださいね」と自然に録音をうながす。
@@ -103,30 +102,33 @@ def build_session_context(state: dict) -> str:
     return "現在のレッスン状況:\n" + "\n".join(lines)
 
 
-def _build_messages(state: dict, user_text: str, history: Optional[list[dict]]) -> list[dict]:
-    """会話履歴 + 今回の発言（状況コンテキスト付き）を Messages 形式に組み立てる。
+def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
+    """会話履歴 + 今回の発言（状況コンテキスト付き）を Gemini の contents 形式に組み立てる。
 
     history: [{"role": "user"|"assistant", "content": str}, ...]（古い→新しい）
+    Gemini のロールは "user" / "model"。先頭は user である必要がある。
     """
-    msgs: list[dict] = []
+    from google.genai import types
+
+    contents: list = []
     for h in history or []:
         role = h.get("role")
-        content = (h.get("content") or "").strip()
-        if role in ("user", "assistant") and content:
-            msgs.append({"role": role, "content": content})
+        text = (h.get("content") or "").strip()
+        if not text or role not in ("user", "assistant"):
+            continue
+        g_role = "model" if role == "assistant" else "user"
+        contents.append(types.Content(role=g_role, parts=[types.Part.from_text(text=text)]))
 
-    # API は先頭が user である必要があるため、先頭の assistant を落とす
-    while msgs and msgs[0]["role"] == "assistant":
-        msgs.pop(0)
+    # 先頭の model 発言は落とす（Gemini は user 始まりが必要）
+    while contents and contents[0].role == "model":
+        contents.pop(0)
 
     context = build_session_context(state)
-    msgs.append(
-        {
-            "role": "user",
-            "content": f"# 現在のレッスン状況（システムからの参考情報）\n{context}\n\n# ユーザーの発言\n{user_text}",
-        }
+    final_text = (
+        f"# 現在のレッスン状況（システムからの参考情報）\n{context}\n\n# ユーザーの発言\n{user_text}"
     )
-    return msgs
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=final_text)]))
+    return contents
 
 
 def generate_reply(
@@ -140,32 +142,29 @@ def generate_reply(
         return None
 
     try:
-        import anthropic
+        from google import genai
+        from google.genai import types
     except Exception:  # pragma: no cover - SDK 未導入環境
-        logger.warning("anthropic SDK が見つかりません。ルールベース応答にフォールバックします。")
+        logger.warning("google-genai SDK が見つかりません。ルールベース応答にフォールバックします。")
         return None
 
     try:
-        client = anthropic.Anthropic(
-            api_key=settings.anthropic_api_key,
-            timeout=settings.llm_timeout_sec,
-            max_retries=1,
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.llm_timeout_sec * 1000)),
         )
-        resp = client.messages.create(
+        resp = client.models.generate_content(
             model=settings.llm_model,
-            max_tokens=settings.llm_max_tokens,
-            system=[
-                {
-                    "type": "text",
-                    "text": SYSTEM_PROMPT,
-                    # 不変プレフィックスをキャッシュ（繰り返し会話でコスト削減）
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=_build_messages(state, user_text, history),
+            contents=_build_contents(state, user_text, history),
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                max_output_tokens=settings.llm_max_tokens,
+                temperature=0.7,
+                # 思考を無効化＝コスト/レイテンシ削減（短い返答に十分）
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
         )
-        parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
-        text = "".join(parts).strip()
+        text = (resp.text or "").strip()
         return text or None
     except Exception as e:  # API エラー・ネットワーク・レート制限など
         logger.warning("LLM 応答生成に失敗（フォールバックします）: %s", e)

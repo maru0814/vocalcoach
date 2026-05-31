@@ -32,9 +32,9 @@ services:
       COOKIE_SAMESITE: "lax"
       CORS_ORIGINS: "https://${DOMAIN}"
       ENABLE_YOUTUBE_REFERENCE: ${ENABLE_YOUTUBE_REFERENCE:-false}
-      # ソラ先生の自然言語チャット応答（空ならルールベースにフォールバック）
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5}
+      # ソラ先生の自然言語チャット応答（Gemini。空ならルールベースにフォールバック）
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gemini-flash-lite-latest}
       UPLOADS_DIR: "/data/uploads"
       COACH_AUDIO_DIR: "/data/uploads/coach"
       REFERENCE_CACHE_DIR: "/data/uploads/reference"

@@ -36,12 +36,12 @@ class Settings(BaseSettings):
     # 原曲取得（YouTube）を有効にするか。本番ではデフォルト無効（任意機能）
     enable_youtube_reference: bool = False
 
-    # --- LLM（ソラ先生の自然言語チャット応答）---
-    # 重い音声解析・採点はルールベースのまま。テキスト質問への返答だけ Claude に通す。
+    # --- LLM（ソラ先生の自然言語チャット応答 / Google Gemini）---
+    # 重い音声解析・採点はルールベースのまま。テキスト質問への返答だけ Gemini に通す。
     # APIキー未設定時は自動でルールベース応答にフォールバックする。
-    anthropic_api_key: str | None = None
-    # 安価なモデルを既定に（短い対話なので Haiku で十分）。env で上書き可。
-    llm_model: str = "claude-haiku-4-5"
+    gemini_api_key: str | None = None
+    # 最安クラス＋無料枠ありの Flash-Lite を既定に。env で上書き可。
+    llm_model: str = "gemini-flash-lite-latest"
     llm_max_tokens: int = 400
     llm_timeout_sec: float = 20.0
     # 直近何件の会話履歴を文脈として渡すか
@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.anthropic_api_key and self.anthropic_api_key.strip())
+        return bool(self.gemini_api_key and self.gemini_api_key.strip())
 
     # レート制限（音声解析）: ユーザーあたり window 秒で max 回まで
     rate_limit_window_sec: int = 60
