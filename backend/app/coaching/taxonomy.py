@@ -56,31 +56,105 @@ def _max_rms_decay(analysis: dict) -> Optional[tuple[float, float, float]]:
     return best
 
 
+def _voiced_windows(a: dict) -> list[dict]:
+    pw = a.get("timeline", {}).get("per_window", [])
+    return [w for w in pw if w.get("rms_db") is not None and (w.get("voiced_ratio") or 0) >= 0.5]
+
+
+def _median(xs: list[float]) -> Optional[float]:
+    xs = sorted(xs)
+    n = len(xs)
+    if n == 0:
+        return None
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+
+def _segment_energy(a: dict, start: float, end: float) -> Optional[float]:
+    ws = [w["rms_db"] for w in _voiced_windows(a) if start <= w["t_sec"] <= end]
+    return sum(ws) / len(ws) if ws else None
+
+
+def _real_holds(a: dict) -> list[dict]:
+    """本物の伸ばし（音程が一定に保たれた区間。analyzer が音程で再分割済み）。
+
+    1.2秒以上・歌声帯域(>=100Hz)のものだけ。メロディの一節は含めない。
+    """
+    return [
+        s for s in a.get("timeline", {}).get("sustained_segments", [])
+        if (s.get("duration_sec") or 0) >= 1.2 and (s.get("mean_f0_hz") or 0) >= 100
+    ]
+
+
+def _worst_decaying_hold(a: dict) -> Optional[dict]:
+    """伸ばしの中で最も音量が落ちているものを返す。"""
+    cand = [h for h in _real_holds(a) if h.get("rms_decay_db") is not None]
+    if not cand:
+        return None
+    return min(cand, key=lambda h: h["rms_decay_db"])
+
+
+def projection_point(a: dict) -> Optional[dict]:
+    """張りどころ（曲の山＝最も高い伸ばし）と、そこで声を張れているかを返す。
+
+    判定: 周囲より声量がある(strong) かつ 音程が安定(stable) かつ 裏声に逃げていない。
+    """
+    segs = [
+        s for s in a.get("timeline", {}).get("sustained_segments", [])
+        if (s.get("mean_f0_hz") or 0) >= 220 and s.get("duration_sec", 0) >= 0.5
+    ]
+    if not segs:
+        return None
+    top = max(segs, key=lambda s: s.get("mean_f0_hz") or 0)
+    energy = _segment_energy(a, top["start_sec"], top["end_sec"])
+    med = _median([w["rms_db"] for w in _voiced_windows(a)])
+    f0_std = top.get("f0_std_cents") or 0
+    vt = top.get("voice_type_estimate")
+    strong = energy is not None and med is not None and energy >= med
+    projected = bool(strong and f0_std <= 50 and vt in ("chest", "mix"))
+    return {
+        "start_sec": top["start_sec"],
+        "end_sec": top["end_sec"],
+        "mean_f0_hz": top["mean_f0_hz"],
+        "f0_std_cents": f0_std,
+        "voice_type": vt,
+        "projected": projected,
+    }
+
+
 # --- 個別の diagnose / reason / achieve ---
 
 def _diag_long_tone_decay(a: dict, c: Optional[dict]) -> bool:
-    decay = _max_rms_decay(a)
-    return decay is not None and decay[2] <= -6.0
+    # 本物の伸ばし（音程が一定の区間）の後半で音量が大きく落ちている時だけ発火。
+    # 連続発声＝メロディは「伸ばし」と数えないので、自然な強弱表現は誤検出しない。
+    h = _worst_decaying_hold(a)
+    return h is not None and (h.get("rms_decay_db") or 0) <= -6.0
 
 
 def _reason_long_tone_decay(a: dict, c: Optional[dict]) -> str:
-    decay = _max_rms_decay(a)
-    if not decay:
-        return "長いフレーズで声が小さくなっていく傾向があります。"
-    s, e, d = decay
+    h = _worst_decaying_hold(a)
+    if not h:
+        return "長く伸ばす音の後半で、息の支えが切れて音量が落ちる傾向があります。"
+    s, e, d = h["start_sec"], h["end_sec"], (h.get("rms_decay_db") or 0)
+    note = _note_label(h.get("mean_f0_hz"))
+    dur = h.get("duration_sec") or (e - s)
+    drift = h.get("end_drift_cents")
+    extra = ""
+    if drift is not None and drift <= -40:
+        extra = f"音程も後半で約{abs(drift):.0f}cents（半音の100分の1単位）下がっています。"
     return (
-        f"{s:.0f}〜{e:.0f}秒の長いフレーズで、声の大きさが {abs(d):.0f}dB"
-        f"（けっこう大きい差）下がっています。フレーズの後半で息の支えが切れているサインです。"
+        f"{s:.0f}〜{e:.0f}秒の{note}あたりの伸ばし（約{dur:.0f}秒）で、"
+        f"音量が約{abs(d):.0f}dB下がっています。{extra}"
+        f"フレーズ後半で息の支えが切れているサインです（音量を弱める表現とは別物です）。"
     )
 
 
 def _achieve_long_tone_decay(a: dict) -> bool:
-    decay = _max_rms_decay(a)
-    if decay is None:
-        # 長いフレーズが無い＝基礎練単音なら long_tone_stability で判定
+    h = _worst_decaying_hold(a)
+    if h is None:
+        # 伸ばしが無い（基礎練単音など）なら long_tone_stability で判定
         lts = a.get("long_tone_stability")
         return lts is not None and lts <= 30
-    return decay[2] > -3.0
+    return (h.get("rms_decay_db") or 0) > -3.0
 
 
 def _diag_throat_tension(a: dict, c: Optional[dict]) -> bool:

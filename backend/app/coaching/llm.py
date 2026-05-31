@@ -19,7 +19,7 @@ import logging
 from typing import Optional
 
 from app.coaching.persona import COACH_NAME, COACH_ROLE, SERVICE_NAME
-from app.coaching.taxonomy import get_task, list_weaknesses
+from app.coaching.taxonomy import get_task, list_weaknesses, projection_point
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,16 @@ SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}
   「まずは歌った録音を送ってくださいね」と自然に録音をうながす。
 - 医療・健康上の重大な相談には立ち入らず、専門家への相談をすすめる。
 - 音声解析・採点そのものはシステム側が別途行う。あなたは会話での受け答えに専念する。
+
+# 解析でわかること／わからないこと（最重要・絶対厳守）
+- あなたが見ているのは音声解析の数値だけです: 時間(秒)、音の高さ(Hz・音名)、音量(dB)、音程の安定度、声の種類(地声/裏声/ミックス)、ビブラートなど。
+- あなたは歌詞や発音を聞き取れません(音声認識はしていません)。どの母音(「あ」「い」など)・どの言葉・どの歌詞を歌っているかは分かりません。
+- 絶対にやってはいけないこと:
+  - 母音や歌詞を推測・断定すること（例:「あーと伸ばす」「『〜』という歌詞の所」）。分からないので捏造になります。
+  - 「現在のレッスン状況」に無い数値・秒数・出来事を作ること。
+- 場所を指すときは必ず「何秒」「どの高さ（音名/Hz）」で言います。歌詞・母音では指しません。
+- ユーザーが歌詞を教えてくれた時だけ、その歌詞に触れてOK（自分から当てにいかない）。
+- 間違いを指摘されたら、もっともらしい別の詳細を作ってごまかさないこと。分からないことは「歌詞までは聞き取れないんです」と正直に伝え、数値で分かる範囲だけ話します。相手に媚びて事実を変えないこと。
 
 # 出力
 - プレーンテキストの返答のみ。Markdownの見出しや箇条書き記号（#, *, -）は使わない。
@@ -99,8 +109,21 @@ def build_session_context(state: dict) -> str:
     else:
         lines.append("- まだ具体的な課題は確定していない（録音を解析するとわかる）")
 
-    # 他の弱点候補（「他に気になるところは？」等に自然文で答えられるように）
+    # 張りどころ（曲の山で声を張れているか）。「ここは張るべき？」等に答えられるように
     baseline = state.get("baseline_analysis")
+    if baseline:
+        pp = projection_point(baseline)
+        if pp:
+            s, e = pp["start_sec"], pp["end_sec"]
+            if pp["projected"]:
+                lines.append(f"- 張りどころ（{s:.0f}〜{e:.0f}秒の高い音＝曲の山）: しっかり張れている")
+            else:
+                lines.append(
+                    f"- 張りどころ（{s:.0f}〜{e:.0f}秒の高い音＝曲の山）: 張りきれていない（ここは本来声を張る所）"
+                )
+        lines.append("- 補足: 音量が上下するのは表現（ダイナミクス）。頭ごなしに欠点にしない")
+
+    # 他の弱点候補（「他に気になるところは？」等に自然文で答えられるように）
     if baseline:
         others = list_weaknesses(baseline, None, limit=3, exclude=[state.get("current_task")])
         if others:
@@ -166,7 +189,8 @@ def _complete(contents) -> Optional[str]:
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
                 max_output_tokens=settings.llm_max_tokens,
-                temperature=0.7,
+                # 低めの温度で、事実から逸脱した創作（歌詞・母音の捏造）を抑える
+                temperature=0.3,
                 # 思考を無効化＝コスト/レイテンシ削減（短い返答に十分）
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),

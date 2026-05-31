@@ -14,7 +14,7 @@ from typing import Optional
 
 from app.coaching import feedback_builder, llm
 from app.coaching.persona import COACH_NAME
-from app.coaching.taxonomy import diagnose_task, get_task
+from app.coaching.taxonomy import diagnose_task, get_task, projection_point
 
 
 # フェーズは「行動を縛るゲート」ではなく「現在地を示すソフトラベル」。
@@ -242,6 +242,21 @@ def _llm_or(text_fallback: str, facts: str, instruction: str, history: Optional[
     return reply or text_fallback
 
 
+def _projection_note(analysis: dict) -> Optional[str]:
+    """張りどころ（曲の山）で声を張れているかを、コメント用の事実文にする。"""
+    pp = projection_point(analysis)
+    if not pp:
+        return None
+    s, e = pp["start_sec"], pp["end_sec"]
+    if pp["projected"]:
+        return f"張りどころ（{s:.0f}〜{e:.0f}秒の高い音＝曲の山）では、しっかり声を張れている（ここは褒める）。"
+    esc = {"head": "裏声に逃げ気味", "chest": "地声で力んで", "mix": "やや不安定で"}.get(pp.get("voice_type"), "引き気味で")
+    return (
+        f"張りどころ（{s:.0f}〜{e:.0f}秒の高い音＝曲の山）で、声が{esc}張りきれていない。"
+        f"ここは本来しっかり張る所だと伝えてよい（音量変化そのものは表現なので頭ごなしに否定しない）。"
+    )
+
+
 def _audio_diagnose(
     state: dict, analysis: dict, compare_data: Optional[dict], history: Optional[list[dict]]
 ) -> tuple[list[dict], dict]:
@@ -267,14 +282,18 @@ def _audio_diagnose(
         prac = task["practices"][0]
         reason = (fb_payload.get("today_task") or {}).get("reason", "")
         goods = "／".join(fb_payload.get("good_points", [])[:2])
+        proj = _projection_note(analysis)
         facts = (
             f"歌を解析した。今いちばん伸ばせる弱点は「{task['label']}」。根拠: {reason}\n"
             f"良かった点: {goods}\n"
-            f"おすすめの基礎練: 『{prac['name']}』（目安: {prac.get('checkpoint','')}）。詳しい手順カードはこの後に表示される。"
+            + (f"張りどころの状況: {proj}\n" if proj else "")
+            + f"おすすめの基礎練: 『{prac['name']}』（目安: {prac.get('checkpoint','')}）。詳しい手順カードはこの後に表示される。"
         )
         instr = (
             "解析の結果としてこの弱点をやさしく具体的に伝え、続けてこの基礎練を一緒にやってみようと前向きに促してください。"
-            "良かった点にも一言触れて構いません。"
+            "良かった点や張りどころにも一言触れて構いません。"
+            "音量が上下すること自体は表現（ダイナミクス）なので欠点扱いせず、"
+            "支え不足や張りどころで張れていない場合のみ具体的に指摘してください。"
         )
         fallback = (
             f"今日のポイントは「{task['label']}」ですね。これに効く基礎練を用意したので、一緒にやってみましょう👇"
@@ -289,8 +308,11 @@ def _audio_diagnose(
         ))
         updates = {"phase": LESSON, "current_task": task["id"], "baseline_analysis": analysis, "avoid_task": None}
     else:
-        facts = "歌を解析したが、大きな弱点は見当たらなかった。とても良い状態。"
-        instr = "大きな弱点が無いことを一緒に喜び、さらに伸ばすなら表現の幅づくりに挑戦してみようと前向きに促してください。"
+        proj = _projection_note(analysis)
+        facts = "歌を解析したが、大きな弱点は見当たらなかった。とても良い状態。" + (f"\n{proj}" if proj else "")
+        instr = (
+            "大きな弱点が無いことを一緒に喜び、張りどころに触れつつ、さらに伸ばすなら表現の幅づくりに挑戦してみようと前向きに促してください。"
+        )
         fallback = "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ さらに伸ばすなら、表現の幅づくりに挑戦してみましょう。"
         out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
                              payload=_action_chips("recheck_song", "finish")))
