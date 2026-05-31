@@ -40,6 +40,10 @@ class UpdateSessionRequest(BaseModel):
     song_title: str
 
 
+class ActionRequest(BaseModel):
+    action: str  # more_practice | recheck_song | change_task | finish
+
+
 class ChatResponse(BaseModel):
     phase: str
     current_task: Optional[str] = None

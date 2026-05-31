@@ -22,6 +22,7 @@ class ChatSession(Base):
     phase: Mapped[str] = mapped_column(String(10), nullable=False, default="A")
     current_task: Mapped[str | None] = mapped_column(String(50), nullable=True)
     focus_task: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    avoid_task: Mapped[str | None] = mapped_column(String(50), nullable=True)
     baseline_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     d_retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

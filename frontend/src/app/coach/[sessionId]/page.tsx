@@ -7,6 +7,7 @@ import {
   CoachMessage,
   getCoachSession,
   renameCoachSession,
+  sendCoachAction,
   sendCoachAudio,
   sendCoachText,
 } from "@/lib/api";
@@ -75,6 +76,21 @@ export default function CoachChatPage() {
     }
   }
 
+  async function handleAction(actionId: string) {
+    setBusy(true);
+    setBusyLabel("考えています");
+    setError(null);
+    try {
+      const res = await sendCoachAction(sessionId, actionId);
+      setMessages((m) => [...m, ...res.messages]);
+      setPhase(res.phase);
+    } catch (e) {
+      setError(parseError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleRename(name: string) {
     setSongTitle(name);
     try {
@@ -84,11 +100,10 @@ export default function CoachChatPage() {
     }
   }
 
-  async function handleAudio(blob: Blob, filename: string) {
+  async function handleAudio(blob: Blob, filename: string, kind: "song" | "practice") {
     setBusy(true);
-    setBusyLabel("あなたの歌を聴いています");
+    setBusyLabel(kind === "practice" ? "基礎練を聴いています" : "あなたの歌を聴いています");
     setError(null);
-    const kind = phase === "C" || phase === "D" ? "practice" : "song";
     try {
       const res = await sendCoachAudio(sessionId, blob, kind, filename);
       setMessages((m) => [...m, ...res.messages]);
@@ -135,7 +150,11 @@ export default function CoachChatPage() {
       <div className="scroll-soft flex-1 space-y-4 overflow-y-auto px-3 py-4">
         {messages.map((m, i) => (
           <div key={`${m.id}-${m.type}-${i}`} className="animate-fade-in-up">
-            <MessageBubble m={m} />
+            <MessageBubble
+              m={m}
+              onAction={i === messages.length - 1 ? handleAction : undefined}
+              actionsDisabled={busy}
+            />
           </div>
         ))}
 
@@ -161,7 +180,12 @@ export default function CoachChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      <Composer disabled={busy} onSendText={handleText} onSendAudio={handleAudio} />
+      <Composer
+        disabled={busy}
+        defaultKind={phase === "C" || phase === "D" ? "practice" : "song"}
+        onSendText={handleText}
+        onSendAudio={handleAudio}
+      />
     </div>
   );
 }

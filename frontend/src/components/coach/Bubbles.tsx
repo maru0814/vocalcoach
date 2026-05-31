@@ -212,9 +212,44 @@ function ProgressCard({ p }: { p: Record<string, any> }) {
   );
 }
 
-export function MessageBubble({ m }: { m: CoachMessage }) {
+function ActionChips({
+  actions,
+  onAction,
+  disabled,
+}: {
+  actions: { id: string; icon?: string; label: string }[];
+  onAction?: (id: string) => void;
+  disabled?: boolean;
+}) {
+  if (!actions?.length || !onAction) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {actions.map((a) => (
+        <button
+          key={a.id}
+          disabled={disabled}
+          onClick={() => onAction(a.id)}
+          className="rounded-full border border-brand-200 bg-white px-3 py-1.5 text-sm font-medium text-brand-700 shadow-card transition hover:bg-brand-50 active:scale-95 disabled:opacity-40"
+        >
+          {a.icon ? `${a.icon} ` : ""}{a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function MessageBubble({
+  m,
+  onAction,
+  actionsDisabled,
+}: {
+  m: CoachMessage;
+  onAction?: (id: string) => void;
+  actionsDisabled?: boolean;
+}) {
   const isUser = m.role === "user";
   const isCard = ["feedback", "practice", "judge", "progress"].includes(m.type);
+  const actions = (m.payload as any)?.actions as { id: string; icon?: string; label: string }[] | undefined;
 
   if (isUser) {
     return (
@@ -247,6 +282,7 @@ export function MessageBubble({ m }: { m: CoachMessage }) {
         {m.type === "practice" && m.payload && <PracticeCard p={m.payload as any} />}
         {m.type === "judge" && m.payload && <JudgeCard p={m.payload as any} />}
         {m.type === "progress" && m.payload && <ProgressCard p={m.payload as any} />}
+        {actions && <ActionChips actions={actions} onAction={onAction} disabled={actionsDisabled} />}
       </div>
     </div>
   );

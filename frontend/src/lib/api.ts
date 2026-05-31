@@ -146,3 +146,11 @@ export async function sendCoachAudio(
     body: fd,
   });
 }
+
+export async function sendCoachAction(id: string | number, action: string) {
+  return request<ChatResponse>(`/api/v1/coach/sessions/${id}/action`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+}

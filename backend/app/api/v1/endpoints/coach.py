@@ -16,6 +16,7 @@ from app.db.session import get_db
 from app.deps import get_current_user
 from app.models.coaching import ChatMessage, ChatSession
 from app.schemas.coaching import (
+    ActionRequest,
     ChatResponse,
     MessageOut,
     SendTextRequest,
@@ -68,6 +69,7 @@ def _session_state(s: ChatSession) -> dict:
         "ref_range": s.ref_range,
         "current_task": s.current_task,
         "focus_task": s.focus_task,
+        "avoid_task": s.avoid_task,
         "baseline_analysis": s.baseline_analysis,
         "d_retry_count": s.d_retry_count,
     }
@@ -189,6 +191,24 @@ def send_message(
         if title:
             s.song_title = title
 
+    rows = _persist_coach_messages(db, s.id, msgs)
+    db.commit()
+    for r in rows:
+        db.refresh(r)
+    return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+
+
+@router.post("/sessions/{session_id}/action", response_model=ChatResponse)
+def send_action(
+    session_id: int,
+    body: ActionRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+) -> ChatResponse:
+    """「次にやること」チップ押下を処理（ユーザー主導フロー）。"""
+    s = _get_owned_session(db, session_id, user)
+    msgs, updates = rule_engine.handle_action(_session_state(s), body.action)
+    _apply_updates(s, updates)
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
     for r in rows:

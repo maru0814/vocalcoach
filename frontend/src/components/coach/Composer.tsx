@@ -1,16 +1,20 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Recorder } from "./Recorder";
+
+type Kind = "song" | "practice";
 
 type Props = {
   disabled?: boolean;
+  defaultKind?: Kind;
   onSendText: (text: string) => void;
-  onSendAudio: (blob: Blob, filename: string) => void;
+  onSendAudio: (blob: Blob, filename: string, kind: Kind) => void;
 };
 
-export function Composer({ disabled, onSendText, onSendAudio }: Props) {
+export function Composer({ disabled, defaultKind = "song", onSendText, onSendAudio }: Props) {
   const [text, setText] = useState("");
+  const [kind, setKind] = useState<Kind>(defaultKind);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +23,11 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const MAX_SEC = 60;
+
+  // フェーズが変わってデフォルトの送信種類が変わったら追従
+  useEffect(() => {
+    setKind(defaultKind);
+  }, [defaultKind]);
 
   function submitText() {
     const t = text.trim();
@@ -56,7 +65,7 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
     setRecording(false);
     try {
       const { blob, ext } = await rec.stop();
-      onSendAudio(blob, `recording.${ext}`);
+      onSendAudio(blob, `recording.${ext}`, kind);
     } catch {
       setError("録音に失敗しました");
     }
@@ -72,7 +81,7 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
-    if (f) onSendAudio(f, f.name);
+    if (f) onSendAudio(f, f.name, kind);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -105,6 +114,26 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
   return (
     <div className="glass border-t border-white/40 p-3">
       {error && <div className="mb-2 px-1 text-xs text-rose-600">{error}</div>}
+
+      {/* 送信する録音の種類トグル */}
+      <div className="mb-2 flex items-center gap-2 px-1">
+        <span className="text-[11px] text-slate-400">送る録音:</span>
+        <div className="inline-flex rounded-full bg-slate-100 p-0.5">
+          {([["song", "🎵 曲"], ["practice", "🎙 基礎練"]] as const).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setKind(k)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                kind === k ? "bg-white text-brand-700 shadow-sm" : "text-slate-500"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex items-end gap-2">
         <button
           type="button"

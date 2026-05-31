@@ -452,9 +452,17 @@ TASKS: list[dict] = [
 ]
 
 
-def diagnose_task(analysis: dict, compare_data: Optional[dict]) -> Optional[dict]:
-    """優先度順に診断し、最初に該当した課題を1つ返す。なければ None。"""
+def diagnose_task(
+    analysis: dict, compare_data: Optional[dict], exclude: Optional[list[str]] = None
+) -> Optional[dict]:
+    """優先度順に診断し、最初に該当した課題を1つ返す。なければ None。
+
+    exclude: 除外する課題ID（「別の課題に変える」で直前の課題を避けるため）。
+    """
+    exclude = exclude or []
     for task in sorted(TASKS, key=lambda t: t["priority"]):
+        if task["id"] in exclude:
+            continue
         try:
             if task["diagnose"](analysis, compare_data):
                 return task
