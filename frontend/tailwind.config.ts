@@ -56,6 +56,14 @@ const config: Config = {
         growBar: {
           "0%": { width: "0%" },
         },
+        eq: {
+          "0%,100%": { transform: "scaleY(0.25)" },
+          "50%": { transform: "scaleY(1)" },
+        },
+        popIn: {
+          "0%": { opacity: "0", transform: "translateY(10px) scale(0.96)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
       },
       animation: {
         "fade-in-up": "fadeInUp 0.4s ease-out both",
@@ -63,6 +71,8 @@ const config: Config = {
         "bounce-dot": "bounceDot 1.2s infinite ease-in-out",
         "pulse-ring": "pulseRing 1.5s cubic-bezier(0.2,0.6,0.4,1) infinite",
         "grow-bar": "growBar 0.8s ease-out",
+        eq: "eq 0.8s ease-in-out infinite",
+        "pop-in": "popIn 0.45s cubic-bezier(0.2,0.8,0.3,1) both",
       },
     },
   },

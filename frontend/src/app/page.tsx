@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { Reveal } from "@/components/site/Reveal";
+import { AnimatedDemo } from "@/components/site/AnimatedDemo";
 
 const STATS = [
   { value: "4軸", label: "音程・リズム・表現・総合をAI解析" },
@@ -85,57 +86,6 @@ const JSON_LD = {
   offers: { "@type": "Offer", price: "0", priceCurrency: "JPY" },
 };
 
-function ProductMockup() {
-  return (
-    <div className="relative mx-auto w-full max-w-[300px]">
-      <div className="rounded-[2rem] border-4 border-white/70 bg-white/95 p-3 shadow-2xl">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-gradient text-xs text-white">🎤</span>
-          <div className="leading-none">
-            <div className="text-xs font-bold text-slate-700">トレーナー</div>
-            <div className="text-[9px] text-brand-600">オンライン</div>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-slate-100 px-3 py-2 text-[11px] text-slate-700">
-            8〜13秒で声が小さくなっています。息の支えを作りましょう🎯
-          </div>
-          <div className="rounded-xl bg-white p-2.5 shadow ring-1 ring-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="relative flex h-14 w-14 items-center justify-center">
-                <svg viewBox="0 0 80 80" className="h-14 w-14 -rotate-90">
-                  <circle cx="40" cy="40" r="34" fill="none" stroke="#eef2f7" strokeWidth="8" />
-                  <circle cx="40" cy="40" r="34" fill="none" stroke="#f59e0b" strokeWidth="8" strokeLinecap="round" strokeDasharray="167 214" />
-                </svg>
-                <span className="absolute text-sm font-black text-slate-800">77</span>
-              </div>
-              <div className="flex-1 space-y-1">
-                {[["音程", 85, "#10b981"], ["リズム", 55, "#f43f5e"], ["表現", 88, "#10b981"]].map(([l, v, c]) => (
-                  <div key={l as string} className="flex items-center gap-1.5 text-[9px]">
-                    <span className="w-6 text-slate-500">{l}</span>
-                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                      <span className="block h-1.5 rounded-full" style={{ width: `${v}%`, background: c as string }} />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="ml-auto max-w-[70%] rounded-2xl rounded-br-md bg-brand-gradient px-3 py-2 text-[11px] text-white">
-            ありがとう！やってみる🔥
-          </div>
-        </div>
-      </div>
-      <div className="absolute -right-3 -top-3 animate-floaty rounded-2xl bg-white px-3 py-2 text-xs font-bold text-brand-600 shadow-soft">
-        🎙 録音するだけ
-      </div>
-      <div className="absolute -bottom-4 -left-4 rounded-2xl bg-white px-3 py-2 text-xs font-bold text-emerald-600 shadow-soft">
-        ✨ 1分でFB
-      </div>
-    </div>
-  );
-}
-
 /** Before → After の声の変化ビジュアル */
 function BeforeAfter() {
   const Gauge = ({ v, color }: { v: number; color: string }) => (
@@ -203,13 +153,13 @@ export default function HomePage() {
               </div>
             </div>
             <div className="hidden lg:block">
-              <ProductMockup />
+              <AnimatedDemo />
             </div>
           </div>
         </section>
 
-        <div className="mt-10 lg:hidden">
-          <ProductMockup />
+        <div className="mt-12 lg:hidden">
+          <AnimatedDemo />
         </div>
 
         {/* 信頼バッジ帯（factualな数字） */}
