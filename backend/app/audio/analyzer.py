@@ -93,26 +93,67 @@ def detect_vibrato(f0_hz: np.ndarray, hop_sec: float) -> tuple[float | None, flo
     return peak_freq, float(np.std(centered))
 
 
-def long_tone_stability(f0_hz: np.ndarray, hop_sec: float, min_dur_sec: float = 0.6) -> float | None:
-    voiced_mask = ~np.isnan(f0_hz) & (f0_hz > 0)
-    f0_cents = hz_to_cents(f0_hz)
-    diffs = np.diff(voiced_mask.astype(int))
+def _voiced_runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    """連続して声が出ている区間 [s, e) のリスト。"""
+    diffs = np.diff(mask.astype(int))
     starts = np.where(diffs == 1)[0] + 1
     ends = np.where(diffs == -1)[0] + 1
-    if voiced_mask[0]:
+    if mask[0]:
         starts = np.insert(starts, 0, 0)
-    if voiced_mask[-1]:
-        ends = np.append(ends, len(voiced_mask))
+    if mask[-1]:
+        ends = np.append(ends, len(mask))
+    return list(zip(starts.tolist(), ends.tolist()))
+
+
+def _stable_holds(
+    f0_hz: np.ndarray, s: int, e: int, hop_sec: float, min_frames: int,
+    tol_cents: float = 70.0, min_f0: float = 100.0,
+) -> list[tuple[int, int]]:
+    """連続発声 [s, e) を「音程が一定(±tol_cents)に保たれた区間」に分割する。
+
+    これにより、メロディ（音程が動く一節）を1つの"伸ばし"と誤認しなくなる。
+    各区間が min_frames 以上（＝本物のロングトーン）のものだけ返す。
+    """
+    holds: list[tuple[int, int]] = []
+    cur_start: int | None = None
+    cur_hz: list[float] = []
+
+    def flush(end_idx: int) -> None:
+        if cur_start is not None and cur_hz and (end_idx - cur_start) >= min_frames:
+            holds.append((cur_start, end_idx))
+
+    for fi in range(s, e):
+        v = f0_hz[fi]
+        if np.isnan(v) or v < min_f0:
+            flush(fi)
+            cur_start, cur_hz = None, []
+            continue
+        if cur_start is None:
+            cur_start, cur_hz = fi, [float(v)]
+            continue
+        med = float(np.median(cur_hz))
+        if med > 0 and abs(1200.0 * np.log2(v / med)) > tol_cents:
+            flush(fi)
+            cur_start, cur_hz = fi, [float(v)]
+        else:
+            cur_hz.append(float(v))
+    flush(e)
+    return holds
+
+
+def long_tone_stability(f0_hz: np.ndarray, hop_sec: float, min_dur_sec: float = 0.6) -> float | None:
+    """本物の伸ばし（音程が一定に保たれた区間）の f0 揺れ(cents)平均。なければ None。"""
+    mask = ~np.isnan(f0_hz) & (f0_hz > 0)
+    f0_cents = hz_to_cents(f0_hz)
     min_frames = int(min_dur_sec / hop_sec)
     stds = []
-    for s, e in zip(starts, ends):
-        if e - s < min_frames:
-            continue
-        seg = f0_cents[s:e]
-        seg = seg[~np.isnan(seg)]
-        if len(seg) < min_frames:
-            continue
-        stds.append(float(np.std(seg - np.median(seg))))
+    for run_s, run_e in _voiced_runs(mask):
+        for s, e in _stable_holds(f0_hz, run_s, run_e, hop_sec, min_frames):
+            seg = f0_cents[s:e]
+            seg = seg[~np.isnan(seg)]
+            if len(seg) < min_frames:
+                continue
+            stds.append(float(np.std(seg - np.median(seg))))
     return float(np.mean(stds)) if stds else None
 
 
@@ -152,46 +193,49 @@ def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain
             "spectral_rolloff85_hz": round(float(np.mean(seg_roll)), 0) if len(seg_roll) else None,
         })
 
+    # 「伸ばし」= 連続発声の中で、さらに音程が一定に保たれた区間だけを抽出する。
+    # （メロディの一節を1つの伸ばしと誤認しないため）
     sustained = []
-    diffs = np.diff(voiced_flag.astype(int))
-    starts = np.where(diffs == 1)[0] + 1
-    ends = np.where(diffs == -1)[0] + 1
-    if voiced_flag[0]:
-        starts = np.insert(starts, 0, 0)
-    if voiced_flag[-1]:
-        ends = np.append(ends, len(voiced_flag))
     min_frames = max(1, int(sustain_min_sec / hop_sec))
-    for s, e in zip(starts, ends):
-        if e - s < min_frames:
-            continue
-        seg = f0_hz[s:e]
-        valid = seg[~np.isnan(seg)]
-        if len(valid) < min_frames:
-            continue
-        cents = hz_to_cents(valid)
-        f0_std_cents = float(np.std(cents - np.median(cents)))
-        q = max(1, len(valid) // 4)
-        head_med = float(np.median(valid[:q]))
-        tail_med = float(np.median(valid[-q:]))
-        end_drift = round(1200 * float(np.log2(tail_med / head_med)), 1) if head_med > 0 else None
-        cent_seg = centroid[s:min(e, len(centroid))]
-        cent_avg = float(np.mean(cent_seg)) if len(cent_seg) else None
-        roll_seg = rolloff85[s:min(e, len(rolloff85))]
-        roll_avg = float(np.mean(roll_seg)) if len(roll_seg) else None
-        mean_f0 = float(np.mean(valid))
-        ratio = roll_avg / mean_f0 if (mean_f0 > 0 and roll_avg) else None
-        sustained.append({
-            "start_sec": round(s * hop_sec, 2),
-            "end_sec": round(e * hop_sec, 2),
-            "duration_sec": round((e - s) * hop_sec, 2),
-            "mean_f0_hz": round(mean_f0, 1),
-            "f0_std_cents": round(f0_std_cents, 1),
-            "end_drift_cents": end_drift,
-            "spectral_centroid_hz": round(cent_avg, 0) if cent_avg else None,
-            "spectral_rolloff85_hz": round(roll_avg, 0) if roll_avg else None,
-            "rolloff_to_f0_ratio": round(ratio, 2) if ratio else None,
-            "voice_type_estimate": _voice_type(ratio),
-        })
+    for run_s, run_e in _voiced_runs(voiced_flag):
+        for s, e in _stable_holds(f0_hz, run_s, run_e, hop_sec, min_frames):
+            seg = f0_hz[s:e]
+            valid = seg[~np.isnan(seg)]
+            if len(valid) < min_frames:
+                continue
+            cents = hz_to_cents(valid)
+            f0_std_cents = float(np.std(cents - np.median(cents)))
+            q = max(1, len(valid) // 4)
+            head_med = float(np.median(valid[:q]))
+            tail_med = float(np.median(valid[-q:]))
+            end_drift = round(1200 * float(np.log2(tail_med / head_med)), 1) if head_med > 0 else None
+            cent_seg = centroid[s:min(e, len(centroid))]
+            cent_avg = float(np.mean(cent_seg)) if len(cent_seg) else None
+            roll_seg = rolloff85[s:min(e, len(rolloff85))]
+            roll_avg = float(np.mean(roll_seg)) if len(roll_seg) else None
+            # 伸ばし内の音量減衰（前半→後半）。息の支え判定に使う。
+            rms_decay_db = None
+            rseg = rms[s:min(e, len(rms))]
+            if len(rseg) >= 2:
+                rq = max(1, len(rseg) // 4)
+                head_db = float(20 * np.log10(np.mean(rseg[:rq]) + 1e-9))
+                tail_db = float(20 * np.log10(np.mean(rseg[-rq:]) + 1e-9))
+                rms_decay_db = round(tail_db - head_db, 1)
+            mean_f0 = float(np.mean(valid))
+            ratio = roll_avg / mean_f0 if (mean_f0 > 0 and roll_avg) else None
+            sustained.append({
+                "start_sec": round(s * hop_sec, 2),
+                "end_sec": round(e * hop_sec, 2),
+                "duration_sec": round((e - s) * hop_sec, 2),
+                "mean_f0_hz": round(mean_f0, 1),
+                "f0_std_cents": round(f0_std_cents, 1),
+                "end_drift_cents": end_drift,
+                "rms_decay_db": rms_decay_db,
+                "spectral_centroid_hz": round(cent_avg, 0) if cent_avg else None,
+                "spectral_rolloff85_hz": round(roll_avg, 0) if roll_avg else None,
+                "rolloff_to_f0_ratio": round(ratio, 2) if ratio else None,
+                "voice_type_estimate": _voice_type(ratio),
+            })
 
     return {"window_sec": window_sec, "per_window": per_window, "sustained_segments": sustained}
 

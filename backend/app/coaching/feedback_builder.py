@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.coaching import scoring
+from app.coaching import scoring, taxonomy
 
 
 def _note_name(hz: Optional[float]) -> str:
@@ -28,12 +28,19 @@ def build_good_points(a: dict) -> list[str]:
     j = a.get("f0_jitter_cents")
     if j is not None and j <= 15:
         pts.append(f"音程がとても安定しています（細かい揺れが{j:.0f}cents＝半音の100分の1単位。15以下は上手な証拠）。")
+    # 張りどころ（曲の山）で声を張れているか
+    pp = taxonomy.projection_point(a)
+    if pp and pp["projected"]:
+        pts.append(
+            f"{pp['start_sec']:.0f}〜{pp['end_sec']:.0f}秒の高い音（曲の山になりやすい所）で、"
+            f"声をしっかり張れています。張りどころで前に出せるのは強みです。"
+        )
+    rng = a.get("rms_db_range")
+    if rng is not None and rng >= 12:
+        pts.append("声の大きさに幅（強弱・ダイナミクス）があり、表現としてメリハリをつけられています。")
     vr = a.get("vibrato_rate_hz")
     if vr is not None and 4.0 <= vr <= 7.5:
         pts.append(f"ビブラート（音をゆらす技術）が自然に出せています（秒{vr:.1f}回のゆれ）。")
-    rng = a.get("rms_db_range")
-    if rng is not None and rng >= 12:
-        pts.append(f"声の大きさに幅があり、メリハリのある歌い方ができています。")
     # 声種への言及
     segs = [s for s in a.get("timeline", {}).get("sustained_segments", []) if (s.get("mean_f0_hz") or 0) >= 150]
     if segs:
