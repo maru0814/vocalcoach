@@ -142,6 +142,63 @@ def _achieve_pitch_wobble(a: dict) -> bool:
     return j is not None and j <= 15
 
 
+def _high_segment(a: dict) -> Optional[dict]:
+    """高めの音（おおむねE4=330Hz以上）の伸ばし区間で、最も不安定なものを返す。"""
+    segs = [
+        s for s in a.get("timeline", {}).get("sustained_segments", [])
+        if (s.get("mean_f0_hz") or 0) >= 330 and s.get("duration_sec", 0) >= 0.6
+    ]
+    if not segs:
+        return None
+    return max(segs, key=lambda s: s.get("f0_std_cents") or 0)
+
+
+def _diag_mixed_voice(a: dict, c: Optional[dict]) -> bool:
+    """換声点付近の高音が崩れている＝ミックスボイスの課題。
+
+    高音の伸ばしが揺れている(地声で押して苦しい/裏返る)、または
+    高音区間が地声(chest)で f0 が大きく揺れているケースを拾う。
+    """
+    seg = _high_segment(a)
+    if not seg:
+        return False
+    unstable = (seg.get("f0_std_cents") or 0) >= 50
+    chest_strain = seg.get("voice_type_estimate") == "chest" and (seg.get("f0_std_cents") or 0) >= 40
+    return unstable or chest_strain
+
+
+def _reason_mixed_voice(a: dict, c: Optional[dict]) -> str:
+    seg = _high_segment(a)
+    if not seg:
+        return "高い音をミックスボイスで楽に出せると、サビがぐっと安定します。"
+    vt = {"chest": "地声で押している", "head": "裏声に逃げている", "mix": "ミックス気味"}.get(
+        seg.get("voice_type_estimate"), "力みがある"
+    )
+    return (
+        f"{seg['start_sec']:.0f}〜{seg['end_sec']:.0f}秒の高い音（{_note_label(seg['mean_f0_hz'])}あたり）で、"
+        f"{vt}ようで、音が揺れています（{seg['f0_std_cents']:.0f}cents＝半音の100分の1）。"
+        f"ここをミックスボイス（地声と裏声の中間）で出すと、力まず安定しますよ。"
+    )
+
+
+def _achieve_mixed_voice(a: dict) -> bool:
+    seg = _high_segment(a)
+    if seg is not None:
+        return (seg.get("f0_std_cents") or 999) <= 30
+    # 高音区間が無い基礎練単体なら、ジッターの安定で代替判定
+    j = a.get("f0_jitter_cents")
+    return j is not None and j <= 18
+
+
+def _note_label(hz: Optional[float]) -> str:
+    if not hz:
+        return "—"
+    import math
+    names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    midi = round(69 + 12 * math.log2(hz / 440.0))
+    return f"{names[midi % 12]}{midi // 12 - 1}"
+
+
 def _diag_rhythm_lag(a: dict, c: Optional[dict]) -> bool:
     align = (c or {}).get("alignment") if c else None
     if align and align.get("mean_lag_sec") is not None:
@@ -267,9 +324,50 @@ TASKS: list[dict] = [
         ],
     },
     {
+        "id": "mixed_voice",
+        "label": "ミックスボイスで高音を楽に出す",
+        "priority": 3,
+        "diagnose": _diag_mixed_voice,
+        "reason": _reason_mixed_voice,
+        "achieve": _achieve_mixed_voice,
+        "achieve_label": "高音の伸ばしの揺れが30cents以下（地声で押さず安定）",
+        "practices": [
+            {
+                "name": "① ハミング（鼻に響かせる）",
+                "steps": [
+                    "口を閉じて「ンー」と軽く鼻に響かせる。下の前歯の裏がムズムズ振動する位置を探す。",
+                    "その響きを保ったまま、低めの音から少しずつ高くしていく。",
+                    "力まず、響きが鼻に集まる感覚をつかむ。",
+                ],
+                "checkpoint": "鼻のあたりがムズムズ振動していれば、共鳴の入口に乗れています。",
+                "video": {"title": "ミックスボイスの基礎・ハミング", "url": "https://www.youtube.com/watch?v=H43qzWSYWuE"},
+            },
+            {
+                "name": "② ネイネイ（細い声で換声点をつなぐ）",
+                "steps": [
+                    "ちょっと意地悪な魔女の声で「ねぃ、ねぃ、ねぃ」と言う（鼻にかかった細い声）。",
+                    "その細い声のまま、1音ずつ半音上げていく。",
+                    "地声から裏声に切り替わる『換声点』で、裏返らずスッと細くつなぐのが目標。",
+                ],
+                "checkpoint": "高くしても急に裏返らず、細いまま音がつながれば成功です。",
+                "video": {"title": "ネイネイで換声点をつなぐ練習", "url": "https://www.youtube.com/watch?v=dH1Ouz1gMXI"},
+            },
+            {
+                "name": "③ ナンナン（口の響きで厚みを足す）",
+                "steps": [
+                    "②ができたら「なん、なん、なん」と、口の中を少し広げて言う。",
+                    "鼻の響き（①）を保ったまま、口の響きを足して声に厚みを出す。",
+                    "細さと厚みのバランスがとれた声が、ミックスボイスです。",
+                ],
+                "checkpoint": "細いけれど芯がある声になっていれば、ミックスに近づいています。",
+                "video": {"title": "ミックスボイスの出し方・まとめ", "url": "https://www.youtube.com/watch?v=xpV4GO4kpds"},
+            },
+        ],
+    },
+    {
         "id": "pitch_wobble",
         "label": "音程の細かい揺れをおさえる",
-        "priority": 3,
+        "priority": 4,
         "diagnose": _diag_pitch_wobble,
         "reason": _reason_pitch_wobble,
         "achieve": _achieve_pitch_wobble,
@@ -290,7 +388,7 @@ TASKS: list[dict] = [
     {
         "id": "no_vibrato",
         "label": "ビブラート（音のゆらし）を身につける",
-        "priority": 4,
+        "priority": 5,
         "diagnose": _diag_no_vibrato,
         "reason": _reason_no_vibrato,
         "achieve": _achieve_no_vibrato,
@@ -311,7 +409,7 @@ TASKS: list[dict] = [
     {
         "id": "rhythm_lag",
         "label": "リズム（拍の合わせ方）を整える",
-        "priority": 4,
+        "priority": 6,
         "diagnose": _diag_rhythm_lag,
         "reason": _reason_rhythm_lag,
         "achieve": _achieve_rhythm_lag,
@@ -333,7 +431,7 @@ TASKS: list[dict] = [
     {
         "id": "expression_flat",
         "label": "強弱（ダイナミクス）をつける",
-        "priority": 5,
+        "priority": 7,
         "diagnose": _diag_expression_flat,
         "reason": _reason_expression_flat,
         "achieve": _achieve_expression_flat,

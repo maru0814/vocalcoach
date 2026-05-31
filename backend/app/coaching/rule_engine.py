@@ -13,6 +13,7 @@ import re
 from typing import Optional
 
 from app.coaching import feedback_builder
+from app.coaching.persona import COACH_NAME
 from app.coaching.taxonomy import diagnose_task, get_task
 
 
@@ -42,16 +43,16 @@ def initial_messages() -> list[dict]:
     return [
         coach_msg(
             "text",
-            "こんにちは！ボイストレーナーです🎤 一緒に歌を上達させましょう。\n"
+            f"はじめまして、{COACH_NAME}です😊 あなたの歌、わたしが一緒に磨いていきますね🎤\n"
             "まずはレッスンしたい曲を教えてください。",
         ),
         coach_msg(
             "text",
-            "次の情報を教えてください：\n"
+            "次の3つを教えてもらえますか？\n"
             "① 原曲のYouTube URL\n"
             "② 原曲のどの区間か（例: 0:48-1:13）\n"
-            "③ 特に気になること（高音の力み／音程／リズム／表現／ミックス習得／おまかせ）\n\n"
-            "情報がそろったら、その区間を歌った録音を送ってくださいね"
+            "③ 特に気になること（高音の力み／音程／リズム／表現／ミックスボイス／おまかせ）\n\n"
+            "そろったら、その区間を歌った録音を送ってくださいね。わたしが聴いて、直すところをお伝えします"
             "（録音は丸ごとでOK。区間を2つ書くと『自分の録音 と 原曲』として扱います）。",
         ),
     ]
@@ -95,8 +96,8 @@ def handle_text(state: dict, text: str) -> tuple[list[dict], dict]:
         if have_url and have_range:
             out.append(coach_msg(
                 "text",
-                f"ありがとうございます！原曲と区間（{shown_range}）を確認しました。\n"
-                f"それでは、同じ区間をあなたが歌った録音を送ってください🎤"
+                f"ありがとうございます！原曲と区間（{shown_range}）を確認しました😊\n"
+                f"それでは、同じ区間をあなたが歌った録音を送ってくださいね🎤"
                 f"（下のマイクボタンで録音、または📎でファイルを送れます）",
             ))
         else:
@@ -114,7 +115,7 @@ def handle_text(state: dict, text: str) -> tuple[list[dict], dict]:
     # Phase B 以降のテキストは補助的な相づち
     out.append(coach_msg(
         "text",
-        "了解です。続けて、録音を送っていただければ解析します🎤",
+        "うんうん、いいですね。続けて録音を送ってもらえたら、わたしが聴いてみますね🎤",
     ))
     return out, updates
 
@@ -140,18 +141,18 @@ def handle_audio_phase_b(state: dict, analysis: dict, compare_data: Optional[dic
     if task:
         out.append(coach_msg(
             "text",
-            f"今日のポイントは「{task['label']}」です。これに効く基礎練をやってみましょう👇",
+            f"今日のポイントは「{task['label']}」ですね。これに効く基礎練を用意したので、一緒にやってみましょう👇",
         ))
         out.append(coach_msg("practice", payload=feedback_builder.build_practice_payload(task)))
         out.append(coach_msg(
             "text",
-            "数日やってみたら、基礎練の録音を送ってください。できているかチェックします！",
+            "何日か続けたら、基礎練の録音を送ってくださいね。ちゃんとできているか、わたしがチェックします😊",
         ))
         updates = {"phase": PHASE_C, "current_task": task["id"], "baseline_analysis": analysis}
     else:
         out.append(coach_msg(
             "text",
-            "大きな弱点は見当たりませんでした！とても良い状態です。"
+            "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ "
             "さらに伸ばすなら、表現の幅づくりに挑戦してみましょう。",
         ))
         updates = {"phase": DONE, "baseline_analysis": analysis}
@@ -172,8 +173,8 @@ def handle_audio_phase_d(state: dict, analysis: dict) -> tuple[list[dict], dict]
     if judge["result"] == "pass":
         out.append(coach_msg(
             "text",
-            "クリアです！🎉 では、最初の曲の同じ区間をもう一度歌って録音してください。"
-            "どれくらい良くなったか比べてみましょう。",
+            "クリアです！🎉 よくがんばりましたね。"
+            "では、最初の曲の同じ区間をもう一度歌って録音してみましょう。どれくらい良くなったか、一緒に比べてみますね😊",
         ))
         updates = {"phase": PHASE_E, "d_retry_count": 0}
     else:
@@ -181,16 +182,16 @@ def handle_audio_phase_d(state: dict, analysis: dict) -> tuple[list[dict], dict]
         if retry >= 3:
             out.append(coach_msg(
                 "text",
-                "同じ練習での達成が難しいようなので、別の角度から取り組み直しましょう。"
-                "もう一度、曲の録音を送ってください。課題を見直します。",
+                "うーん、この練習だと少し難しいみたいですね。焦らず、別の角度から取り組み直しましょう💪 "
+                "もう一度、曲の録音を送ってください。課題を見直しますね。",
             ))
             updates = {"phase": PHASE_B, "d_retry_count": 0}
         else:
             tip = task["practices"][0]
             out.append(coach_msg(
                 "text",
-                f"もう少しです。『{tip['name']}』のチェックポイント（{tip.get('checkpoint','')}）"
-                f"を意識して、もう一度録ってみてください。",
+                f"あと少しです！『{tip['name']}』のチェックポイント（{tip.get('checkpoint','')}）"
+                f"を意識して、もう一度録ってみてください。きっと良くなりますよ😊",
             ))
             updates = {"d_retry_count": retry}
     return out, updates
@@ -208,20 +209,20 @@ def handle_audio_phase_e(state: dict, analysis: dict) -> tuple[list[dict], dict]
         if next_task:
             out.append(coach_msg(
                 "text",
-                f"次は「{next_task['label']}」に挑戦してみましょう。基礎練を用意しました👇",
+                f"いい調子ですね😊 次は「{next_task['label']}」に挑戦してみましょう。基礎練を用意しました👇",
             ))
             out.append(coach_msg("practice", payload=feedback_builder.build_practice_payload(next_task)))
             updates = {"phase": PHASE_C, "current_task": next_task["id"], "baseline_analysis": analysis}
         else:
             out.append(coach_msg(
                 "text",
-                "弱点がかなり減りました！素晴らしいです。今日はここまでにして、また別の曲でも挑戦しましょう🎶",
+                "弱点がかなり減りましたね！素晴らしいです✨ 今日はここまでにして、また別の曲でも一緒にやりましょう🎶",
             ))
             updates = {"phase": DONE}
     else:
         out.append(coach_msg(
             "text",
-            "今回はまだ大きな変化が出ていません。基礎練の量を増やすか、別の課題から取り組み直しましょう。"
+            "今回はまだ大きな変化は出ていないみたいですね。でも大丈夫、基礎練を少し増やすか、別の課題から取り組み直しましょう💪 "
             "もう一度、課題を見直すために録音を送ってください。",
         ))
         updates = {"phase": PHASE_B}

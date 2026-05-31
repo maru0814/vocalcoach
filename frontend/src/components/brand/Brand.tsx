@@ -33,28 +33,6 @@ export function BrandWordmark({ size = 40, sub = true }: { size?: number; sub?: 
   );
 }
 
-/** トレーナーのアバター（チャットのコーチ発話の左に出す） */
-export function TrainerAvatar({ size = 36 }: { size?: number }) {
-  return (
-    <span
-      className="relative inline-flex shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-soft"
-      style={{ width: size, height: size }}
-      aria-hidden
-    >
-      <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="none">
-        <rect x="9" y="2" width="6" height="12" rx="3" fill="white" />
-        <path
-          d="M5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7"
-          stroke="white"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
-  );
-}
-
 export function Pill({ children, tone = "brand" }: { children: ReactNode; tone?: "brand" | "rose" | "emerald" | "amber" | "slate" }) {
   const tones: Record<string, string> = {
     brand: "bg-brand-50 text-brand-700",

@@ -13,7 +13,7 @@ import {
 import { MessageBubble } from "@/components/coach/Bubbles";
 import { PhaseStepper } from "@/components/coach/PhaseStepper";
 import { Composer } from "@/components/coach/Composer";
-import { TrainerAvatar } from "@/components/brand/Brand";
+import { CoachAvatar, COACH_NAME, COACH_ROLE } from "@/components/character/Coach";
 
 export default function CoachChatPage() {
   const params = useParams();
@@ -120,10 +120,10 @@ export default function CoachChatPage() {
           ← 一覧
         </Link>
         <div className="flex items-center gap-2">
-          <TrainerAvatar size={28} />
+          <CoachAvatar size={30} ring />
           <div className="leading-none">
-            <div className="text-sm font-bold text-slate-800">トレーナー</div>
-            <div className="text-[10px] text-brand-600">オンライン</div>
+            <div className="text-sm font-bold text-slate-800">{COACH_NAME}</div>
+            <div className="text-[10px] text-brand-600">{COACH_ROLE}・オンライン</div>
           </div>
         </div>
         <span className="w-10" />
@@ -141,7 +141,7 @@ export default function CoachChatPage() {
 
         {busy && (
           <div className="flex items-end gap-2">
-            <TrainerAvatar size={32} />
+            <CoachAvatar size={32} />
             <div className="glass flex items-center gap-2 rounded-2xl rounded-bl-md px-4 py-3 shadow-card">
               <span className="text-xs text-slate-400">{busyLabel}</span>
               <span className="flex gap-1">

@@ -1,7 +1,7 @@
 "use client";
 
 import { CoachMessage, COACH_API_BASE } from "@/lib/api";
-import { TrainerAvatar } from "@/components/brand/Brand";
+import { CoachAvatar } from "@/components/character/Coach";
 
 function scoreColor(v: number) {
   if (v >= 80) return "#10b981"; // emerald
@@ -231,7 +231,7 @@ export function MessageBubble({ m }: { m: CoachMessage }) {
 
   return (
     <div className="flex items-end gap-2">
-      <TrainerAvatar size={32} />
+      <CoachAvatar size={32} />
       <div className={isCard ? "min-w-0 max-w-[88%] flex-1" : "max-w-[82%]"}>
         {m.type === "text" && (
           <div className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-700 shadow-card ring-1 ring-slate-100">

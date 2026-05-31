@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
 
 /**
  * 「使っている様子」を自動再生するデモ。
@@ -64,10 +65,10 @@ export function AnimatedDemo() {
         <div className="rounded-[2.2rem] border-4 border-white/70 bg-white/95 p-3 shadow-2xl">
         {/* ヘッダー */}
         <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-gradient text-xs text-white">🎤</span>
+          <CoachAvatar size={28} />
           <div className="leading-none">
-            <div className="text-xs font-bold text-slate-700">トレーナー</div>
-            <div className="text-[9px] text-brand-600">オンライン</div>
+            <div className="text-xs font-bold text-slate-700">{COACH_NAME}</div>
+            <div className="text-[9px] text-brand-600">AIボーカルコーチ・オンライン</div>
           </div>
         </div>
 
@@ -92,7 +93,7 @@ export function AnimatedDemo() {
                   />
                 ))}
               </div>
-              <div className="text-[10px] text-slate-400">サビを歌っています…</div>
+              <div className="text-[10px] text-slate-400">サビの高音を歌っています…</div>
             </div>
           )}
 
@@ -113,7 +114,7 @@ export function AnimatedDemo() {
           {/* 解析中 typing */}
           {step === 2 && (
             <div key="typing" className="flex animate-pop-in items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-gradient text-[10px] text-white">🎤</span>
+              <CoachAvatar size={28} />
               <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md bg-slate-100 px-3 py-2.5">
                 <span className="text-[10px] text-slate-400">解析しています</span>
                 <span className="flex gap-1">
@@ -128,10 +129,10 @@ export function AnimatedDemo() {
           {/* スコアカード */}
           {step >= 3 && (
             <div key="score" className="flex animate-pop-in items-end gap-2">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[10px] text-white">🎤</span>
+              <CoachAvatar size={28} />
               <div className="flex-1 rounded-2xl rounded-bl-md bg-white p-2.5 shadow ring-1 ring-slate-100">
                 <div className="mb-1.5 text-[11px] font-medium text-slate-600">
-                  8〜13秒で声が小さくなっています。息の支えを作りましょう🎯
+                  サビの高音、地声で押していて裏返りそうですね。ミックスボイスで楽に出しましょう🎯
                 </div>
                 <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-2">
                   <div className="relative flex h-14 w-14 items-center justify-center">
@@ -162,12 +163,16 @@ export function AnimatedDemo() {
             </div>
           )}
 
-          {/* 基礎練の提案 */}
+          {/* 基礎練の提案（具体的な3ステップ指導） */}
           {step >= 4 && (
             <div key="practice" className="flex animate-pop-in items-end gap-2">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[10px] text-white">🎤</span>
-              <div className="rounded-2xl rounded-bl-md bg-gradient-to-r from-brand-50 to-pink-50 px-3 py-2 text-[11px] text-slate-700">
-                今日は<span className="font-bold text-brand-700">「スーッ呼吸」</span>をやってみましょう。お手本動画も置いておきますね🎬
+              <CoachAvatar size={28} />
+              <div className="rounded-2xl rounded-bl-md bg-gradient-to-r from-brand-50 to-pink-50 px-3 py-2 text-[11px] leading-relaxed text-slate-700">
+                コツは3ステップ😊<br />
+                <span className="font-bold text-brand-700">① ハミング</span>で鼻に響かせる →{" "}
+                <span className="font-bold text-brand-700">②「ネイネイ」</span>で細く高音へ →{" "}
+                <span className="font-bold text-brand-700">③「ナンナン」</span>で厚みを足す。<br />
+                換声点がスッとつながりますよ🎬
               </div>
             </div>
           )}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { Reveal } from "@/components/site/Reveal";
 import { AnimatedDemo } from "@/components/site/AnimatedDemo";
+import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
 
 const STATS = [
   { value: "4軸", label: "音程・リズム・表現・総合をAI解析" },
@@ -129,14 +130,15 @@ export default function HomePage() {
           <div className="absolute -bottom-20 left-1/4 h-80 w-80 rounded-full bg-pink-300/25 blur-3xl" />
           <div className="relative z-10 grid items-center gap-10 lg:grid-cols-2">
             <div className="max-w-xl">
-              <p className="mb-4 inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
-                🎤 AIボーカルトレーナー
+              <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
+                <span className="inline-flex"><CoachAvatar size={18} /></span>
+                AIボーカルコーチ {COACH_NAME}が担当
               </p>
               <h1 className="text-4xl font-black leading-[1.12] sm:text-6xl">
                 その歌、<br className="hidden sm:block" />あと一歩。
               </h1>
               <p className="mt-4 text-lg font-bold text-white/95 sm:text-xl">
-                録って送るだけ。AIが、今日直すところを教えます。
+                録って送るだけ。{COACH_NAME}が、今日直すところを教えます。
               </p>
               <p className="mt-4 max-w-md text-white/85">
                 音程・リズム・表現を解析して、あなた専用の基礎練メニューまで

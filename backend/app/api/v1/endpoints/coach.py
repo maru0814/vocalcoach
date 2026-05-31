@@ -275,8 +275,8 @@ def send_audio(
             if analyzer.is_same_source(user_analysis, ref_analysis):
                 same_msg = {
                     "role": "coach", "type": "text",
-                    "text": "ご提出いただいた録音が原曲と同じ音源のようです🎤 "
-                            "あなたが歌った録音を送ってくださいね。",
+                    "text": "あれ、いただいた録音が原曲と同じ音源みたいです🎤 "
+                            "あなた自身が歌った録音を送ってもらえますか？そこからが本番ですよ😊",
                 }
                 rows = _persist_coach_messages(db, s.id, [same_msg])
                 db.commit()
