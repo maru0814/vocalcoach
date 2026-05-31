@@ -182,7 +182,7 @@ export default function CoachChatPage() {
 
       <Composer
         disabled={busy}
-        defaultKind={phase === "C" || phase === "D" ? "practice" : "song"}
+        defaultKind={phase === "practice" ? "practice" : "song"}
         onSendText={handleText}
         onSendAudio={handleAudio}
       />

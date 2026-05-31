@@ -471,6 +471,34 @@ def diagnose_task(
     return None
 
 
+def list_weaknesses(
+    analysis: dict,
+    compare_data: Optional[dict] = None,
+    limit: int = 3,
+    exclude: Optional[list[str]] = None,
+) -> list[dict]:
+    """該当する弱点を優先度順に最大 limit 件返す。
+
+    「他に気になるところは？」への回答や、LLM文脈への候補注入に使う。
+    各要素: {"id", "label", "reason"}。reason は秒数・数値を含む人間向け説明。
+    """
+    exclude = exclude or []
+    out: list[dict] = []
+    for task in sorted(TASKS, key=lambda t: t["priority"]):
+        if task["id"] in exclude:
+            continue
+        try:
+            if not task["diagnose"](analysis, compare_data):
+                continue
+            reason = task["reason"](analysis, compare_data)
+        except Exception:
+            continue
+        out.append({"id": task["id"], "label": task["label"], "reason": reason})
+        if len(out) >= limit:
+            break
+    return out
+
+
 def get_task(task_id: str) -> Optional[dict]:
     for t in TASKS:
         if t["id"] == task_id:

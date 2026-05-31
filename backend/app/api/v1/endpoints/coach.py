@@ -250,6 +250,9 @@ def send_audio(
 ) -> ChatResponse:
     s = _get_owned_session(db, session_id, user)
 
+    # 録音を追加する前に、これまでの会話履歴を LLM 用に取得（コメント生成の文脈に使う）
+    history = _history_for_llm(s)
+
     # --- rate limit（CPU負荷の高い解析の悪用防止）---
     if not check_rate_limit(
         f"audio:{user.id}", settings.rate_limit_max_audio, settings.rate_limit_window_sec
@@ -349,7 +352,9 @@ def send_audio(
     if alignment is not None:
         compare_data = {**(compare_data or {}), "alignment": alignment}
 
-    msgs, updates = rule_engine.handle_audio(_session_state(s), user_analysis, compare_data, kind)
+    msgs, updates = rule_engine.handle_audio(
+        _session_state(s), user_analysis, compare_data, kind, history=history
+    )
     _apply_updates(s, updates)
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()

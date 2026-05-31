@@ -17,7 +17,12 @@ from app.coaching.persona import COACH_NAME
 from app.coaching.taxonomy import diagnose_task, get_task
 
 
+# フェーズは「行動を縛るゲート」ではなく「現在地を示すソフトラベル」。
+#   A      = 初回（弱点さがし前）
+#   LESSON = 練習中（診断後。基礎練・歌い直し・質問を自由に行き来）
+#   done   = ひと区切り
 PHASE_A, PHASE_B, PHASE_C, PHASE_D, PHASE_E, DONE = "A", "B", "C", "D", "E", "done"
+LESSON = "practice"
 
 YOUTUBE_RE = re.compile(r"https?://[^\s]*(?:youtube\.com|youtu\.be)[^\s]*")
 RANGE_RE = re.compile(r"(\d{1,2}:\d{2}|\d+(?:\.\d+)?)\s*[-–~〜]\s*(\d{1,2}:\d{2}|\d+(?:\.\d+)?)")
@@ -231,8 +236,16 @@ def handle_text(
     return out, updates
 
 
-def handle_audio_phase_b(state: dict, analysis: dict, compare_data: Optional[dict]) -> tuple[list[dict], dict]:
-    """Phase B: 課題発見。FB + 課題 + 基礎練を返す。"""
+def _llm_or(text_fallback: str, facts: str, instruction: str, history: Optional[list[dict]]) -> str:
+    """LLM で自然文コメントを生成。失敗時はテンプレ文へフォールバック。"""
+    reply = llm.generate_coach_comment(facts, instruction, history)
+    return reply or text_fallback
+
+
+def _audio_diagnose(
+    state: dict, analysis: dict, compare_data: Optional[dict], history: Optional[list[dict]]
+) -> tuple[list[dict], dict]:
+    """弱点診断（初回 or 課題未確定）。FBカード + 自然文 + 基礎練カード + 任意チップ。"""
     out: list[dict] = []
     avoid = state.get("avoid_task")
     exclude = [avoid] if avoid else []
@@ -251,123 +264,140 @@ def handle_audio_phase_b(state: dict, analysis: dict, compare_data: Optional[dic
     out.append(coach_msg("feedback", payload=fb_payload))
 
     if task:
-        out.append(coach_msg(
-            "text",
-            f"今日のポイントは「{task['label']}」ですね。これに効く基礎練を用意したので、一緒にやってみましょう👇",
-        ))
+        prac = task["practices"][0]
+        reason = (fb_payload.get("today_task") or {}).get("reason", "")
+        goods = "／".join(fb_payload.get("good_points", [])[:2])
+        facts = (
+            f"歌を解析した。今いちばん伸ばせる弱点は「{task['label']}」。根拠: {reason}\n"
+            f"良かった点: {goods}\n"
+            f"おすすめの基礎練: 『{prac['name']}』（目安: {prac.get('checkpoint','')}）。詳しい手順カードはこの後に表示される。"
+        )
+        instr = (
+            "解析の結果としてこの弱点をやさしく具体的に伝え、続けてこの基礎練を一緒にやってみようと前向きに促してください。"
+            "良かった点にも一言触れて構いません。"
+        )
+        fallback = (
+            f"今日のポイントは「{task['label']}」ですね。これに効く基礎練を用意したので、一緒にやってみましょう👇"
+        )
+        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
         out.append(coach_msg("practice", payload=feedback_builder.build_practice_payload(task)))
         out.append(coach_msg(
             "text",
-            "練習できたら基礎練の録音を送ってください。別のことをしたいときは下のボタンからどうぞ😊",
+            "やってみたら基礎練の録音を、もう同じ箇所を歌い直して確かめたいなら曲の録音を送ってください。"
+            "下のボタンからも選べます😊",
             payload=_action_chips("more_practice", "recheck_song", "change_task", "finish"),
         ))
-        # avoid はここで消費（次の診断ではリセット）
-        updates = {"phase": PHASE_C, "current_task": task["id"], "baseline_analysis": analysis, "avoid_task": None}
+        updates = {"phase": LESSON, "current_task": task["id"], "baseline_analysis": analysis, "avoid_task": None}
     else:
-        out.append(coach_msg(
-            "text",
-            "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ "
-            "さらに伸ばすなら、表現の幅づくりに挑戦してみましょう。",
-            payload=_action_chips("recheck_song", "finish"),
-        ))
+        facts = "歌を解析したが、大きな弱点は見当たらなかった。とても良い状態。"
+        instr = "大きな弱点が無いことを一緒に喜び、さらに伸ばすなら表現の幅づくりに挑戦してみようと前向きに促してください。"
+        fallback = "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ さらに伸ばすなら、表現の幅づくりに挑戦してみましょう。"
+        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
+                             payload=_action_chips("recheck_song", "finish")))
         updates = {"phase": DONE, "baseline_analysis": analysis, "avoid_task": None}
     return out, updates
 
 
-def handle_audio_phase_d(state: dict, analysis: dict) -> tuple[list[dict], dict]:
-    """Phase D: 基礎練の達成判定。"""
+def _audio_practice_check(
+    state: dict, analysis: dict, history: Optional[list[dict]]
+) -> tuple[list[dict], dict]:
+    """基礎練の達成判定（出来を見てほしい人向け）。judgeカード + 自然文 + 任意チップ。"""
     out: list[dict] = []
     task = get_task(state.get("current_task"))
     if not task:
-        out.append(coach_msg("text", "課題情報が見つかりませんでした。最初からやり直しましょう。"))
-        return out, {"phase": PHASE_A}
+        return _audio_diagnose(state, analysis, None, history)
 
     judge = feedback_builder.build_judge_payload(task, analysis)
     out.append(coach_msg("judge", payload=judge))
+    prac = task["practices"][0]
 
     if judge["result"] == "pass":
-        out.append(coach_msg(
-            "text",
-            "クリアです！🎉 よくがんばりましたね。次はどうしますか？😊",
-            payload=_action_chips("recheck_song", "more_practice", "change_task", "finish"),
-        ))
-        updates = {"phase": PHASE_E, "d_retry_count": 0}
+        facts = f"基礎練『{task['label']}』の達成判定: 達成（基準「{task['achieve_label']}」をクリア）。"
+        instr = (
+            "基礎練ができていることを一緒に喜んでください。そのうえで、同じ箇所を歌い直して治ったか確かめるか、"
+            "別のことをするか、ユーザーが選べるよう自然に促してください。"
+        )
+        fallback = "クリアです！🎉 よくがんばりましたね。同じ箇所を歌い直して確かめてもいいですよ😊"
+        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
+                             payload=_action_chips("recheck_song", "more_practice", "change_task", "finish")))
     else:
-        retry = state.get("d_retry_count", 0) + 1
-        if retry >= 3:
-            out.append(coach_msg(
-                "text",
-                "うーん、この練習だと少し難しいみたいですね。焦らず進めましょう💪 次はどうしますか？",
-                payload=_action_chips("more_practice", "recheck_song", "change_task", "finish"),
-            ))
-            updates = {"phase": PHASE_D, "d_retry_count": 0}
-        else:
-            tip = task["practices"][0]
-            out.append(coach_msg(
-                "text",
-                f"あと少しです！『{tip['name']}』のチェックポイント（{tip.get('checkpoint','')}）"
-                f"を意識して、もう一度録ってみてください。きっと良くなりますよ😊",
-                payload=_action_chips("more_practice", "recheck_song", "change_task"),
-            ))
-            updates = {"d_retry_count": retry}
-    return out, updates
+        facts = (
+            f"基礎練『{task['label']}』の達成判定: まだ達成していない。"
+            f"基準「{task['achieve_label']}」。チェックポイント: {prac.get('checkpoint','')}。"
+        )
+        instr = "あと少しであることを前向きに伝え、チェックポイントを意識してもう一度試してみようと優しく励ましてください。"
+        fallback = (
+            f"あと少しです！『{prac['name']}』のチェックポイント（{prac.get('checkpoint','')}）"
+            f"を意識して、もう一度録ってみてください😊"
+        )
+        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
+                             payload=_action_chips("more_practice", "recheck_song", "change_task")))
+    return out, {"phase": LESSON}
 
 
-def handle_audio_phase_e(state: dict, analysis: dict) -> tuple[list[dict], dict]:
-    """Phase E: 初回との比較・改善判定。"""
+def _audio_recheck(
+    state: dict, analysis: dict, history: Optional[list[dict]]
+) -> tuple[list[dict], dict]:
+    """同じ箇所の歌い直し → 初回との改善判定（基礎練確認を飛ばしたい人向け）。"""
     out: list[dict] = []
     baseline = state.get("baseline_analysis") or {}
-    next_task = diagnose_task(analysis, None)
+    next_task = diagnose_task(analysis, None, exclude=[state.get("current_task")])
     progress = feedback_builder.build_progress_payload(baseline, analysis, next_task)
     out.append(coach_msg("progress", payload=progress))
 
     if progress["improved"]:
+        praise = progress.get("praise") or "最初より良くなっています。"
         if next_task:
-            out.append(coach_msg(
-                "text",
-                f"いい調子ですね😊 次は「{next_task['label']}」がおすすめです。続けますか？それとも別のことをしますか？",
-            ))
+            facts = (
+                f"歌い直しの結果、最初の録音より改善した。{praise}\n"
+                f"次に伸ばせそうな弱点: 「{next_task['label']}」（根拠: {next_task['reason'](analysis, None)}）。"
+            )
+            instr = (
+                "良くなった点を具体的に伝えて一緒に喜び、次のおすすめ課題をやんわり提案してください。"
+                "続けるか別のことをするかはユーザーが選べる雰囲気で。"
+            )
+            fallback = f"いい調子ですね😊 次は「{next_task['label']}」がおすすめです。続けますか？それとも別のことをしますか？"
+            out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
             out.append(coach_msg("practice", payload=feedback_builder.build_practice_payload(next_task)))
-            out.append(coach_msg(
-                "text", "下のボタンから選べます👇",
-                payload=_action_chips("more_practice", "recheck_song", "change_task", "finish"),
-            ))
-            updates = {"phase": PHASE_C, "current_task": next_task["id"], "baseline_analysis": analysis}
+            out.append(coach_msg("text", "下のボタンからも選べます👇",
+                                 payload=_action_chips("more_practice", "recheck_song", "change_task", "finish")))
+            updates = {"phase": LESSON, "current_task": next_task["id"], "baseline_analysis": analysis}
         else:
-            out.append(coach_msg(
-                "text",
-                "弱点がかなり減りましたね！素晴らしいです✨ 今日はここまででも、別の曲でも続けられますよ🎶",
-                payload=_action_chips("recheck_song", "finish"),
-            ))
+            facts = f"歌い直しの結果、最初より改善し、大きな弱点はほぼ無くなった。{praise}"
+            instr = "改善を大いに喜び、今日はここまででも別の曲でも続けられると前向きに伝えてください。"
+            fallback = "弱点がかなり減りましたね！素晴らしいです✨ 今日はここまででも、別の曲でも続けられますよ🎶"
+            out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
+                                 payload=_action_chips("recheck_song", "finish")))
             updates = {"phase": DONE}
     else:
-        out.append(coach_msg(
-            "text",
-            "今回はまだ大きな変化は出ていないみたいですね。でも大丈夫、もう少し基礎練するか、別の課題に変えてみましょう💪",
-            payload=_action_chips("more_practice", "change_task", "recheck_song", "finish"),
-        ))
-        updates = {"phase": PHASE_C}
+        facts = "歌い直したが、初回と比べて大きな改善はまだ出ていない。"
+        instr = "落ち込ませないよう励まし、もう少し基礎練を続けるか、別の課題に変えるかを優しく提案してください。"
+        fallback = "今回はまだ大きな変化は出ていないみたいですね。でも大丈夫、もう少し基礎練するか、別の課題に変えてみましょう💪"
+        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
+                             payload=_action_chips("more_practice", "change_task", "recheck_song", "finish")))
+        updates = {"phase": LESSON}
     return out, updates
 
 
-def handle_audio(state: dict, analysis: dict, compare_data: Optional[dict], kind: str) -> tuple[list[dict], dict]:
-    """音声受信時のディスパッチ。kind は frontend が明示送信（"song" | "practice"）。
+def handle_audio(
+    state: dict, analysis: dict, compare_data: Optional[dict], kind: str,
+    history: Optional[list[dict]] = None,
+) -> tuple[list[dict], dict]:
+    """音声受信時のディスパッチ（意図駆動・フェーズ非依存）。
 
-    - practice: 練習確認（Phase D）。current_task があればそれを判定。
-    - song:    フェーズに応じて、改善判定(E) または 課題発見(B)。
+    kind は frontend が明示送信（"song" | "practice"）。流れは縛らない:
+    - 基礎練 + 課題あり    → 達成判定（出来を見たい人）
+    - 曲 + 課題&基準あり   → 改善判定（歌い直して治ったか見たい人。基礎練確認を飛ばしてOK）
+    - それ以外（初回など） → 弱点診断
     """
-    phase = state.get("phase", PHASE_A)
+    has_task = bool(state.get("current_task"))
+    has_baseline = bool(state.get("baseline_analysis"))
 
-    if kind == "practice":
-        if state.get("current_task"):
-            return handle_audio_phase_d(state, analysis)
-        # 課題が無いのに基礎練が来た → まず曲として診断
-        return handle_audio_phase_b(state, analysis, compare_data)
-
-    # kind == "song"
-    if phase == PHASE_E and state.get("baseline_analysis"):
-        return handle_audio_phase_e(state, analysis)
-    return handle_audio_phase_b(state, analysis, compare_data)
+    if kind == "practice" and has_task:
+        return _audio_practice_check(state, analysis, history)
+    if kind == "song" and has_task and has_baseline:
+        return _audio_recheck(state, analysis, history)
+    return _audio_diagnose(state, analysis, compare_data, history)
 
 
 def handle_action(state: dict, action_id: str) -> tuple[list[dict], dict]:
@@ -381,7 +411,7 @@ def handle_action(state: dict, action_id: str) -> tuple[list[dict], dict]:
                 "text",
                 f"いいですね！『{task['label']}』の基礎練を、もう一度録音して送ってください🎙",
             )],
-            {"phase": PHASE_C},
+            {"phase": LESSON},
         )
     if action_id == "recheck_song":
         return (
@@ -389,16 +419,17 @@ def handle_action(state: dict, action_id: str) -> tuple[list[dict], dict]:
                 "text",
                 "では、曲の同じところをもう一度歌って録音してください🎵 最初とどれくらい変わったか比べてみますね😊",
             )],
-            {"phase": PHASE_E},
+            {"phase": LESSON},
         )
     if action_id == "change_task":
         avoid = state.get("current_task")
+        # current_task をクリア → 次の曲の録音で別の弱点を診断（前の課題は除外）
         return (
             [coach_msg(
                 "text",
                 "わかりました！別のポイントを探しますね。もう一度、曲を歌った録音を送ってください🎵",
             )],
-            {"phase": PHASE_B, "avoid_task": avoid, "focus_task": None},
+            {"phase": LESSON, "avoid_task": avoid, "current_task": None, "focus_task": None},
         )
     if action_id == "finish":
         return (

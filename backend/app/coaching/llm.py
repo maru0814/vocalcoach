@@ -19,7 +19,7 @@ import logging
 from typing import Optional
 
 from app.coaching.persona import COACH_NAME, COACH_ROLE, SERVICE_NAME
-from app.coaching.taxonomy import get_task
+from app.coaching.taxonomy import get_task, list_weaknesses
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -99,6 +99,17 @@ def build_session_context(state: dict) -> str:
     else:
         lines.append("- まだ具体的な課題は確定していない（録音を解析するとわかる）")
 
+    # 他の弱点候補（「他に気になるところは？」等に自然文で答えられるように）
+    baseline = state.get("baseline_analysis")
+    if baseline:
+        others = list_weaknesses(baseline, None, limit=3, exclude=[state.get("current_task")])
+        if others:
+            lines.append("- 今の課題以外に解析で見えている弱点候補（聞かれたら使う。押し付けない）:")
+            for w in others:
+                lines.append(f"  ・{w['label']}: {w['reason']}")
+        else:
+            lines.append("- 今の課題以外に大きな弱点は今のところ見当たらない")
+
     return "現在のレッスン状況:\n" + "\n".join(lines)
 
 
@@ -131,23 +142,19 @@ def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
     return contents
 
 
-def generate_reply(
-    state: dict, user_text: str, history: Optional[list[dict]] = None
-) -> Optional[str]:
-    """ユーザーのテキストに対するソラ先生の自然言語返答を生成する。
+def _complete(contents) -> Optional[str]:
+    """Gemini を1往復呼び出してテキストを返す。
 
-    APIキー未設定・SDK未導入・API エラー時は None を返す（呼び出し側でフォールバック）。
+    APIキー未設定・SDK未導入・API エラー時は None（呼び出し側でフォールバック）。
     """
     if not settings.llm_enabled:
         return None
-
     try:
         from google import genai
         from google.genai import types
     except Exception:  # pragma: no cover - SDK 未導入環境
         logger.warning("google-genai SDK が見つかりません。ルールベース応答にフォールバックします。")
         return None
-
     try:
         client = genai.Client(
             api_key=settings.gemini_api_key,
@@ -155,7 +162,7 @@ def generate_reply(
         )
         resp = client.models.generate_content(
             model=settings.llm_model,
-            contents=_build_contents(state, user_text, history),
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
                 max_output_tokens=settings.llm_max_tokens,
@@ -169,3 +176,41 @@ def generate_reply(
     except Exception as e:  # API エラー・ネットワーク・レート制限など
         logger.warning("LLM 応答生成に失敗（フォールバックします）: %s", e)
         return None
+
+
+def generate_reply(
+    state: dict, user_text: str, history: Optional[list[dict]] = None
+) -> Optional[str]:
+    """ユーザーのテキストに対するソラ先生の自然言語返答を生成する。"""
+    return _complete(_build_contents(state, user_text, history))
+
+
+def generate_coach_comment(
+    facts: str, instruction: str, history: Optional[list[dict]] = None
+) -> Optional[str]:
+    """録音解析の結果（事実）を、ソラ先生の自然文コメントに変換する。
+
+    facts:       解析から得た人間向けの事実（秒数・数値・課題根拠など）。LLMはここから逸脱しない。
+    instruction: どんなメッセージを書くか（例: 達成判定を伝える / 改善点を伝える）。
+    数値カード自体はシステムが別途描画するので、ここは会話文だけを生成する。
+    """
+    from google.genai import types
+
+    contents: list = []
+    for h in history or []:
+        role = h.get("role")
+        text = (h.get("content") or "").strip()
+        if not text or role not in ("user", "assistant"):
+            continue
+        g_role = "model" if role == "assistant" else "user"
+        contents.append(types.Content(role=g_role, parts=[types.Part.from_text(text=text)]))
+    while contents and contents[0].role == "model":
+        contents.pop(0)
+
+    prompt = (
+        f"# 解析からわかっている事実（ここに書かれた数値・秒数・内容だけを根拠にする）\n{facts}\n\n"
+        f"# あなたへの指示\n{instruction}\n"
+        f"事実に無い数値を作らず、2〜4文・120字程度の自然な会話文で返してください。"
+    )
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
+    return _complete(contents)
