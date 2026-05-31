@@ -50,17 +50,18 @@ export function AnimatedDemo() {
   const dash = (score / 100) * 214;
 
   return (
-    <div className="relative mx-auto w-full max-w-[320px]">
-      {/* フローティングバッジ */}
-      <div className="absolute -right-3 -top-3 z-10 animate-floaty rounded-2xl bg-white px-3 py-2 text-xs font-bold text-brand-600 shadow-soft">
-        🎙 録音するだけ
-      </div>
-      <div className="absolute -bottom-4 -left-4 z-10 rounded-2xl bg-white px-3 py-2 text-xs font-bold text-emerald-600 shadow-soft">
-        ✨ その場で添削
-      </div>
+    <div className="mx-auto w-full max-w-[320px]">
+      <div className="relative">
+        {/* フローティングバッジ（フレームに対して相対配置） */}
+        <div className="absolute -right-3 -top-3 z-10 animate-floaty rounded-2xl bg-white px-3 py-2 text-xs font-bold text-brand-600 shadow-soft">
+          🎙 録音するだけ
+        </div>
+        <div className="absolute -bottom-3 -left-3 z-10 rounded-2xl bg-white px-3 py-2 text-xs font-bold text-emerald-600 shadow-soft">
+          ✨ その場で添削
+        </div>
 
-      {/* 端末フレーム */}
-      <div className="rounded-[2.2rem] border-4 border-white/70 bg-white/95 p-3 shadow-2xl">
+        {/* 端末フレーム */}
+        <div className="rounded-[2.2rem] border-4 border-white/70 bg-white/95 p-3 shadow-2xl">
         {/* ヘッダー */}
         <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-gradient text-xs text-white">🎤</span>
@@ -171,9 +172,10 @@ export function AnimatedDemo() {
             </div>
           )}
         </div>
+        </div>
       </div>
 
-      <p className="mt-3 text-center text-xs text-slate-400">▲ 実際のレッスンの流れ（自動再生）</p>
+      <p className="mt-8 text-center text-xs text-slate-400">▲ 実際のレッスンの流れ（自動再生）</p>
     </div>
   );
 }
