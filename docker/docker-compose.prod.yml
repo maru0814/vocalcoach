@@ -1,0 +1,54 @@
+# 本番（VPS1台）構成: Caddy(自動HTTPS) → frontend / backend、DBはSQLite。
+# 使い方:
+#   1) docker/.env を用意（DOMAIN, JWT_SECRET など。.env.prod.example 参照）
+#   2) cd docker && docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    environment:
+      # SQLite を永続ボリュームに置く
+      DATABASE_URL: "sqlite:////data/app.db"
+      JWT_SECRET: ${JWT_SECRET}
+      COOKIE_SECURE: "true"
+      COOKIE_SAMESITE: "lax"
+      CORS_ORIGINS: "https://${DOMAIN}"
+      ENABLE_YOUTUBE_REFERENCE: ${ENABLE_YOUTUBE_REFERENCE:-false}
+      UPLOADS_DIR: "/data/uploads"
+      COACH_AUDIO_DIR: "/data/uploads/coach"
+      REFERENCE_CACHE_DIR: "/data/uploads/reference"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    volumes:
+      - app_data:/data
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.prod
+      args:
+        # 同一ドメイン配信なので API もそのドメイン（Caddy が /api を backend へ）
+        NEXT_PUBLIC_API_BASE_URL: "https://${DOMAIN}"
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  app_data:

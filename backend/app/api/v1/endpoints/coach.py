@@ -11,6 +11,7 @@ from app.audio.convert import to_wav
 from app.audio.reference import ReferenceFetchError, fetch_reference_wav, fetch_youtube_title
 from app.coaching import rule_engine
 from app.core.config import settings
+from app.core.ratelimit import check_rate_limit
 from app.db.session import get_db
 from app.deps import get_current_user
 from app.models.coaching import ChatMessage, ChatSession
@@ -205,6 +206,15 @@ def send_audio(
 ) -> ChatResponse:
     s = _get_owned_session(db, session_id, user)
 
+    # --- rate limit（CPU負荷の高い解析の悪用防止）---
+    if not check_rate_limit(
+        f"audio:{user.id}", settings.rate_limit_max_audio, settings.rate_limit_window_sec
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "RATE_LIMITED", "message": "少し時間をおいてから、もう一度お試しください。"},
+        )
+
     # --- validate + save raw upload ---
     _, ext = os.path.splitext(audio_file.filename or "")
     ext = ext.lower() or ".webm"
@@ -249,17 +259,15 @@ def send_audio(
     ref_wav = None
     if needs_ref:
         ref_wav = s.song_ref_path
-        if not ref_wav and s.song_ref_url:
+        # 原曲取得が有効なときだけ YouTube からダウンロード（本番は既定で無効＝録音単体FB）
+        if not ref_wav and s.song_ref_url and settings.enable_youtube_reference:
             try:
                 ref_wav = fetch_reference_wav(
                     s.song_ref_url, settings.reference_cache_dir, name=f"session_{s.id}"
                 )
                 s.song_ref_path = ref_wav
-            except ReferenceFetchError as e:
-                raise HTTPException(
-                    status_code=502,
-                    detail={"code": "REFERENCE_FETCH_FAILED", "message": str(e)},
-                )
+            except ReferenceFetchError:
+                ref_wav = None  # 取得失敗時は単体解析にフォールバック
 
     try:
         if needs_ref and ref_wav:

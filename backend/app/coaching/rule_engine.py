@@ -43,17 +43,19 @@ def initial_messages() -> list[dict]:
     return [
         coach_msg(
             "text",
-            f"はじめまして、{COACH_NAME}です😊 あなたの歌、わたしが一緒に磨いていきますね🎤\n"
-            "まずはレッスンしたい曲を教えてください。",
+            f"はじめまして、{COACH_NAME}です😊 あなたの歌、わたしが一緒に磨いていきますね🎤",
         ),
         coach_msg(
             "text",
-            "次の3つを教えてもらえますか？\n"
-            "① （必須）原曲のYouTube URL\n"
-            "② （必須）原曲の「どの区間を練習したい」か（例: 0:48-1:13）\n"
-            "③ （任意）特に気になること（高音の力み／音程／リズム／表現／ミックスボイス／おまかせ）\n\n"
-            "そろったら、その区間を歌った録音を送ってくださいね。わたしが聴いて、直すところをお伝えします"
-            "（録音は丸ごとでOK。区間を2つ書くと『自分の録音 と 原曲』として扱います）。",
+            "まずは練習したいところを歌って、録音を送ってください。\n"
+            "下の🎙ボタンでその場録音、または📎で音源をアップロードできます。\n\n"
+            "気になることがあれば先に教えてくれてもOKです"
+            "（高音の力み／音程／リズム／表現／ミックスボイス など）。",
+        ),
+        coach_msg(
+            "text",
+            "💡 原曲と比べてほしいときは、原曲のYouTube URLと区間（例: 0:48-1:13）も送ってくださいね。"
+            "照らし合わせて、より具体的にアドバイスします（任意）。",
         ),
     ]
 
@@ -90,25 +92,27 @@ def handle_text(state: dict, text: str) -> tuple[list[dict], dict]:
         u = parse_phase_a(text, state)
         updates.update(u)
         merged = {**state, **u}
-        have_url = bool(merged.get("song_ref_url"))
         shown_range = merged.get("ref_range") or merged.get("user_range")
-        have_range = bool(shown_range)
-        if have_url and have_range:
-            out.append(coach_msg(
-                "text",
-                f"ありがとうございます！原曲と区間（{shown_range}）を確認しました😊\n"
-                f"それでは、同じ区間をあなたが歌った録音を送ってくださいね🎤"
-                f"（下のマイクボタンで録音、または📎でファイルを送れます）",
-            ))
+        if merged.get("song_ref_url"):
+            # 原曲が指定された → 照合モード
+            if shown_range:
+                out.append(coach_msg(
+                    "text",
+                    f"原曲と区間（{shown_range}）を確認しました😊 "
+                    f"では、同じところを歌った録音を送ってくださいね🎤（🎙録音 または 📎アップロード）",
+                ))
+            else:
+                out.append(coach_msg(
+                    "text",
+                    "原曲を確認しました😊 録音を送ってもらえたら、原曲と照らし合わせてアドバイスしますね🎤"
+                    "（区間も教えてくれると、より正確に比べられます）",
+                ))
         else:
-            missing = []
-            if not have_url:
-                missing.append("原曲のYouTube URL")
-            if not have_range:
-                missing.append("見てほしい区間（例: 0:48-1:13）")
+            # 原曲なしでもOK。録音を促す
             out.append(coach_msg(
                 "text",
-                "あと少し情報をください：" + " と ".join(missing) + " をお願いします。",
+                "了解です🎤 まずは練習したいところを歌って、録音を送ってください"
+                "（🎙録音 または 📎アップロード）。聴いて、直すところをお伝えしますね😊",
             ))
         return out, updates
 

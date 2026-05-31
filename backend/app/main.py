@@ -27,9 +27,11 @@ def _status_to_error_code(status_code: int) -> str:
 def create_app() -> FastAPI:
     app = FastAPI(title="claude-md-recording-feedback-api")
 
+    from app.core.config import settings as _settings
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=_settings.cors_origin_list,
         allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],

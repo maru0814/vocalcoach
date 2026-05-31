@@ -1,0 +1,18 @@
+# 同一ドメインで front と back を配信（→ CORS/Cookie の悩みゼロ）
+# /api/* と /healthz は backend、それ以外は frontend へ。
+# {$DOMAIN} は compose の environment から注入。HTTPS は Caddy が自動取得。
+
+{$DOMAIN} {
+	encode gzip
+
+	# バックエンドAPI
+	@api path /api/* /healthz
+	handle @api {
+		reverse_proxy backend:8000
+	}
+
+	# フロントエンド（Next.js standalone）
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
