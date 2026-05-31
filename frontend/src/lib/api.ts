@@ -116,6 +116,14 @@ export async function getCoachSession(id: string | number) {
   return request<SessionDetail>(`/api/v1/coach/sessions/${id}`);
 }
 
+export async function renameCoachSession(id: string | number, songTitle: string) {
+  return request<SessionSummary>(`/api/v1/coach/sessions/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ song_title: songTitle }),
+  });
+}
+
 export async function sendCoachText(id: string | number, text: string) {
   return request<ChatResponse>(`/api/v1/coach/sessions/${id}/messages`, {
     method: "POST",

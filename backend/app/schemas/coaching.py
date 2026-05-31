@@ -36,6 +36,10 @@ class SendTextRequest(BaseModel):
     text: str
 
 
+class UpdateSessionRequest(BaseModel):
+    song_title: str
+
+
 class ChatResponse(BaseModel):
     phase: str
     current_task: Optional[str] = None

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import {
   CoachMessage,
   getCoachSession,
+  renameCoachSession,
   sendCoachAudio,
   sendCoachText,
 } from "@/lib/api";
@@ -74,6 +75,15 @@ export default function CoachChatPage() {
     }
   }
 
+  async function handleRename(name: string) {
+    setSongTitle(name);
+    try {
+      await renameCoachSession(sessionId, name);
+    } catch {
+      setError("名前の変更に失敗しました。");
+    }
+  }
+
   async function handleAudio(blob: Blob, filename: string) {
     setBusy(true);
     setBusyLabel("あなたの歌を聴いています");
@@ -119,7 +129,7 @@ export default function CoachChatPage() {
         <span className="w-10" />
       </div>
 
-      <PhaseStepper phase={phase} songTitle={songTitle} />
+      <PhaseStepper phase={phase} songTitle={songTitle} onRename={handleRename} />
 
       {/* メッセージ */}
       <div className="scroll-soft flex-1 space-y-4 overflow-y-auto px-3 py-4">

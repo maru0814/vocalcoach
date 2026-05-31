@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 const PHASES: { key: string; label: string; icon: string }[] = [
   { key: "A", label: "曲指定", icon: "🎵" },
   { key: "B", label: "課題発見", icon: "🔍" },
@@ -8,18 +10,62 @@ const PHASES: { key: string; label: string; icon: string }[] = [
   { key: "E", label: "再録音", icon: "📈" },
 ];
 
-export function PhaseStepper({ phase, songTitle }: { phase: string; songTitle?: string | null }) {
+export function PhaseStepper({
+  phase,
+  songTitle,
+  onRename,
+}: {
+  phase: string;
+  songTitle?: string | null;
+  onRename?: (name: string) => void;
+}) {
   const order = ["A", "B", "C", "D", "E", "done"];
   const currentIdx = order.indexOf(phase);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const displayTitle = songTitle || "（名称未設定のレッスン）";
+
+  function begin() {
+    if (!onRename) return;
+    setDraft(songTitle || "");
+    setEditing(true);
+  }
+  function commit() {
+    setEditing(false);
+    const name = draft.trim();
+    if (name && onRename) onRename(name);
+  }
 
   return (
     <div className="glass border-b border-white/40 px-3 pb-2.5 pt-2 shadow-sm">
-      {songTitle && (
-        <div className="mb-2 flex items-center gap-1.5 truncate px-1 text-xs text-slate-500">
-          <span>🎵</span>
-          <span className="truncate">{songTitle}</span>
-        </div>
-      )}
+      <div className="mb-2 flex items-center gap-1.5 px-1 text-xs text-slate-500">
+        <span>🎵</span>
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            placeholder="レッスン名"
+            className="min-w-0 flex-1 rounded-md border border-brand-300 bg-white px-2 py-0.5 text-xs outline-none focus:shadow-glow"
+            maxLength={200}
+          />
+        ) : (
+          <button
+            onClick={begin}
+            className="group flex min-w-0 items-center gap-1 truncate text-left hover:text-brand-600"
+            title="クリックで名前を変更"
+          >
+            <span className="truncate">{displayTitle}</span>
+            {onRename && <span className="shrink-0 opacity-0 transition group-hover:opacity-100">✏️</span>}
+          </button>
+        )}
+      </div>
       <div className="flex items-center">
         {PHASES.map((p, i) => {
           const done = currentIdx > i || phase === "done";

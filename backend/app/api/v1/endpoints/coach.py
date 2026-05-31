@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.audio import analyzer
 from app.audio.convert import to_wav
-from app.audio.reference import ReferenceFetchError, fetch_reference_wav
+from app.audio.reference import ReferenceFetchError, fetch_reference_wav, fetch_youtube_title
 from app.coaching import rule_engine
 from app.core.config import settings
 from app.db.session import get_db
@@ -20,6 +20,7 @@ from app.schemas.coaching import (
     SendTextRequest,
     SessionDetail,
     SessionSummary,
+    UpdateSessionRequest,
 )
 from app.storage.files import ensure_dir
 
@@ -143,6 +144,29 @@ def get_session(session_id: int, db: Session = Depends(get_db), user=Depends(get
     )
 
 
+@router.patch("/sessions/{session_id}", response_model=SessionSummary)
+def update_session(
+    session_id: int,
+    body: UpdateSessionRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+) -> SessionSummary:
+    s = _get_owned_session(db, session_id, user)
+    title = body.song_title.strip()
+    if not title:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "BAD_REQUEST", "message": "レッスン名を入力してください"},
+        )
+    s.song_title = title[:200]
+    db.commit()
+    db.refresh(s)
+    return SessionSummary(
+        id=s.id, song_title=s.song_title, phase=s.phase,
+        current_task=s.current_task, updated_at=s.updated_at,
+    )
+
+
 @router.post("/sessions/{session_id}/messages", response_model=ChatResponse)
 def send_message(
     session_id: int,
@@ -157,6 +181,13 @@ def send_message(
 
     msgs, updates = rule_engine.handle_text(_session_state(s), body.text)
     _apply_updates(s, updates)
+
+    # 原曲URLが新たに付いたら、YouTubeタイトルを自動でレッスン名にする（未設定時のみ）
+    if updates.get("song_ref_url") and not s.song_title:
+        title = fetch_youtube_title(updates["song_ref_url"])
+        if title:
+            s.song_title = title
+
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
     for r in rows:

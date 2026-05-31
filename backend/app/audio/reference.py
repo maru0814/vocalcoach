@@ -5,12 +5,24 @@ Reference (original song) acquisition via yt-dlp.
 
 from __future__ import annotations
 
+import json
+import ssl
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from app.audio.convert import ffmpeg_exe
+
+
+def _ssl_context() -> ssl.SSLContext | None:
+    """certifi があればそれで検証。無ければ既定（環境のCA）。"""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return None
 
 ALLOWED_HOSTS = {
     "www.youtube.com", "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com",
@@ -27,6 +39,23 @@ def is_allowed_url(url: str) -> bool:
     except Exception:
         return False
     return host in ALLOWED_HOSTS
+
+
+def fetch_youtube_title(url: str, timeout: float = 5.0) -> str | None:
+    """oEmbed で YouTube 動画のタイトルを取得（ダウンロード不要・無料）。失敗時 None。"""
+    if not is_allowed_url(url):
+        return None
+    oembed = f"https://www.youtube.com/oembed?url={quote(url, safe='')}&format=json"
+    try:
+        req = urllib.request.Request(
+            oembed, headers={"User-Agent": "Mozilla/5.0 (compatible; VocalCoach/1.0)"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            title = data.get("title")
+            return title.strip() if isinstance(title, str) and title.strip() else None
+    except Exception:
+        return None
 
 
 def fetch_reference_wav(url: str, out_dir: str | Path, name: str) -> str:

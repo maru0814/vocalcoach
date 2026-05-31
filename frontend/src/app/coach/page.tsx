@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createCoachSession, listCoachSessions, SessionSummary } from "@/lib/api";
+import {
+  createCoachSession,
+  listCoachSessions,
+  renameCoachSession,
+  SessionSummary,
+} from "@/lib/api";
 import { BrandWordmark, Pill } from "@/components/brand/Brand";
 
 const PHASE_LABEL: Record<string, string> = {
@@ -41,6 +46,29 @@ export default function CoachListPage() {
     } catch {
       setError("セッションを作成できませんでした。ログインを確認してください。");
       setCreating(false);
+    }
+  }
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  function beginEdit(s: SessionSummary) {
+    setEditingId(s.id);
+    setDraft(s.song_title || `レッスン #${s.id}`);
+    setTimeout(() => inputRef.current?.select(), 0);
+  }
+
+  async function commitEdit(id: number) {
+    const name = draft.trim();
+    setEditingId(null);
+    if (!name) return;
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, song_title: name } : s)));
+    try {
+      await renameCoachSession(id, name);
+    } catch {
+      setError("名前の変更に失敗しました。");
+      setSessions(await listCoachSessions().catch(() => sessions));
     }
   }
 
@@ -102,25 +130,53 @@ export default function CoachListPage() {
           <ul className="space-y-3">
             {sessions.map((s) => (
               <li key={s.id} className="animate-fade-in-up">
-                <Link
-                  href={`/coach/${s.id}`}
-                  className="glass flex items-center gap-4 rounded-2xl p-4 shadow-card transition hover:shadow-soft"
-                >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-2xl">
+                <div className="glass flex items-center gap-3 rounded-2xl p-4 shadow-card transition hover:shadow-soft">
+                  <Link href={`/coach/${s.id}`} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-2xl">
                     🎵
-                  </span>
+                  </Link>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-bold text-slate-800">
-                      {s.song_title || `レッスン #${s.id}`}
-                    </div>
-                    <div className="text-xs text-slate-400">
-                      {new Date(s.updated_at).toLocaleString("ja-JP", {
-                        month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
-                      })}
-                    </div>
+                    {editingId === s.id ? (
+                      <input
+                        ref={inputRef}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onBlur={() => commitEdit(s.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitEdit(s.id);
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                        className="w-full rounded-lg border border-brand-300 bg-white px-2 py-1 text-sm font-bold text-slate-800 outline-none focus:shadow-glow"
+                        maxLength={200}
+                      />
+                    ) : (
+                      <Link href={`/coach/${s.id}`} className="block">
+                        <div className="truncate font-bold text-slate-800">
+                          {s.song_title || `レッスン #${s.id}`}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {new Date(s.updated_at).toLocaleString("ja-JP", {
+                            month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+                          })}
+                        </div>
+                      </Link>
+                    )}
                   </div>
-                  <Pill tone={PHASE_TONE[s.phase] || "slate"}>{PHASE_LABEL[s.phase] || s.phase}</Pill>
-                </Link>
+                  {editingId !== s.id && (
+                    <>
+                      <button
+                        onClick={() => beginEdit(s)}
+                        aria-label="名前を変更"
+                        title="名前を変更"
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-white hover:text-brand-600"
+                      >
+                        ✏️
+                      </button>
+                      <Link href={`/coach/${s.id}`}>
+                        <Pill tone={PHASE_TONE[s.phase] || "slate"}>{PHASE_LABEL[s.phase] || s.phase}</Pill>
+                      </Link>
+                    </>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
