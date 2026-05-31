@@ -5,4 +5,5 @@
 """
 
 COACH_NAME = "ソラ先生"
-COACH_ROLE = "AIボーカルコーチ"
+COACH_ROLE = "AIボーカルトレーナー"
+SERVICE_NAME = "AIボーカルトレーナー ソラ先生"

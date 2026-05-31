@@ -75,7 +75,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <p className="relative z-10 text-xs text-slate-400">© こえのアトリエ — AI Vocal Trainer</p>
+          <p className="relative z-10 text-xs text-slate-400">© AIボーカルトレーナー ソラ先生</p>
         </section>
 
         {/* 右: フォーム */}

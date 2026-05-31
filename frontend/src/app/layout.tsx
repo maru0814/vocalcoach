@@ -2,16 +2,16 @@ import "./globals.css";
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 
-const SITE_NAME = "こえのアトリエ";
-const TAGLINE = "AIボーカルトレーナー";
+const SITE_NAME = "AIボーカルトレーナー ソラ先生";
+const TAGLINE = "歌をAIが解析・添削";
 const DESCRIPTION =
-  "こえのアトリエは、歌の録音を送るだけでAIが音程・リズム・表現を解析し、今日直すところと基礎練メニューを教えてくれるAIボーカルトレーナーです。スマホひとつ・専用マイク不要・無料で始められます。";
+  "AIボーカルトレーナー「ソラ先生」が、歌の録音を送るだけで音程・リズム・表現を解析し、今日直すところと基礎練メニューをチャットで教えます。スマホひとつ・専用マイク不要・無料で始められます。";
 
 export const metadata: Metadata = {
   metadataBase: new URL("http://localhost:3000"),
   title: {
-    default: `${SITE_NAME}｜${TAGLINE} - 歌をAIが解析・添削`,
-    template: `%s｜${SITE_NAME}（${TAGLINE}）`,
+    default: `${SITE_NAME} - ${TAGLINE}`,
+    template: `%s｜${SITE_NAME}`,
   },
   description: DESCRIPTION,
   applicationName: SITE_NAME,
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     "音程 改善",
     "ミックスボイス",
     "歌 添削 AI",
-    "こえのアトリエ",
+    "ソラ先生",
   ],
   authors: [{ name: SITE_NAME }],
   openGraph: {

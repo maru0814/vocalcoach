@@ -68,7 +68,7 @@ export function AnimatedDemo() {
           <CoachAvatar size={28} />
           <div className="leading-none">
             <div className="text-xs font-bold text-slate-700">{COACH_NAME}</div>
-            <div className="text-[9px] text-brand-600">AIボーカルコーチ・オンライン</div>
+            <div className="text-[9px] text-brand-600">AIボーカルトレーナー・オンライン</div>
           </div>
         </div>
 

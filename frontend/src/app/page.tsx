@@ -78,8 +78,8 @@ const FAQ = [
 const JSON_LD = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "こえのアトリエ",
-  alternateName: "こえのアトリエ AIボーカルトレーナー",
+  name: "AIボーカルトレーナー ソラ先生",
+  alternateName: "ソラ先生",
   applicationCategory: "MultimediaApplication",
   operatingSystem: "Web",
   description:
@@ -132,7 +132,7 @@ export default function HomePage() {
             <div className="max-w-xl">
               <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
                 <span className="inline-flex"><CoachAvatar size={18} /></span>
-                AIボーカルコーチ {COACH_NAME}が担当
+                AIボーカルトレーナー {COACH_NAME}が担当
               </p>
               <h1 className="text-4xl font-black leading-[1.12] sm:text-6xl">
                 その歌、<br className="hidden sm:block" />あと一歩。
@@ -197,7 +197,7 @@ export default function HomePage() {
               ひとりの練習に、<span className="text-brand-gradient">AIの耳</span>を。
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-slate-600">
-              こえのアトリエは、あなたの録音をAIボーカルトレーナーが解析して
+              AIボーカルトレーナーのソラ先生が、あなたの録音を解析して
               「良かった点 → 直すところ → 今日の基礎練」までチャットで伴走します。
             </p>
           </div>
@@ -370,13 +370,13 @@ export default function HomePage() {
 
         {/* フッター */}
         <footer className="mt-16 border-t border-slate-200 py-10 text-center">
-          <p className="text-sm font-bold text-slate-600">こえのアトリエ</p>
-          <p className="mt-1 text-xs text-slate-400">AIボーカルトレーナー｜歌をAIが解析・添削するボイトレアプリ</p>
+          <p className="text-sm font-bold text-slate-600">AIボーカルトレーナー ソラ先生</p>
+          <p className="mt-1 text-xs text-slate-400">歌をAIが解析・添削するボイトレアプリ</p>
           <div className="mt-4 flex justify-center gap-5 text-xs text-slate-400">
             <Link href="/login" className="hover:text-brand-600">ログイン</Link>
             <Link href="/login" className="hover:text-brand-600">無料で始める</Link>
           </div>
-          <p className="mt-6 text-[11px] text-slate-300">© こえのアトリエ</p>
+          <p className="mt-6 text-[11px] text-slate-300">© AIボーカルトレーナー ソラ先生</p>
         </footer>
       </main>
 
