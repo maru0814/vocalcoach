@@ -9,6 +9,9 @@ passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 email-validator==2.2.0
 
+# 自然言語チャット応答（ソラ先生の対話。APIキー未設定時はルールベースにフォールバック）
+anthropic==0.105.2
+
 # audio analysis pipeline (tools/audio_analyzer.py)
 librosa==0.11.0
 numpy==2.4.6

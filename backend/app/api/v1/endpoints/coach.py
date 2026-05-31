@@ -60,6 +60,27 @@ def _msg_out(m: ChatMessage) -> MessageOut:
     )
 
 
+def _history_for_llm(s: ChatSession) -> list[dict]:
+    """既存メッセージを LLM 用の会話履歴に変換する（古い→新しい）。
+
+    user → "user"、coach → "assistant"。テキスト以外（分析カード等）は短い説明に置き換える。
+    """
+    card_note = {
+        "feedback": "（歌の分析カードを表示しました）",
+        "practice": "（基礎練のカードを表示しました）",
+        "judge": "（基礎練の達成判定を表示しました）",
+        "progress": "（前回との比較カードを表示しました）",
+        "audio": "（録音を送りました）",
+    }
+    hist: list[dict] = []
+    for m in s.messages:
+        role = "assistant" if m.role == "coach" else "user"
+        content = m.text if m.type == "text" and m.text else card_note.get(m.type)
+        if content:
+            hist.append({"role": role, "content": content})
+    return hist[-settings.llm_history_turns:]
+
+
 def _session_state(s: ChatSession) -> dict:
     return {
         "phase": s.phase,
@@ -179,10 +200,13 @@ def send_message(
 ) -> ChatResponse:
     s = _get_owned_session(db, session_id, user)
 
+    # 新規ユーザー発言を追加する前に、これまでの会話履歴を LLM 用に取得
+    history = _history_for_llm(s)
+
     user_msg = ChatMessage(session_id=s.id, role="user", type="text", text=body.text)
     db.add(user_msg)
 
-    msgs, updates = rule_engine.handle_text(_session_state(s), body.text)
+    msgs, updates = rule_engine.handle_text(_session_state(s), body.text, history=history)
     _apply_updates(s, updates)
 
     # 原曲URLが新たに付いたら、YouTubeタイトルを自動でレッスン名にする（未設定時のみ）

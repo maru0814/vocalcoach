@@ -160,13 +160,14 @@ export function Composer({ disabled, defaultKind = "song", onSendText, onSendAud
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            // Shift+Enter で送信、Enter は改行
+            if (e.key === "Enter" && e.shiftKey) {
               e.preventDefault();
               submitText();
             }
           }}
           rows={1}
-          placeholder="メッセージを入力（曲URL・区間など）"
+          placeholder="メッセージを入力（Shift+Enterで送信）"
           disabled={disabled}
           className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:shadow-glow disabled:opacity-40"
         />

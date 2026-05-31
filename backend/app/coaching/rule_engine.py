@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from app.coaching import feedback_builder
+from app.coaching import feedback_builder, llm
 from app.coaching.persona import COACH_NAME
 from app.coaching.taxonomy import diagnose_task, get_task
 
@@ -97,19 +97,107 @@ def parse_phase_a(text: str, state: dict) -> dict:
     return updates
 
 
-def handle_text(state: dict, text: str) -> tuple[list[dict], dict]:
-    """テキストメッセージ受信時の応答。state更新を返す。"""
+def _safe_reason(task: Optional[dict], analysis: Optional[dict]) -> Optional[str]:
+    if not task or not analysis:
+        return None
+    try:
+        return task["reason"](analysis, None)
+    except Exception:
+        return None
+
+
+def answer_question(state: dict, text: str) -> Optional[str]:
+    """今の課題・解析結果を踏まえて、ユーザーの質問にその場で答える（対話型）。
+
+    ルールベースなので、よくある質問パターンを文脈で埋めて返す。
+    該当しなければ None（呼び出し側で一般応答にフォールバック）。
+    """
+    t = text.strip()
+    task = get_task(state.get("current_task")) if state.get("current_task") else None
+    baseline = state.get("baseline_analysis")
+    reason = _safe_reason(task, baseline)
+
+    def q(*kws: str) -> bool:
+        return any(k in t for k in kws)
+
+    # どこ／どの部分（場所を聞いている）
+    if q("どこ", "どの部分", "どのへん", "どこら", "場所", "何秒", "どの音", "どこが"):
+        if reason:
+            return f"はい、{reason} そこを意識して、もう一度歌ってみましょう🎤"
+        if task:
+            return f"今は「{task['label']}」を見ています。録音をもう一度送ってもらえたら、具体的に何秒のどこか、はっきりお伝えしますね🎤"
+        return "まず歌った録音を送ってもらえたら、どこを直すか秒数で具体的にお伝えします🎤"
+
+    # どうやって／やり方／コツ
+    if q("どうやって", "どうすれ", "やり方", "方法", "コツ", "どう練習", "練習方法"):
+        if task:
+            p = task["practices"][0]
+            steps = "／".join(p["steps"][:2])
+            cp = f"目安は『{p.get('checkpoint','')}』です。" if p.get("checkpoint") else ""
+            return f"『{p['name']}』から始めましょう。{steps}…という流れです。{cp}上の基礎練カードに手順とお手本動画があるので、見ながらやってみてくださいね😊"
+        return "録音を送ってもらえたら、あなたに合った練習法を具体的にお伝えします🎯"
+
+    # なぜ／理由
+    if q("なぜ", "どうして", "理由", "なんで", "なぜか"):
+        if task:
+            base = reason or f"「{task['label']}」が今いちばん伸ばせるポイントだからです。"
+            return f"{base} だからこの基礎練が効くんですよ😊"
+        return "気になるところを録音で送ってもらえたら、理由から説明しますね。"
+
+    # わからない／難しい／できない
+    if q("わからない", "分からない", "わかんない", "むずかし", "難し", "できない", "苦手"):
+        if task:
+            p = task["practices"][0]
+            return f"大丈夫、ゆっくりいきましょう💪 まずは『{p['name']}』だけでOKです。{p.get('checkpoint','')} を目安にしてみてください。録音を送ってくれたら、できているか一緒に確かめますね🎤"
+        return "焦らなくて大丈夫です😊 まずは1フレーズだけ歌って録ってみましょう🎤"
+
+    # スコア／点数
+    if q("スコア", "点数", "何点", "評価"):
+        return "スコアは音程・リズム・表現の3つをAIで解析して出しています。上の分析カードに内訳が出ていますよ📊 もう一度録ると、前回との変化も比べられます。"
+
+    # 励まし・お礼への返し
+    if q("ありがとう", "わかった", "了解", "やってみる", "がんばる", "頑張る"):
+        return "その意気です😊 練習できたら録音を送ってくださいね。いつでも待っています🎤"
+
+    return None
+
+
+def _chat_reply(state: dict, text: str, history: Optional[list[dict]], generic: str) -> str:
+    """自由テキストへの返答を決める。
+
+    1) LLM（ソラ先生）で自然言語応答を試みる
+    2) ダメなら（APIキー未設定・エラー）ルールベースのテンプレ応答
+    3) それも該当しなければ汎用メッセージ
+    """
+    reply = llm.generate_reply(state, text, history)
+    if reply:
+        return reply
+    reply = answer_question(state, text)
+    if reply:
+        return reply
+    return generic
+
+
+def handle_text(
+    state: dict, text: str, history: Optional[list[dict]] = None
+) -> tuple[list[dict], dict]:
+    """テキストメッセージ受信時の応答。state更新を返す。
+
+    history: 直近の会話履歴 [{"role": "user"|"assistant", "content": str}]（古い→新しい）。
+             LLM に文脈として渡す。None でもルールベースで動作する。
+    """
     phase = state.get("phase", PHASE_A)
     out: list[dict] = []
     updates: dict = {}
 
+    # どのフェーズでも、URL/区間/着目点が含まれていれば取り込む
+    u = parse_phase_a(text, state)
+    updates.update(u)
+    merged = {**state, **u}
+
     if phase == PHASE_A:
-        u = parse_phase_a(text, state)
-        updates.update(u)
-        merged = {**state, **u}
         shown_range = merged.get("ref_range") or merged.get("user_range")
         if merged.get("song_ref_url"):
-            # 原曲が指定された → 照合モード
             if shown_range:
                 out.append(coach_msg(
                     "text",
@@ -119,23 +207,27 @@ def handle_text(state: dict, text: str) -> tuple[list[dict], dict]:
             else:
                 out.append(coach_msg(
                     "text",
-                    "原曲を確認しました😊 録音を送ってもらえたら、原曲と照らし合わせてアドバイスしますね🎤"
-                    "（区間も教えてくれると、より正確に比べられます）",
+                    "原曲を確認しました😊 録音を送ってもらえたら、原曲と照らし合わせてアドバイスしますね🎤",
                 ))
         else:
-            # 原曲なしでもOK。録音を促す
-            out.append(coach_msg(
-                "text",
+            # 質問・つぶやきには自然言語で答える。録音前なら自然に録音をうながす。
+            generic = (
                 "了解です🎤 まずは練習したいところを歌って、録音を送ってください"
-                "（🎙録音 または 📎アップロード）。聴いて、直すところをお伝えしますね😊",
-            ))
+                "（🎙録音 または 📎アップロード）。聴いて、直すところをお伝えしますね😊"
+            )
+            out.append(coach_msg("text", _chat_reply(merged, text, history, generic)))
         return out, updates
 
-    # Phase B 以降のテキストは補助的な相づち
-    out.append(coach_msg(
-        "text",
-        "うんうん、いいですね。続けて録音を送ってもらえたら、わたしが聴いてみますね🎤",
-    ))
+    # Phase B 以降：原曲が新たに付いたら知らせる。質問には答える。
+    if u.get("song_ref_url"):
+        out.append(coach_msg("text", "原曲を受け取りました😊 次の録音から、照らし合わせてアドバイスしますね🎤"))
+        return out, updates
+
+    generic = (
+        "なるほど😊 気になることがあれば、なんでも聞いてくださいね。"
+        "準備ができたら、下のボタンから録音を送ってください🎤"
+    )
+    out.append(coach_msg("text", _chat_reply(merged, text, history, generic)))
     return out, updates
 
 
