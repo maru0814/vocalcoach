@@ -157,6 +157,37 @@ def long_tone_stability(f0_hz: np.ndarray, hop_sec: float, min_dur_sec: float = 
     return float(np.mean(stds)) if stds else None
 
 
+def harmonic_ratio(
+    y: np.ndarray, sr: int, f0_hz: np.ndarray, voiced_flag: np.ndarray, max_harmonics: int = 15
+) -> float | None:
+    """整数次倍音の豊かさ(0..1)。各有声フレームで f0 の整数倍(k*f0)に乗るエネルギー比。
+
+    高い＝整数次倍音リッチ（クリアで芯のある・通る声）。
+    低い＝非整数次倍音リッチ（息まじり・かすれ・ささやき寄りの柔らかい声）。
+    """
+    S = np.abs(librosa.stft(y, n_fft=FRAME_LENGTH, hop_length=HOP_LENGTH))
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=FRAME_LENGTH)
+    nyq = sr / 2.0
+    n = min(S.shape[1], len(f0_hz))
+    vals = []
+    for i in range(n):
+        f0 = f0_hz[i]
+        if np.isnan(f0) or f0 < 80 or (i < len(voiced_flag) and not voiced_flag[i]):
+            continue
+        spec = S[:, i]
+        total = float(np.sum(spec ** 2)) + 1e-9
+        harm = 0.0
+        for k in range(1, max_harmonics + 1):
+            fk = k * f0
+            if fk >= nyq:
+                break
+            band = spec[(freqs >= fk * 0.96) & (freqs <= fk * 1.04)]
+            if band.size:
+                harm += float(np.max(band)) ** 2
+        vals.append(min(1.0, harm / total))
+    return float(np.mean(vals)) if vals else None
+
+
 def _voice_type(rolloff_to_f0: float | None) -> str | None:
     if rolloff_to_f0 is None:
         return None
@@ -173,6 +204,8 @@ def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain
     rolloff85 = librosa.feature.spectral_rolloff(
         y=y, sr=sr, hop_length=HOP_LENGTH, roll_percent=0.85
     )[0]
+    # STFTのパディング等で末尾フレームが実時間を超えうるので、秒数は録音長でクランプする
+    total_dur = len(y) / sr
 
     per_window = []
     wf = max(1, int(window_sec / hop_sec))
@@ -223,10 +256,12 @@ def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain
                 rms_decay_db = round(tail_db - head_db, 1)
             mean_f0 = float(np.mean(valid))
             ratio = roll_avg / mean_f0 if (mean_f0 > 0 and roll_avg) else None
+            start_t = round(min(s * hop_sec, total_dur), 2)
+            end_t = round(min(e * hop_sec, total_dur), 2)
             sustained.append({
-                "start_sec": round(s * hop_sec, 2),
-                "end_sec": round(e * hop_sec, 2),
-                "duration_sec": round((e - s) * hop_sec, 2),
+                "start_sec": start_t,
+                "end_sec": end_t,
+                "duration_sec": round(end_t - start_t, 2),
                 "mean_f0_hz": round(mean_f0, 1),
                 "f0_std_cents": round(f0_std_cents, 1),
                 "end_drift_cents": end_drift,
@@ -307,6 +342,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
 
     vib_rate, vib_depth = detect_vibrato(f0_hz, hop_sec)
     lts = long_tone_stability(f0_hz, hop_sec)
+    harm = harmonic_ratio(y, sr, f0_hz, voiced_flag)
     timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
 
     result = {
@@ -325,6 +361,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "vibrato_rate_hz": round(vib_rate, 2) if vib_rate else None,
         "vibrato_depth_cents": round(vib_depth, 1) if vib_depth else None,
         "long_tone_stability": round(lts, 1) if lts else None,
+        "harmonic_ratio": round(harm, 3) if harm is not None else None,
         "timeline": timeline,
         "vocal_isolated": bool(isolate_vocal),
     }
