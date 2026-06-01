@@ -414,7 +414,7 @@ TASKS: list[dict] = [
                     "力まず、響きが鼻に集まる感覚をつかむ。",
                 ],
                 "checkpoint": "鼻のあたりがムズムズ振動していれば、共鳴の入口に乗れています。",
-                "video": {"title": "ミックスボイスの基礎・ハミング", "url": "https://www.youtube.com/watch?v=H43qzWSYWuE"},
+                "video": {"title": "ミックスボイスが掴める！簡単ハミングの練習法", "url": "https://www.youtube.com/watch?v=s1Ju6C1iP6k"},
             },
             {
                 "name": "② ネイネイ（細い声で換声点をつなぐ）",
@@ -424,7 +424,7 @@ TASKS: list[dict] = [
                     "地声から裏声に切り替わる『換声点』で、裏返らずスッと細くつなぐのが目標。",
                 ],
                 "checkpoint": "高くしても急に裏返らず、細いまま音がつながれば成功です。",
-                "video": {"title": "ネイネイで換声点をつなぐ練習", "url": "https://www.youtube.com/watch?v=dH1Ouz1gMXI"},
+                "video": {"title": "ネイネイで換声点をつなぐ（声帯閉鎖の維持）", "url": "https://www.youtube.com/watch?v=1POs5qGxS2w"},
             },
             {
                 "name": "③ ナンナン（口の響きで厚みを足す）",
@@ -434,7 +434,7 @@ TASKS: list[dict] = [
                     "細さと厚みのバランスがとれた声が、ミックスボイスです。",
                 ],
                 "checkpoint": "細いけれど芯がある声になっていれば、ミックスに近づいています。",
-                "video": {"title": "ミックスボイスの出し方・まとめ", "url": "https://www.youtube.com/watch?v=xpV4GO4kpds"},
+                "video": {"title": "日本一わかりやすいミックスボイス講座", "url": "https://www.youtube.com/watch?v=QdP927ia0oQ"},
             },
         ],
     },
@@ -455,7 +455,7 @@ TASKS: list[dict] = [
                     "音程を一定に保つことだけ意識する。",
                 ],
                 "checkpoint": "リップロールが途切れず続き、母音に移っても音程が動かなければ成功。",
-                "video": {"title": "喉を開く発声のコツ", "url": "https://www.youtube.com/watch?v=H43qzWSYWuE"},
+                "video": {"title": "リップロールのやり方と練習法（できない人必見）", "url": "https://www.youtube.com/watch?v=TakKKIdIGgQ"},
             },
         ],
     },
@@ -476,7 +476,7 @@ TASKS: list[dict] = [
                     "最初はゆっくり、慣れたら秒4〜6回のペースへ。",
                 ],
                 "checkpoint": "音が一定の速さで規則正しくゆれていれば成功。",
-                "video": {"title": "ビブラートのかけ方と練習方法", "url": "https://www.youtube.com/watch?v=dH1Ouz1gMXI"},
+                "video": {"title": "ビブラート ボイストレーナーが教える練習法", "url": "https://www.youtube.com/watch?v=nD62Ojw8E24"},
             },
         ],
     },
@@ -498,7 +498,7 @@ TASKS: list[dict] = [
                     "走りやすい人は『拍より少し後ろ』、モタる人は『拍ぴったり』を意識。",
                 ],
                 "checkpoint": "歌い出しの音が、毎回同じタイミングで拍に乗っていれば成功。",
-                "video": {"title": "リズム感を鍛える練習（スタッカート発声法）", "url": "https://www.youtube.com/watch?v=xpV4GO4kpds"},
+                "video": {"title": "メトロノームでリズム感を鍛えよう！", "url": "https://www.youtube.com/watch?v=eHNoTg2R1JE"},
             },
         ],
     },
@@ -589,6 +589,33 @@ def list_weaknesses(
         if len(out) >= limit:
             break
     return out
+
+
+def passaggio_estimate(a: dict) -> Optional[dict]:
+    """換声点（地声→ミックス/裏声の切り替わり）の推定。
+
+    伸ばし区間を音高順に並べ、地声(chest)が続いた後に非chestへ変わる境目を探す。
+    短い録音では声区推定が粗いため、十分なサンプルがある時だけ返す（推定・目安）。
+    戻り: {"note", "from_hz", "to_hz"} or None。
+    """
+    segs = [
+        s for s in a.get("timeline", {}).get("sustained_segments", [])
+        if (s.get("mean_f0_hz") or 0) >= 120 and s.get("voice_type_estimate")
+    ]
+    if len(segs) < 3:
+        return None
+    segs.sort(key=lambda s: s["mean_f0_hz"])
+    seen_chest = False
+    last_chest_f0 = None
+    for s in segs:
+        vt = s["voice_type_estimate"]
+        if vt == "chest":
+            seen_chest = True
+            last_chest_f0 = s["mean_f0_hz"]
+        elif seen_chest and vt in ("mix", "head") and last_chest_f0:
+            mid = (last_chest_f0 * s["mean_f0_hz"]) ** 0.5
+            return {"note": _note_label(mid), "from_hz": last_chest_f0, "to_hz": s["mean_f0_hz"]}
+    return None
 
 
 def get_task(task_id: str) -> Optional[dict]:
