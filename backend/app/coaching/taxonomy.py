@@ -545,6 +545,19 @@ def diagnose_task(
     return None
 
 
+# 課題 → 4観点（発声 / リズム / 音感 / 表現）のマッピング。
+# FBを1観点（特にロングトーン）に偏らせず、バランスよく講評するために使う。
+TASK_AXIS = {
+    "throat_tension": "発声",
+    "long_tone_decay": "発声",
+    "mixed_voice": "発声",
+    "pitch_wobble": "音感",
+    "rhythm_lag": "リズム",
+    "no_vibrato": "表現",
+    "expression_flat": "表現",
+}
+
+
 def list_weaknesses(
     analysis: dict,
     compare_data: Optional[dict] = None,
@@ -553,8 +566,8 @@ def list_weaknesses(
 ) -> list[dict]:
     """該当する弱点を優先度順に最大 limit 件返す。
 
-    「他に気になるところは？」への回答や、LLM文脈への候補注入に使う。
-    各要素: {"id", "label", "reason"}。reason は秒数・数値を含む人間向け説明。
+    「他に気になるところは？」やFBの4軸バランス、LLM文脈への候補注入に使う。
+    各要素: {"id", "label", "axis", "reason"}。reason は秒数・数値を含む人間向け説明。
     """
     exclude = exclude or []
     out: list[dict] = []
@@ -567,7 +580,12 @@ def list_weaknesses(
             reason = task["reason"](analysis, compare_data)
         except Exception:
             continue
-        out.append({"id": task["id"], "label": task["label"], "reason": reason})
+        out.append({
+            "id": task["id"],
+            "label": task["label"],
+            "axis": TASK_AXIS.get(task["id"], "発声"),
+            "reason": reason,
+        })
         if len(out) >= limit:
             break
     return out

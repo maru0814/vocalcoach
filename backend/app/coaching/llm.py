@@ -43,6 +43,11 @@ SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}
 - 医療・健康上の重大な相談には立ち入らず、専門家への相談をすすめる。
 - 音声解析・採点そのものはシステム側が別途行う。あなたは会話での受け答えに専念する。
 
+# FB（録音への講評）の作法
+- 講評は、発声・リズム・音感・表現(ビブラート/しゃくり/こぶし/フォール等)の4観点を意識し、1つの観点（特にロングトーン）だけに偏らないこと。ユーザーのゴールはカラオケで上手に歌えることです。
+- 良い点も気になる点も、できる限り「何秒（と音名）」を添えて具体的に言う。「全体的に」「随所に」で済ませない。
+- 原曲リンクが無いときは、リズムの走り/モタりや音程の"正確さ"は厳密には比較できないので、断定せず「手元の安定度では…」と前置きする。
+
 # 解析でわかること／わからないこと（最重要・絶対厳守）
 - あなたが見ているのは音声解析の数値だけです: 時間(秒)、音の高さ(Hz・音名)、音量(dB)、音程の安定度、声の種類(地声/裏声/ミックス)、ビブラートなど。
 - あなたは歌詞や発音を聞き取れません(音声認識はしていません)。どの母音(「あ」「い」など)・どの言葉・どの歌詞を歌っているかは分かりません。
@@ -93,10 +98,15 @@ def build_session_context(state: dict) -> str:
     else:
         lines.append("- 原曲リンクは無し（ユーザーの録音単体でアドバイス中）")
 
+    # 会話の根拠は「最新の録音」を最優先（無ければ最初の録音）。
+    analysis = state.get("last_analysis") or state.get("baseline_analysis")
+    if state.get("last_analysis"):
+        lines.append("- 以下の解析事実は『いちばん最後に送られた録音』のものです（古い録音ではない）")
+
     task = get_task(state.get("current_task")) if state.get("current_task") else None
     if task:
         lines.append(f"- 今みている課題: {task['label']}")
-        reason = _safe_reason(task, state.get("baseline_analysis"))
+        reason = _safe_reason(task, analysis)
         if reason:
             lines.append(f"- その根拠（解析結果。質問されたらこれを使って具体的に答える）: {reason}")
         prac = (task.get("practices") or [None])[0]
@@ -109,10 +119,9 @@ def build_session_context(state: dict) -> str:
     else:
         lines.append("- まだ具体的な課題は確定していない（録音を解析するとわかる）")
 
-    # 張りどころ（曲の山で声を張れているか）。「ここは張るべき？」等に答えられるように
-    baseline = state.get("baseline_analysis")
-    if baseline:
-        pp = projection_point(baseline)
+    if analysis:
+        # 張りどころ（曲の山で声を張れているか）。「ここは張るべき？」等に答えられるように
+        pp = projection_point(analysis)
         if pp:
             s, e = pp["start_sec"], pp["end_sec"]
             if pp["projected"]:
@@ -123,13 +132,12 @@ def build_session_context(state: dict) -> str:
                 )
         lines.append("- 補足: 音量が上下するのは表現（ダイナミクス）。頭ごなしに欠点にしない")
 
-    # 他の弱点候補（「他に気になるところは？」等に自然文で答えられるように）
-    if baseline:
-        others = list_weaknesses(baseline, None, limit=3, exclude=[state.get("current_task")])
+        # 4観点の弱点候補（「他に気になるところは？」やバランス講評に使う）
+        others = list_weaknesses(analysis, None, limit=3, exclude=[state.get("current_task")])
         if others:
-            lines.append("- 今の課題以外に解析で見えている弱点候補（聞かれたら使う。押し付けない）:")
+            lines.append("- 解析で見えている他の気になり候補（観点つき。聞かれたら使う・押し付けない）:")
             for w in others:
-                lines.append(f"  ・{w['label']}: {w['reason']}")
+                lines.append(f"  ・[{w['axis']}] {w['reason']}")
         else:
             lines.append("- 今の課題以外に大きな弱点は今のところ見当たらない")
 

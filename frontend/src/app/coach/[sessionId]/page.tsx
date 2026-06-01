@@ -100,7 +100,7 @@ export default function CoachChatPage() {
     }
   }
 
-  async function handleAudio(blob: Blob, filename: string, kind: "song" | "practice") {
+  async function handleAudio(blob: Blob, filename: string, kind: "song" | "practice" | "auto") {
     setBusy(true);
     setBusyLabel(kind === "practice" ? "基礎練を聴いています" : "あなたの歌を聴いています");
     setError(null);
@@ -182,7 +182,6 @@ export default function CoachChatPage() {
 
       <Composer
         disabled={busy}
-        defaultKind={phase === "practice" ? "practice" : "song"}
         onSendText={handleText}
         onSendAudio={handleAudio}
       />
