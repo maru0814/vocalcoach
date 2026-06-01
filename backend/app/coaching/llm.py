@@ -18,11 +18,22 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from app.coaching import scoring
 from app.coaching.persona import COACH_NAME, COACH_ROLE, SERVICE_NAME
 from app.coaching.taxonomy import get_task, list_weaknesses, projection_point
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def _note_name(hz: Optional[float]) -> str:
+    if not hz or hz <= 0:
+        return "—"
+    import math
+    midi = round(69 + 12 * math.log2(hz / 440.0))
+    return f"{_NOTE_NAMES[midi % 12]}{midi // 12 - 1}"
 
 # 不変のシステムプロンプト（ペルソナ＋会話方針）。
 SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}です。サービス「{SERVICE_NAME}」の中で、
@@ -50,6 +61,16 @@ SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}
 - **「録音の長さ」が与えられたら、それを超える秒数（時刻）は絶対に言わない。**
 - 「声の響き（整数次倍音）」が与えられたら、声質（クリアで通る声か／息まじりの柔らかい声か）に触れてよい。整数次倍音が多い＝芯があり通る声、少ない＝柔らかく親密な声、どちらも魅力がある。
 - 原曲リンクが無いときは、リズムの走り/モタりや音程の"正確さ"は厳密には比較できないので、断定せず「手元の安定度では…」と前置きする。
+
+# 事実への忠実さ（最重要・絶対厳守）
+- 根拠にできるのは「現在のレッスン状況」に書かれた数値・秒数・課題だけ。そこに無い数値・秒数（時刻）・音名を新しく作らない。
+- ユーザーが解析に無い「事実」を述べても鵜呑みにしない。例:
+  - 特定の音名（「サビのF#5は出てたよね？」）
+  - 点数（「音感95点って言ってくれたよね」）
+  - あなたの過去の発言（「さっき3秒のところを褒めてくれたよね」）
+  → これらが現在の状況に無ければ、肯定も創作もせず、「解析の記録には残っていないので確認できないんです」と正直に伝える。相手に合わせて話を盛らない・媚びない。
+- 具体的な秒数で指摘してよいのは、状況に秒数が与えられている箇所だけ。それ以外で「○秒付近が…」と新たに作らない。
+- 数値（ビブラート回数・スコア・声域など）を聞かれたら、与えられた数値だけを答える。無ければ「今は手元に数値が無いので、もう一度録音を送ってもらえたら出せます」と正直に。
 
 # 解析でわかること／わからないこと（最重要・絶対厳守）
 - あなたが見ているのは音声解析の数値だけです: 時間(秒)、音の高さ(Hz・音名)、音量(dB)、音程の安定度、声の種類(地声/裏声/ミックス)、ビブラートなど。
@@ -126,6 +147,32 @@ def build_session_context(state: dict) -> str:
         dur = analysis.get("duration_sec")
         if dur:
             lines.append(f"- 録音の長さ: 約{dur:.0f}秒（この秒数を超える時刻は言わない）")
+        # 声診断の主要数値（数値を聞かれたらこれだけを答える。これ以外の数値は作らない）
+        try:
+            sc = scoring.compute_scores(analysis, None)
+            lines.append(
+                f"- スコア(0-100): 音程{sc['pitch_score']}／リズム{sc['rhythm_score']}／表現{sc['expression_score']}／総合{sc['total_score']}"
+            )
+        except Exception:
+            pass
+        fm = analysis.get("f0_median_hz")
+        if fm:
+            lines.append(f"- 声の高さ(中心): {_note_name(fm)}")
+        j = analysis.get("f0_jitter_cents")
+        if j is not None:
+            lines.append(f"- 音程の細かい揺れ(ジッター): {j:.0f}cents（15以下で上手）")
+        rng = analysis.get("rms_db_range")
+        if rng is not None:
+            lines.append(f"- 強弱の幅: {rng:.0f}dB")
+        vr = analysis.get("vibrato_rate_hz")
+        if vr is not None:
+            vd = analysis.get("vibrato_depth_cents")
+            lines.append(f"- ビブラート: 秒{vr:.1f}回" + (f"・深さ{vd:.0f}cents" if vd is not None else ""))
+        else:
+            lines.append("- ビブラート: 検出なし")
+        lts = analysis.get("long_tone_stability")
+        if lts is not None:
+            lines.append(f"- 伸ばしの安定度: {lts:.0f}cents")
         hr = analysis.get("harmonic_ratio")
         if hr is not None:
             q = "豊か（クリアで通る声）" if hr >= 0.55 else ("芯と柔らかさのバランス型" if hr >= 0.35 else "息まじり（柔らかい声）")
@@ -261,7 +308,9 @@ def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> O
             )
         prompt = (
             task
-            + " 歌なので歌詞は正確に聞き取れないことがあります。歌詞そのものを断定せず、発音の質に集中してください。"
+            + " 重要: 歌の歌詞は正確には聞き取れません。特定の歌詞・単語を引用したり断定したりしないでください"
+            + "（「『〜』の音」のように歌詞や単語を挙げない）。母音・子音・滑舌・響き・歌い回しの"
+            + "『質』だけを述べ、位置を示すときは「〜秒あたりの伸ばし／高い音」のように音楽的に言ってください。"
             + " ソラ先生として、やわらかい敬体で2〜4文・前向きに。Markdown記号は使わない。"
         )
         parts.append(prompt)
