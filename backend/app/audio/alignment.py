@@ -13,10 +13,72 @@ import librosa
 import numpy as np
 
 HOP_LENGTH = 512
+FMIN_HZ = 65.0
+FMAX_HZ = 1000.0
+FRAME_LENGTH = 2048
 
 
 def _chroma(y: np.ndarray, sr: int) -> np.ndarray:
     return librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=HOP_LENGTH)
+
+
+def _f0_cents(y: np.ndarray, sr: int) -> np.ndarray:
+    f0, _, _ = librosa.pyin(y, fmin=FMIN_HZ, fmax=FMAX_HZ, sr=sr,
+                            frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where((f0 is not None) & (f0 > 0), 1200.0 * np.log2(f0 / 440.0), np.nan)
+
+
+def _intune_score(mad_cents: float, off_ratio: float) -> int:
+    """音程の正確さスコア(0-100)。
+
+    中央絶対偏差(MAD, ビブラート等の外れ値に強い)を主成分にし、
+    「明らかに別の音(>80c)に外れている割合」でペナルティを加える。
+    良い歌唱でもビブラート・自然なゆらぎで20〜40c程度は出るため、閾値はやや寛容。
+    """
+    if mad_cents <= 22:
+        base = 92
+    elif mad_cents <= 35:
+        base = 82
+    elif mad_cents <= 55:
+        base = 70
+    elif mad_cents <= 85:
+        base = 56
+    else:
+        base = 42
+    base -= int(min(30, off_ratio * 60))  # 別の音に外れている割合でさらに減点
+    return max(20, min(98, base))
+
+
+def _pitch_accuracy(user_y, ref_y, sr, wp, lo, hi) -> tuple[Optional[float], Optional[int], Optional[float]]:
+    """ワーピングパスに沿って、原曲メロディと音を外していないか(in-tune)を実測。
+
+    全体の移調（キー差）を中央値で除き、オクターブに畳んだ残差から
+    中央絶対偏差(MAD)と「別の音に外れている割合(>80c)」を出す。
+    戻り: (pitch_error_cents=MAD, in_tune_score, off_ratio) or (None, None, None)。
+    """
+    try:
+        cu = _f0_cents(user_y, sr)
+        cr = _f0_cents(ref_y, sr)
+    except Exception:
+        return None, None, None
+    uf, rf = wp[:, 0], wp[:, 1]
+    devs = []
+    for i in range(lo, hi):
+        ui, ri = int(uf[i]), int(rf[i])
+        if ui < len(cu) and ri < len(cr):
+            a, b = cu[ui], cr[ri]
+            if not (np.isnan(a) or np.isnan(b)):
+                devs.append(a - b)
+    if len(devs) < 8:
+        return None, None, None
+    arr = np.array(devs, dtype=float)
+    rel = arr - np.median(arr)              # 全体の移調(キー差)を除去
+    rel = ((rel + 600.0) % 1200.0) - 600.0  # オクターブに畳む(±600c)
+    absdev = np.abs(rel)
+    mad = float(np.median(absdev))          # 中央絶対偏差(外れ値に強い)
+    off_ratio = float(np.mean(absdev > 80))  # 明らかに別の音に外れている割合
+    return round(mad, 1), _intune_score(mad, off_ratio), round(off_ratio, 3)
 
 
 def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
@@ -60,6 +122,8 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
     if n < 10:
         return None
     lo, hi = int(n * 0.1), int(n * 0.9)
+    # 原曲メロディとの音程の正確さ(in-tune)を実測（ワーピングパスに沿って）
+    pitch_err, in_tune, off_ratio = _pitch_accuracy(user_y, ref_y, sr, wp, lo, hi)
     user_t = user_t[lo:hi]
     ref_t = ref_t[lo:hi]
     # 各対応点のラグ = ユーザー時刻 - 原曲時刻（の相対基準を引く）
@@ -92,4 +156,10 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
             break
 
     worst.sort(key=lambda w: w["user_sec"])
-    return {"mean_lag_sec": round(mean_lag, 2), "worst_segments": worst}
+    return {
+        "mean_lag_sec": round(mean_lag, 2),
+        "worst_segments": worst,
+        "pitch_error_cents": pitch_err,
+        "in_tune_score": in_tune,
+        "off_pitch_ratio": off_ratio,
+    }

@@ -322,6 +322,44 @@ def _voice_brief(a: dict) -> str:
     return " ".join(parts)
 
 
+def _compare_brief(compare_data: Optional[dict]) -> str:
+    """原曲アップロードがある場合、音程の正確さ(in-tune)とリズムの実測値を文章化する。
+
+    キー差（移調）は除いて、原曲メロディからのズレを実測しているのがポイント。
+    原曲が無い/対応が取れない場合は、その旨を返す（断定させないため）。
+    """
+    if not compare_data:
+        return ""
+    al = compare_data.get("alignment") or {}
+    parts: list[str] = []
+    it = al.get("in_tune_score")
+    err = al.get("pitch_error_cents")
+    if it is not None and err is not None:
+        parts.append(
+            f"音程の正確さ（原曲メロディとの一致）{it}点／ズレ平均{err:.0f}cents"
+            "（全体のキーずれは除いて算出）"
+        )
+    lag = al.get("mean_lag_sec")
+    if lag is not None:
+        if abs(lag) < 0.05:
+            parts.append("リズムは原曲とほぼ一致（走り/モタりはごくわずか）")
+        elif lag > 0:
+            parts.append(f"リズムは原曲よりややモタり気味（平均{lag:.2f}秒遅れ）")
+        else:
+            parts.append(f"リズムは原曲よりやや走り気味（平均{abs(lag):.2f}秒先行）")
+        worst = al.get("worst_segments") or []
+        if worst:
+            w = worst[0]
+            d = "モタり" if w["lag_sec"] > 0 else "走り"
+            parts.append(f"特にずれが大きいのは{w['user_sec']:.0f}秒付近（{d}{abs(w['lag_sec']):.1f}秒）")
+    if not parts:
+        return "原曲と照合したが、うまく対応が取れず音程・リズムの実測値は出せなかった（断定しない）。"
+    tail = ""
+    if it is not None and it < 65:
+        tail = "（※音程の正確さが低め＝原曲から音が外れている箇所が目立つので、最優先で具体的に触れること）"
+    return "【原曲との照合（実測）】" + "／".join(parts) + "。" + tail
+
+
 def _stretch_target(a: dict) -> tuple[str, Optional[str]]:
     """弱点が無い録音でも提示する「もっと良くできる点」: (説明文, 対応課題ID)。
 
@@ -384,9 +422,10 @@ def _audio_diagnose(
         issues = list_weaknesses(analysis, compare_data, limit=3, exclude=[avoid] if avoid else [])
         issue_lines = "\n".join(f"  ・[{w['axis']}] {w['reason']}" for w in issues) or "  ・大きな弱点は少ない"
         harm = _harmonic_note(analysis)
-        ref_note = "" if compare_data else (
-            "原曲リンクが無いので、リズムの走り/モタりや音程の正確さは厳密には比較できない"
-            "（手元の安定度・声の質で判断している）。"
+        cmp_brief = _compare_brief(compare_data)
+        ref_note = cmp_brief if cmp_brief else (
+            "原曲（お手本）が無いので、リズムの走り/モタりや音程の正確さは厳密には比較できない"
+            "（手元の安定度・声の質で判断している）。原曲の音源を送ってもらえれば実測できる。"
         )
         facts = (
             "歌を解析した。\n"
@@ -403,6 +442,11 @@ def _audio_diagnose(
             "録音の講評を、発声・リズム・音感・表現(ビブラート/しゃくり等)の4観点を意識してバランスよく伝えてください。"
             "良い点と気になる点は、できるだけ具体的な秒数（と音名）を添えて話します。録音の長さを超える秒数は言わないこと。"
             "ロングトーンなど1つの観点だけに偏らないこと。音量の上下そのものは表現なので欠点にしません。"
+            "『原曲との照合（実測）』がある場合は、音程の正確さ(in-tune)とリズムの走り/モタりは"
+            "その実測値だけを根拠に話してください（推測で音名や正確さを断定しない）。"
+            "このとき音程の話は『正確さ(原曲との一致)』を主軸にし、『安定度(揺れ)』が小さくても"
+            "原曲と外れていれば『音程は完璧』とは言わないこと（安定度＝揺れの少なさ と 正確さ＝音を外していないか は別物）。"
+            "実測が無い場合は『原曲を送ってもらえれば音程・リズムを正確に見られる』と一言案内すること。"
             "張りどころで声を張りきれていない場合は、どうすれば張れるか（息の支え・喉を開く）も最初に一言添えてください。"
             "最後に、今日の最優先課題の基礎練を1つだけ前向きに勧めてください。"
         )
@@ -425,7 +469,8 @@ def _audio_diagnose(
         harm = _harmonic_note(analysis)
         stretch, stretch_id = _stretch_target(analysis)
         stretch_task = get_task(stretch_id) if stretch_id else None
-        ref_note = "" if compare_data else "原曲リンクが無いのでリズム/音程の正確さは厳密には比較できない。\n"
+        cmp_brief = _compare_brief(compare_data)
+        ref_note = (cmp_brief + "\n") if cmp_brief else "原曲（お手本）が無いのでリズム/音程の正確さは厳密には比較できない。\n"
         prac_line = ""
         if stretch_task:
             p0 = stretch_task["practices"][0]
@@ -503,7 +548,8 @@ def _audio_practice_check(
 
 
 def _audio_recheck(
-    state: dict, analysis: dict, history: Optional[list[dict]]
+    state: dict, analysis: dict, history: Optional[list[dict]],
+    compare_data: Optional[dict] = None,
 ) -> tuple[list[dict], dict]:
     """同じ箇所の歌い直し → 初回との改善判定（基礎練確認を飛ばしたい人向け）。"""
     out: list[dict] = []
@@ -512,6 +558,9 @@ def _audio_recheck(
     progress = feedback_builder.build_progress_payload(baseline, analysis, next_task)
     out.append(coach_msg("progress", payload=progress))
     brief = _voice_brief(analysis)
+    cmp_brief = _compare_brief(compare_data)
+    if cmp_brief:
+        brief = brief + " " + cmp_brief
 
     if progress["improved"]:
         praise = progress.get("praise") or "最初より良くなっています。"
@@ -566,7 +615,7 @@ def handle_audio(
     if kind == "practice" and has_task:
         return _audio_practice_check(state, analysis, history)
     if kind == "song" and has_task and has_baseline:
-        return _audio_recheck(state, analysis, history)
+        return _audio_recheck(state, analysis, history, compare_data)
     return _audio_diagnose(state, analysis, compare_data, history)
 
 

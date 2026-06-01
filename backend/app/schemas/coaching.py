@@ -29,6 +29,7 @@ class SessionDetail(BaseModel):
     user_range: Optional[str] = None
     phase: str
     current_task: Optional[str] = None
+    has_reference: bool = False
     messages: list[MessageOut]
 
 
