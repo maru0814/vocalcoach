@@ -293,6 +293,37 @@ def _projection_note(analysis: dict) -> Optional[str]:
     )
 
 
+def _harmonic_note(a: dict) -> Optional[str]:
+    """整数次倍音（声の響き）の所見。声質判定に使う。"""
+    hr = a.get("harmonic_ratio")
+    if hr is None:
+        return None
+    if hr >= 0.55:
+        return f"声の響き（整数次倍音）は豊かで、クリアに通る声（{hr:.2f}）。"
+    if hr >= 0.35:
+        return f"声の響き（整数次倍音）は芯と柔らかさのバランス型（{hr:.2f}）。"
+    return f"声の響きは息まじりで柔らかめ（整数次倍音 {hr:.2f}）。芯を足すとより通る声になる。"
+
+
+def _stretch_hint(a: dict) -> str:
+    """弱点が無い録音でも必ず提示する「もっと良くできる点」（具体・数値つき）。"""
+    vr = a.get("vibrato_rate_hz")
+    rng = a.get("rms_db_range")
+    j = a.get("f0_jitter_cents")
+    hr = a.get("harmonic_ratio")
+    if vr is None:
+        return "伸ばす音に軽くビブラート（秒4〜7回のゆれ）を足すと、表現の幅が広がります。"
+    if vr < 4.0 or vr > 7.5:
+        return f"ビブラートが秒{vr:.1f}回なので、秒4〜7回に整えるともっと自然に揺れます。"
+    if rng is not None and rng < 15:
+        return f"強弱の幅が約{rng:.0f}dBなので、サビと静かな所の音量差をもう少し広げると物語が出ます（15dB目安）。"
+    if j is not None and j > 5:
+        return f"音程の細かい揺れが{j:.0f}centsなので、5cents以下を目指すとさらにプロっぽくなります。"
+    if hr is not None and hr < 0.4:
+        return "声に芯（整数次倍音）を足すと、もっと前に通る声になります。ハミングで鼻に響かせる練習がおすすめ。"
+    return "今の安定感を保ちつつ、もう一段高い音域や、別の曲にも挑戦すると伸びます。"
+
+
 def _audio_diagnose(
     state: dict, analysis: dict, compare_data: Optional[dict], history: Optional[list[dict]]
 ) -> tuple[list[dict], dict]:
@@ -323,14 +354,17 @@ def _audio_diagnose(
         proj = _projection_note(analysis)
         issues = list_weaknesses(analysis, compare_data, limit=3, exclude=[avoid] if avoid else [])
         issue_lines = "\n".join(f"  ・[{w['axis']}] {w['reason']}" for w in issues) or "  ・大きな弱点は少ない"
+        harm = _harmonic_note(analysis)
         ref_note = "" if compare_data else (
             "原曲リンクが無いので、リズムの走り/モタりや音程の正確さは厳密には比較できない"
             "（手元の安定度・声の質で判断している）。"
         )
         facts = (
             "歌を解析した。\n"
+            f"録音の長さ: 約{analysis.get('duration_sec', 0):.0f}秒（この秒数を超える時刻は言わない）\n"
             f"スコア(0-100): 音程{scores.get('pitch_score')} / リズム{scores.get('rhythm_score')} / 表現{scores.get('expression_score')} / 総合{scores.get('total_score')}\n"
             f"良かった点: {goods}\n"
+            + (f"{harm}\n" if harm else "")
             + (f"張りどころ: {proj}\n" if proj else "")
             + f"気になる点（観点つき・優先度順）:\n{issue_lines}\n"
             + (f"{ref_note}\n" if ref_note else "")
@@ -338,7 +372,7 @@ def _audio_diagnose(
         )
         instr = (
             "録音の講評を、発声・リズム・音感・表現(ビブラート/しゃくり等)の4観点を意識してバランスよく伝えてください。"
-            "良い点と気になる点は、できるだけ具体的な秒数（と音名）を添えて話します。"
+            "良い点と気になる点は、できるだけ具体的な秒数（と音名）を添えて話します。録音の長さを超える秒数は言わないこと。"
             "ロングトーンなど1つの観点だけに偏らないこと。音量の上下そのものは表現なので欠点にしません。"
             "最後に、今日の最優先課題の基礎練を1つだけ前向きに勧めてください。"
         )
@@ -358,17 +392,23 @@ def _audio_diagnose(
         scores = fb_payload.get("scores", {})
         goods = "／".join(fb_payload.get("good_points", [])[:3])
         proj = _projection_note(analysis)
+        harm = _harmonic_note(analysis)
+        stretch = _stretch_hint(analysis)
         ref_note = "" if compare_data else "原曲リンクが無いのでリズム/音程の正確さは厳密には比較できない。\n"
         facts = (
             "歌を解析したが、大きな弱点は見当たらなかった。とても良い状態。\n"
+            f"録音の長さ: 約{analysis.get('duration_sec', 0):.0f}秒（この秒数を超える時刻は言わない）\n"
             f"スコア(0-100): 音程{scores.get('pitch_score')} / リズム{scores.get('rhythm_score')} / 表現{scores.get('expression_score')} / 総合{scores.get('total_score')}\n"
             f"良かった点: {goods}\n"
+            + (f"{harm}\n" if harm else "")
             + (f"張りどころ: {proj}\n" if proj else "")
+            + f"もっと良くできる点（必ず1つ伝える）: {stretch}\n"
             + ref_note
         )
         instr = (
             "発声・リズム・音感・表現の4観点に軽く触れて、良い状態であることを一緒に喜んでください。"
-            "良い点は秒数（と音名）を添えて具体的に。さらに伸ばすなら表現（強弱やビブラート等）の幅づくりを前向きに勧めてください。"
+            "良い点は秒数（と音名）を添えて具体的に。録音の長さを超える秒数は言わないこと。"
+            "そして必ず最後に『もっと良くできる点』を1つ、具体的な数値や秒数を添えて伝えてください。褒めて終わらせないこと。"
         )
         fallback = "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ さらに伸ばすなら、表現の幅づくりに挑戦してみましょう。"
         out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),

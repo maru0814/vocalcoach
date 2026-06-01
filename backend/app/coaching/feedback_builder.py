@@ -156,6 +156,21 @@ def build_voice_diagnosis_payload(a: dict) -> dict:
             "hint": "安定して伸ばせた最長の音",
         })
 
+    # 声の響き（整数次倍音）。クリアで通る声か、息まじりの柔らかい声か。
+    hr = a.get("harmonic_ratio")
+    if hr is not None:
+        if hr >= 0.55:
+            htxt = "豊か（クリアで芯のある・通る声）"
+        elif hr >= 0.35:
+            htxt = "ほどよい（芯と柔らかさのバランス）"
+        else:
+            htxt = "息まじり（柔らかい・ささやき寄り）"
+        rows.append({
+            "label": "声の響き（整数次倍音）",
+            "value": htxt,
+            "hint": "整数次倍音が多いほどクリアで通る声",
+        })
+
     lts = a.get("long_tone_stability")
     rows.append({
         "label": "伸ばしの安定度",
