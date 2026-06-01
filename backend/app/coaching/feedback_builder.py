@@ -160,16 +160,47 @@ def build_voice_diagnosis_payload(a: dict) -> dict:
             "hint": "この録音で出した範囲（あなたの最大音域ではありません）",
         })
 
-    # 使った声区（地声/ミックス/裏声）— スペクトル比からの推定で粗いことを明示
+    # 使った声区（地声/ミックス/裏声）— フォルマント＋スペクトル傾斜＋H1-H2 の多数決
     if holds:
         counts: dict[str, int] = {}
+        # 信頼度の高い区間を優先して集計（low は判定材料が薄いので弱める）
+        conf_w = {"high": 2, "med": 1, "low": 0}
         for h in holds:
-            vt = h.get("voice_type_estimate")
+            vt = h.get("register") or h.get("voice_type_estimate")
             if vt:
-                counts[vt] = counts.get(vt, 0) + 1
-        if counts:
+                counts[vt] = counts.get(vt, 0) + conf_w.get(h.get("register_confidence"), 1) + 1
+        confident = [h for h in holds if h.get("register_confidence") in ("high", "med")]
+        if counts and confident:
             used = "・".join(_voice_type_jp(vt) for vt, _ in sorted(counts.items(), key=lambda x: -x[1]))
-            rows.append({"label": "使っている声（推定）", "value": used, "hint": "倍音の比からの推定。目安として"})
+            rows.append({
+                "label": "使っている声（推定）",
+                "value": used,
+                "hint": "声の傾き・倍音・フォルマントから推定（目安）",
+            })
+        elif counts:
+            # 区間が短い/材料が薄く信頼度が低い → 断定しない
+            rows.append({
+                "label": "使っている声（推定）",
+                "value": "判定が難しい（録音が短い・情報が少ない）",
+                "hint": "もう少し長く伸ばす箇所があると推定しやすくなります",
+            })
+
+    # 声の共鳴（フォルマント）— 前に通る芯のある響きか、こもり気味か（目安）
+    sf_ratio = a.get("singers_formant_ratio")
+    f1 = a.get("formant_f1_hz")
+    f2 = a.get("formant_f2_hz")
+    if sf_ratio is not None and f1 and f2:
+        if sf_ratio >= 0.008:
+            res = "前によく集まって通る、芯のある共鳴"
+        elif sf_ratio >= 0.003:
+            res = "標準的な共鳴バランス"
+        else:
+            res = "やわらかく親しみのある響き（前に集めるとより通りやすくなる）"
+        rows.append({
+            "label": "声の共鳴（フォルマント）",
+            "value": res,
+            "hint": f"F1≈{f1}Hz・F2≈{f2}Hz。2.8〜3.4kHzの響きが通り・張りに効く（推定・目安）",
+        })
 
     # 換声点（地声→ミックス/裏声の切り替わり）の推定
     pg = taxonomy.passaggio_estimate(a)

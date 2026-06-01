@@ -198,6 +198,156 @@ def _voice_type(rolloff_to_f0: float | None) -> str | None:
     return "head"
 
 
+# ---- 声区推定の精度向上（フォルマント＋スペクトル傾斜＋H1-H2 の併用）----
+
+def _spectral_tilt(seg: np.ndarray, sr: int, lo: float = 300.0, hi: float = 4000.0) -> float | None:
+    """対数スペクトルの傾き(dB/oct)。地声=浅い／裏声=急。声区の主指標。"""
+    if len(seg) < 256:
+        return None
+    w = seg * np.hanning(len(seg))
+    nfft = 1 << (int(np.ceil(np.log2(len(w)))) + 1)
+    S = np.abs(np.fft.rfft(w, nfft))
+    fr = np.fft.rfftfreq(nfft, 1.0 / sr)
+    m = (fr >= lo) & (fr <= hi) & (S > 0)
+    if int(np.count_nonzero(m)) < 8:
+        return None
+    slope = np.polyfit(np.log2(fr[m]), 20.0 * np.log10(S[m] + 1e-9), 1)[0]
+    return float(slope)
+
+
+def _h1_h2(seg: np.ndarray, sr: int, f0: float) -> float | None:
+    """第1倍音と第2倍音の振幅差(dB)。声門開放率の指標。大=裏声寄り／小=地声寄り。"""
+    if len(seg) < 256 or not f0 or f0 <= 0:
+        return None
+    w = seg * np.hanning(len(seg))
+    nfft = 1 << (int(np.ceil(np.log2(len(w)))) + 1)
+    S = np.abs(np.fft.rfft(w, nfft))
+    fr = np.fft.rfftfreq(nfft, 1.0 / sr)
+
+    def amp(fk: float):
+        band = S[(fr >= fk * 0.85) & (fr <= fk * 1.15)]
+        return 20.0 * np.log10(float(np.max(band)) + 1e-9) if band.size else None
+
+    a1, a2 = amp(f0), amp(2.0 * f0)
+    return (a1 - a2) if (a1 is not None and a2 is not None) else None
+
+
+def _lpc_formants(seg: np.ndarray, sr: int, max_formants: int = 3) -> list[int]:
+    """LPC（自己相関法）の根から共鳴周波数（フォルマント）を推定。帯域幅で絞る。"""
+    if len(seg) < 256:
+        return []
+    order = int(2 + sr / 1000)
+    x = seg - float(np.mean(seg))
+    x = np.append(x[0], x[1:] - 0.63 * x[:-1])  # プリエンファシス
+    x = x * np.hamming(len(x))
+    if not np.any(x):
+        return []
+    try:
+        a = librosa.lpc(x.astype(float), order=order)
+    except Exception:
+        return []
+    roots = np.roots(a)
+    roots = roots[np.imag(roots) >= 0.01]
+    if roots.size == 0:
+        return []
+    ang = np.arctan2(np.imag(roots), np.real(roots))
+    freqs = ang * (sr / (2.0 * np.pi))
+    bws = -0.5 * (sr / (2.0 * np.pi)) * np.log(np.abs(roots) + 1e-12)
+    cand = sorted((float(f), float(b)) for f, b in zip(freqs, bws) if 90.0 < f < 4000.0 and b < 400.0)
+    return [int(round(f)) for f, _ in cand[:max_formants]]
+
+
+def _segment_voice_features(y: np.ndarray, sr: int, s_frame: int, e_frame: int,
+                            f0_hz: np.ndarray, max_frames: int = 10) -> dict:
+    """伸ばし区間の声区特徴（傾斜・H1-H2・フォルマント）。区間内を間引いて中央値。"""
+    if e_frame <= s_frame:
+        return {}
+    if e_frame - s_frame > max_frames:
+        idxs = np.linspace(s_frame, e_frame - 1, max_frames).astype(int)
+    else:
+        idxs = np.arange(s_frame, e_frame)
+    tilts, h1h2s, f1s, f2s, f3s = [], [], [], [], []
+    for i in idxs:
+        st = int(i) * HOP_LENGTH
+        seg = y[st:st + FRAME_LENGTH]
+        if len(seg) < FRAME_LENGTH // 2:
+            continue
+        t = _spectral_tilt(seg, sr)
+        if t is not None:
+            tilts.append(t)
+        f0 = f0_hz[i] if i < len(f0_hz) else np.nan
+        if not np.isnan(f0):
+            hh = _h1_h2(seg, sr, float(f0))
+            if hh is not None:
+                h1h2s.append(hh)
+        F = _lpc_formants(seg, sr)
+        if len(F) >= 1:
+            f1s.append(F[0])
+        if len(F) >= 2:
+            f2s.append(F[1])
+        if len(F) >= 3:
+            f3s.append(F[2])
+
+    def med_i(a):
+        return int(round(float(np.median(a)))) if a else None
+
+    return {
+        "spectral_tilt_db_oct": round(float(np.median(tilts)), 1) if tilts else None,
+        "h1h2_db": round(float(np.median(h1h2s)), 1) if h1h2s else None,
+        "formant_f1_hz": med_i(f1s),
+        "formant_f2_hz": med_i(f2s),
+        "formant_f3_hz": med_i(f3s),
+    }
+
+
+def _register_vote(tilt: float | None, h1h2: float | None,
+                   rolloff_ratio: float | None) -> tuple[str | None, str]:
+    """傾斜・H1-H2・ロールオフ比の多数決で声区を推定。戻り: (label, confidence)。
+
+    各票 chest=+1 / head=-1 / neutral=0。score>=2→chest, <=-2→head, それ以外→mix。
+    confidence は票数と一致度から high/med/low。
+    """
+    votes: list[int] = []
+    if tilt is not None:
+        votes.append(1 if tilt >= -6 else (-1 if tilt <= -11 else 0))
+    if h1h2 is not None:
+        votes.append(1 if h1h2 <= 2 else (-1 if h1h2 >= 8 else 0))
+    if rolloff_ratio is not None:
+        votes.append(1 if rolloff_ratio >= 6 else (-1 if rolloff_ratio < 4 else 0))
+    if not votes:
+        return None, "low"
+    score = sum(votes)
+    label = "chest" if score >= 2 else ("head" if score <= -2 else "mix")
+    if len(votes) >= 2 and abs(score) >= 2:
+        conf = "high"
+    elif len(votes) >= 2:
+        conf = "med"
+    else:
+        conf = "low"
+    return label, conf
+
+
+def _singers_formant_ratio(y: np.ndarray, sr: int,
+                           voiced_flag: np.ndarray | None = None) -> float | None:
+    """歌手フォルマント帯(2.8–3.4kHz)のエネルギー比。高い＝前に通る・芯のある共鳴。
+
+    無音やブレスを含めると薄まるため、有声フレームのみで集計する。
+    """
+    S = np.abs(librosa.stft(y, n_fft=FRAME_LENGTH, hop_length=HOP_LENGTH)) ** 2
+    fr = librosa.fft_frequencies(sr=sr, n_fft=FRAME_LENGTH)
+    if voiced_flag is not None and len(voiced_flag) > 0:
+        m = np.zeros(S.shape[1], dtype=bool)
+        n = min(len(voiced_flag), S.shape[1])
+        m[:n] = voiced_flag[:n].astype(bool)
+        if m.any():
+            S = S[:, m]
+    band = (fr >= 2800) & (fr <= 3400)
+    total = float(np.sum(S)) + 1e-9
+    if total <= 1e-8:
+        return None
+    return round(float(np.sum(S[band])) / total, 4)
+
+
 def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain_min_sec=0.6) -> dict:
     rms = librosa.feature.rms(y=y, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)[0]
     centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=HOP_LENGTH)[0]
@@ -258,6 +408,11 @@ def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain
             ratio = roll_avg / mean_f0 if (mean_f0 > 0 and roll_avg) else None
             start_t = round(min(s * hop_sec, total_dur), 2)
             end_t = round(min(e * hop_sec, total_dur), 2)
+            # 声区の精度向上: フォルマント＋スペクトル傾斜＋H1-H2 を併用して多数決
+            vfeat = _segment_voice_features(y, sr, s, e, f0_hz)
+            register, reg_conf = _register_vote(
+                vfeat.get("spectral_tilt_db_oct"), vfeat.get("h1h2_db"), ratio
+            )
             sustained.append({
                 "start_sec": start_t,
                 "end_sec": end_t,
@@ -269,7 +424,15 @@ def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain
                 "spectral_centroid_hz": round(cent_avg, 0) if cent_avg else None,
                 "spectral_rolloff85_hz": round(roll_avg, 0) if roll_avg else None,
                 "rolloff_to_f0_ratio": round(ratio, 2) if ratio else None,
-                "voice_type_estimate": _voice_type(ratio),
+                "spectral_tilt_db_oct": vfeat.get("spectral_tilt_db_oct"),
+                "h1h2_db": vfeat.get("h1h2_db"),
+                "formant_f1_hz": vfeat.get("formant_f1_hz"),
+                "formant_f2_hz": vfeat.get("formant_f2_hz"),
+                "formant_f3_hz": vfeat.get("formant_f3_hz"),
+                "register": register,
+                "register_confidence": reg_conf,
+                # 後方互換: 既存コードは voice_type_estimate を参照する
+                "voice_type_estimate": register or _voice_type(ratio),
             })
 
     return {"window_sec": window_sec, "per_window": per_window, "sustained_segments": sustained}
@@ -345,6 +508,16 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     harm = harmonic_ratio(y, sr, f0_hz, voiced_flag)
     timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
 
+    # 声区/共鳴の全体集計（伸ばし区間のフォルマント・傾斜の中央値＋歌手フォルマント比）
+    _segs = timeline.get("sustained_segments", [])
+    def _seg_med(key):
+        vals = [s[key] for s in _segs if s.get(key) is not None]
+        return round(float(np.median(vals)), 1) if vals else None
+    formant_f1 = _seg_med("formant_f1_hz")
+    formant_f2 = _seg_med("formant_f2_hz")
+    spectral_tilt = _seg_med("spectral_tilt_db_oct")
+    singers_formant = _singers_formant_ratio(y, sr, voiced_flag)
+
     result = {
         "duration_sec": round(duration, 2),
         "voiced_ratio": round(voiced_ratio, 3),
@@ -362,6 +535,10 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "vibrato_depth_cents": round(vib_depth, 1) if vib_depth else None,
         "long_tone_stability": round(lts, 1) if lts else None,
         "harmonic_ratio": round(harm, 3) if harm is not None else None,
+        "formant_f1_hz": formant_f1,
+        "formant_f2_hz": formant_f2,
+        "spectral_tilt_db_oct": spectral_tilt,
+        "singers_formant_ratio": singers_formant,
         "timeline": timeline,
         "vocal_isolated": bool(isolate_vocal),
     }
