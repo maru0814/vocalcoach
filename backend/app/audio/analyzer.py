@@ -300,20 +300,43 @@ def _segment_voice_features(y: np.ndarray, sr: int, s_frame: int, e_frame: int,
     }
 
 
+# 声区推定の票しきい値。各キューは chest 側 / head 側のカット。
+# tools/calibrate_register.py でラベル付き音源から再較正できる（実データが集まり次第更新）。
+#
+# 現行値は実録音で検証済み（低音→地声・高音→ミックスと妥当）。合成コーパス較正で
+# キューの向き（傾斜・H1-H2・ロールオフが声区順に単調）は確認したが、H1-H2/傾斜の
+# 「絶対値」はマイク・母音・声分離でドメイン依存のため、合成の絶対しきい値はそのまま
+# 転移しない（実録音ではむしろ悪化）。よって本番は実録音検証済みの値を維持し、
+# 実ラベル音源が集まり次第ハーネスで較正する運用とする。詳細は docs/15。
+REGISTER_THRESHOLDS = {
+    # スペクトル傾斜(dB/oct): 値が大きい(浅い)ほど地声、小さい(急)ほど裏声
+    "tilt_chest_ge": -6.0,
+    "tilt_head_le": -11.0,
+    # H1-H2(dB): 小さい/負ほど地声、大きいほど裏声
+    "h1h2_chest_le": 2.0,
+    "h1h2_head_ge": 8.0,
+    # ロールオフ÷f0（補助・最も転移しやすい）
+    "rolloff_chest_ge": 6.0,
+    "rolloff_head_lt": 4.0,
+}
+
+
 def _register_vote(tilt: float | None, h1h2: float | None,
-                   rolloff_ratio: float | None) -> tuple[str | None, str]:
+                   rolloff_ratio: float | None,
+                   th: dict | None = None) -> tuple[str | None, str]:
     """傾斜・H1-H2・ロールオフ比の多数決で声区を推定。戻り: (label, confidence)。
 
     各票 chest=+1 / head=-1 / neutral=0。score>=2→chest, <=-2→head, それ以外→mix。
-    confidence は票数と一致度から high/med/low。
+    confidence は票数と一致度から high/med/low。しきい値は REGISTER_THRESHOLDS（較正可能）。
     """
+    th = th or REGISTER_THRESHOLDS
     votes: list[int] = []
     if tilt is not None:
-        votes.append(1 if tilt >= -6 else (-1 if tilt <= -11 else 0))
+        votes.append(1 if tilt >= th["tilt_chest_ge"] else (-1 if tilt <= th["tilt_head_le"] else 0))
     if h1h2 is not None:
-        votes.append(1 if h1h2 <= 2 else (-1 if h1h2 >= 8 else 0))
+        votes.append(1 if h1h2 <= th["h1h2_chest_le"] else (-1 if h1h2 >= th["h1h2_head_ge"] else 0))
     if rolloff_ratio is not None:
-        votes.append(1 if rolloff_ratio >= 6 else (-1 if rolloff_ratio < 4 else 0))
+        votes.append(1 if rolloff_ratio >= th["rolloff_chest_ge"] else (-1 if rolloff_ratio < th["rolloff_head_lt"] else 0))
     if not votes:
         return None, "low"
     score = sum(votes)
