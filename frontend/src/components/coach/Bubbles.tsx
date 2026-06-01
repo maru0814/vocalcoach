@@ -1,6 +1,7 @@
 "use client";
 
-import { CoachMessage, COACH_API_BASE } from "@/lib/api";
+import { useState } from "react";
+import { CoachMessage, COACH_API_BASE, submitMessageFeedback } from "@/lib/api";
 import { CoachAvatar } from "@/components/character/Coach";
 
 function scoreColor(v: number) {
@@ -254,12 +255,103 @@ function ActionChips({
   );
 }
 
+const FB_REASONS = [
+  { id: "fact", label: "事実が違う" },
+  { id: "irrelevant", label: "見当違い" },
+  { id: "other", label: "その他" },
+];
+
+/** コーチ返信への👍/👎フィードバック。間違い指摘を蓄積して改善に使う。 */
+function FeedbackControl({ sessionId, messageId }: { sessionId: string | number; messageId: number }) {
+  const [status, setStatus] = useState<"idle" | "form" | "sent">("idle");
+  const [reason, setReason] = useState<string | null>(null);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function send(rating: "up" | "down", r?: string, c?: string) {
+    setBusy(true);
+    try {
+      await submitMessageFeedback(sessionId, messageId, rating, r, c);
+      setStatus("sent");
+    } catch {
+      // 失敗しても会話は止めない（黙ってidleに戻す）
+      setBusy(false);
+    }
+  }
+
+  if (status === "sent") {
+    return <div className="mt-1 pl-1 text-[11px] text-slate-400">ありがとうございます。改善に役立てます🙏</div>;
+  }
+
+  if (status === "form") {
+    return (
+      <div className="mt-1.5 rounded-xl bg-slate-50 p-2.5">
+        <div className="text-[11px] text-slate-500">どこが気になりましたか？（任意）</div>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {FB_REASONS.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setReason(reason === r.id ? null : r.id)}
+              className={`rounded-full px-2.5 py-1 text-xs transition ${
+                reason === r.id ? "bg-brand-gradient text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          rows={2}
+          placeholder="正しくは何でしたか？（任意）"
+          className="mt-2 w-full resize-none rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-brand-400"
+        />
+        <div className="mt-1.5 flex justify-end gap-2">
+          <button onClick={() => setStatus("idle")} className="text-xs text-slate-400">やめる</button>
+          <button
+            disabled={busy}
+            onClick={() => send("down", reason || undefined, comment.trim() || undefined)}
+            className="rounded-full bg-brand-gradient px-3 py-1 text-xs font-bold text-white disabled:opacity-40"
+          >
+            送信
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1 flex items-center gap-1 pl-1">
+      <span className="text-[11px] text-slate-300">役に立った？</span>
+      <button
+        disabled={busy}
+        onClick={() => send("up")}
+        aria-label="役に立った"
+        className="rounded-md px-1.5 py-0.5 text-sm text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-500"
+      >
+        👍
+      </button>
+      <button
+        disabled={busy}
+        onClick={() => setStatus("form")}
+        aria-label="間違いを指摘"
+        className="rounded-md px-1.5 py-0.5 text-sm text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+      >
+        👎
+      </button>
+    </div>
+  );
+}
+
 export function MessageBubble({
   m,
+  sessionId,
   onAction,
   actionsDisabled,
 }: {
   m: CoachMessage;
+  sessionId?: string | number;
   onAction?: (id: string) => void;
   actionsDisabled?: boolean;
 }) {
@@ -285,9 +377,12 @@ export function MessageBubble({
       <CoachAvatar size={32} />
       <div className={isCard ? "min-w-0 max-w-[88%] flex-1" : "max-w-[82%]"}>
         {m.type === "text" && (
-          <div className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-700 shadow-card ring-1 ring-slate-100">
-            {m.text}
-          </div>
+          <>
+            <div className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-700 shadow-card ring-1 ring-slate-100">
+              {m.text}
+            </div>
+            {sessionId != null && <FeedbackControl sessionId={sessionId} messageId={m.id} />}
+          </>
         )}
         {m.type === "audio" && m.audio_url && (
           <div className="rounded-2xl rounded-bl-md bg-white p-2 shadow-card ring-1 ring-slate-100">

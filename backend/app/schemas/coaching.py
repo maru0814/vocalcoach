@@ -45,6 +45,12 @@ class ActionRequest(BaseModel):
     action: str  # more_practice | recheck_song | change_task | finish
 
 
+class FeedbackRequest(BaseModel):
+    rating: str                      # "up" | "down"
+    reason: Optional[str] = None     # fact | irrelevant | rude | other
+    comment: Optional[str] = None    # 「何が違った？」自由記述
+
+
 class ChatResponse(BaseModel):
     phase: str
     current_task: Optional[str] = None
