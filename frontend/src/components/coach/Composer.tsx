@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Recorder } from "./Recorder";
 
 // 録音の種類はユーザーに選ばせず、サーバー側が音声から自動判定する（"auto"）。
@@ -20,6 +20,12 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
   const recorderRef = useRef<Recorder | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // 送信キー: Mac は ⌘(Cmd)+Enter、Windows等は Shift+Enter（Enterは改行）
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    const p = navigator.platform || navigator.userAgent || "";
+    setIsMac(/Mac|iPhone|iPad|iPod/.test(p));
+  }, []);
 
   const MAX_SEC = 60;
 
@@ -135,14 +141,15 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            // Shift+Enter で送信、Enter は改行
-            if (e.key === "Enter" && e.shiftKey) {
+            // Mac: ⌘+Enter / Windows等: Shift+Enter で送信。Enter は改行
+            const sendCombo = isMac ? e.metaKey : e.shiftKey;
+            if (e.key === "Enter" && sendCombo) {
               e.preventDefault();
               submitText();
             }
           }}
           rows={1}
-          placeholder="メッセージを入力（Shift+Enterで送信）／🎙録音・📎で歌や基礎練を送る"
+          placeholder={`メッセージを入力（${isMac ? "⌘+Enter" : "Shift+Enter"}で送信）／🎙録音・📎で歌や基礎練を送る`}
           disabled={disabled}
           className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:shadow-glow disabled:opacity-40"
         />
