@@ -305,6 +305,23 @@ def _harmonic_note(a: dict) -> Optional[str]:
     return f"声の響きは息まじりで柔らかめ（整数次倍音 {hr:.2f}）。芯を足すとより通る声になる。"
 
 
+def _voice_brief(a: dict) -> str:
+    """声の状態の短いサマリ（張りどころ・声の響き・ビブラート/揺れ）。
+
+    歌い直し判定など、改善差分だけだと話題が偏る場面で、ビブラートや声の張りにも
+    一貫して触れられるようにする。
+    """
+    parts = []
+    proj = _projection_note(a)
+    if proj:
+        parts.append(proj)
+    h = _harmonic_note(a)
+    if h:
+        parts.append(h)
+    parts.append("ビブラート/揺れ: " + feedback_builder.vibrato_label(a.get("vibrato_rate_hz"), a.get("vibrato_depth_cents")))
+    return " ".join(parts)
+
+
 def _stretch_target(a: dict) -> tuple[str, Optional[str]]:
     """弱点が無い録音でも提示する「もっと良くできる点」: (説明文, 対応課題ID)。
 
@@ -386,6 +403,7 @@ def _audio_diagnose(
             "録音の講評を、発声・リズム・音感・表現(ビブラート/しゃくり等)の4観点を意識してバランスよく伝えてください。"
             "良い点と気になる点は、できるだけ具体的な秒数（と音名）を添えて話します。録音の長さを超える秒数は言わないこと。"
             "ロングトーンなど1つの観点だけに偏らないこと。音量の上下そのものは表現なので欠点にしません。"
+            "張りどころで声を張りきれていない場合は、どうすれば張れるか（息の支え・喉を開く）も最初に一言添えてください。"
             "最後に、今日の最優先課題の基礎練を1つだけ前向きに勧めてください。"
         )
         fallback = (
@@ -493,16 +511,19 @@ def _audio_recheck(
     next_task = diagnose_task(analysis, None, exclude=[state.get("current_task")])
     progress = feedback_builder.build_progress_payload(baseline, analysis, next_task)
     out.append(coach_msg("progress", payload=progress))
+    brief = _voice_brief(analysis)
 
     if progress["improved"]:
         praise = progress.get("praise") or "最初より良くなっています。"
         if next_task:
             facts = (
                 f"歌い直しの結果、最初の録音より改善した。{praise}\n"
+                f"今回の声の状態: {brief}\n"
                 f"次に伸ばせそうな弱点: 「{next_task['label']}」（根拠: {next_task['reason'](analysis, None)}）。"
             )
             instr = (
                 "良くなった点を具体的に伝えて一緒に喜び、次のおすすめ課題をやんわり提案してください。"
+                "ビブラートや声の張り（張りどころ）にも、状態に応じて自然に触れてよい。"
                 "続けるか別のことをするかはユーザーが選べる雰囲気で。"
             )
             fallback = f"いい調子ですね😊 次は「{next_task['label']}」がおすすめです。続けますか？それとも別のことをしますか？"
@@ -512,15 +533,15 @@ def _audio_recheck(
                                  payload=_action_chips("more_practice", "recheck_song", "change_task", "finish")))
             updates = {"phase": LESSON, "current_task": next_task["id"], "baseline_analysis": analysis}
         else:
-            facts = f"歌い直しの結果、最初より改善し、大きな弱点はほぼ無くなった。{praise}"
-            instr = "改善を大いに喜び、今日はここまででも別の曲でも続けられると前向きに伝えてください。"
+            facts = f"歌い直しの結果、最初より改善し、大きな弱点はほぼ無くなった。{praise}\n今回の声の状態: {brief}"
+            instr = "改善を大いに喜び、ビブラートや声の張りの状態にも一言触れつつ、今日はここまででも別の曲でも続けられると前向きに伝えてください。"
             fallback = "弱点がかなり減りましたね！素晴らしいです✨ 今日はここまででも、別の曲でも続けられますよ🎶"
             out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
                                  payload=_action_chips("recheck_song", "finish")))
             updates = {"phase": DONE}
     else:
-        facts = "歌い直したが、初回と比べて大きな改善はまだ出ていない。"
-        instr = "落ち込ませないよう励まし、もう少し基礎練を続けるか、別の課題に変えるかを優しく提案してください。"
+        facts = f"歌い直したが、初回と比べて大きな改善はまだ出ていない。\n今回の声の状態: {brief}"
+        instr = "落ち込ませないよう励まし、ビブラートや声の張りの状態にも一言触れつつ、もう少し基礎練を続けるか別の課題に変えるかを優しく提案してください。"
         fallback = "今回はまだ大きな変化は出ていないみたいですね。でも大丈夫、もう少し基礎練するか、別の課題に変えてみましょう💪"
         out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
                              payload=_action_chips("more_practice", "change_task", "recheck_song", "finish")))
