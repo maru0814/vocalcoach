@@ -5,9 +5,28 @@
 
 from __future__ import annotations
 
+import re
+import urllib.parse
 from typing import Optional
 
 from app.coaching import scoring, taxonomy
+
+
+def _shirasuta_video(practice_name: str, task_label: str) -> dict:
+    """基礎練の実演動画リンク。人気ボイトレYouTuber『しらスタ』を最優先で出す検索リンク。
+
+    特定動画URLのハードコードは死リンク・誤リンクの恐れがあるため、
+    『しらスタ <種目>』のYouTube検索にして、該当があれば最上位に、無ければ関連動画が出る形にする。
+    """
+    kw = re.sub(r"^[\s0-9.①-⑳]+", "", practice_name)  # 先頭の番号(①等)を除去
+    kw = re.sub(r"（.*?）", "", kw)  # 括弧書きを除去
+    kw = re.split(r"\s+[→➡>]\s+", kw)[0].strip()  # 「A → B」(前後に空白)は主種目Aだけ
+    kw = kw or task_label
+    query = f"しらスタ {kw}"
+    return {
+        "title": f"🔍 しらスタで『{kw}』の実演を見る",
+        "url": "https://www.youtube.com/results?search_query=" + urllib.parse.quote(query),
+    }
 
 
 def _note_name(hz: Optional[float]) -> str:
@@ -163,6 +182,15 @@ def build_voice_diagnosis_payload(a: dict) -> dict:
             used = "・".join(_voice_type_jp(vt) for vt, _ in sorted(counts.items(), key=lambda x: -x[1]))
             rows.append({"label": "使っている声（推定）", "value": used, "hint": "倍音の比からの推定。目安として"})
 
+    # 換声点（地声→ミックス/裏声の切り替わり）の推定
+    pg = taxonomy.passaggio_estimate(a)
+    if pg:
+        rows.append({
+            "label": "換声点（推定）",
+            "value": f"{pg['note']} あたり",
+            "hint": "地声→ミックス/裏声に切り替わる目安。スムーズにつなぐのが目標",
+        })
+
     # いちばん長い伸ばし
     longest = max(holds, key=lambda s: s.get("duration_sec", 0)) if holds else None
     if longest:
@@ -219,7 +247,7 @@ def build_practice_payload(task: dict) -> dict:
                 "name": p["name"],
                 "steps": p["steps"],
                 "checkpoint": p.get("checkpoint"),
-                "video": p.get("video"),
+                "video": _shirasuta_video(p["name"], task["label"]),
             }
             for p in task["practices"]
         ],
