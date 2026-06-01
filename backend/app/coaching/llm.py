@@ -217,6 +217,60 @@ def generate_reply(
     return _complete(_build_contents(state, user_text, history))
 
 
+def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> Optional[str]:
+    """録音の音声そのものを Gemini に聴かせ、発音（母音の口の開き・子音・滑舌・歌い回し）を講評する。
+
+    ref_wav があれば「原曲（お手本）」として渡し、原曲と比較した発音アドバイスを返す。
+    歌の歌詞は正確に聞き取れないことがあるため、歌詞の断定は避け発音の質に集中させる。
+    APIキー未設定・SDK未導入・エラー時は None。
+    """
+    if not settings.llm_enabled:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception:  # pragma: no cover
+        return None
+    try:
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.llm_audio_timeout_sec * 1000)),
+        )
+        parts: list = [types.Part.from_bytes(data=user_wav, mime_type="audio/wav")]
+        if ref_wav:
+            parts.append(types.Part.from_bytes(data=ref_wav, mime_type="audio/wav"))
+            task = (
+                "1つ目の音声はユーザーの歌、2つ目はお手本（原曲）です。"
+                "発音（母音の口の開き・子音の立て方・滑舌・言葉の歌い回し）を原曲と比べて、"
+                "似ている点と、原曲に寄せるとよい点を具体的に伝えてください。"
+            )
+        else:
+            task = (
+                "ユーザーの歌の発音（母音の口の開き・子音の立て方・滑舌・言葉の明瞭さ）について、"
+                "良い点と、もっと良くなる点を具体的に伝えてください。"
+            )
+        prompt = (
+            task
+            + " 歌なので歌詞は正確に聞き取れないことがあります。歌詞そのものを断定せず、発音の質に集中してください。"
+            + " ソラ先生として、やわらかい敬体で2〜4文・前向きに。Markdown記号は使わない。"
+        )
+        parts.append(prompt)
+        resp = client.models.generate_content(
+            model=settings.llm_audio_model,
+            contents=parts,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                max_output_tokens=settings.llm_max_tokens,
+                temperature=0.3,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+        return (resp.text or "").strip() or None
+    except Exception as e:
+        logger.warning("発音解析（音声入力）に失敗: %s", e)
+        return None
+
+
 def generate_coach_comment(
     facts: str, instruction: str, history: Optional[list[dict]] = None
 ) -> Optional[str]:

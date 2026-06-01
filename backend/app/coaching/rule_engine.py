@@ -42,6 +42,7 @@ ACTION_DEFS = {
     "more_practice": {"icon": "🎙", "label": "もう一度 基礎練"},
     "recheck_song": {"icon": "🎵", "label": "曲を録り直す"},
     "change_task": {"icon": "🔁", "label": "別の課題に変える"},
+    "pronunciation": {"icon": "🗣", "label": "発音を見る"},
     "finish": {"icon": "✅", "label": "今日はここまで"},
 }
 
@@ -243,6 +244,17 @@ def _llm_or(text_fallback: str, facts: str, instruction: str, history: Optional[
     return reply or text_fallback
 
 
+PRONUNCIATION_KW = [
+    "発音", "はつおん", "滑舌", "かつぜつ", "母音", "子音", "ディクション",
+    "歌詞の言い", "歌詞の発音", "口の開き", "言葉がはっき", "言葉の明瞭",
+]
+
+
+def is_pronunciation_request(text: str) -> bool:
+    """「発音を見て／原曲と発音を比べて」等の依頼かどうか。"""
+    return any(k in text for k in PRONUNCIATION_KW)
+
+
 def classify_kind(analysis: dict) -> str:
     """録音が「曲」か「基礎練(単純な発声練習)」かを音声特徴から推定する。
 
@@ -301,6 +313,8 @@ def _audio_diagnose(
 
     fb_payload = feedback_builder.build_feedback_payload(analysis, compare_data, task)
     out.append(coach_msg("feedback", payload=fb_payload))
+    # Voick風の声診断カード（音域・声区・ロングトーン・ビブラート・音程精度）
+    out.append(coach_msg("diagnosis", payload=feedback_builder.build_voice_diagnosis_payload(analysis)))
 
     if task:
         prac = task["practices"][0]
@@ -336,8 +350,8 @@ def _audio_diagnose(
         out.append(coach_msg(
             "text",
             "やってみたら基礎練の録音を、もう同じ箇所を歌い直して確かめたいなら曲の録音を送ってください。"
-            "下のボタンからも選べます😊",
-            payload=_action_chips("more_practice", "recheck_song", "change_task", "finish"),
+            "発音を詳しく見たいときは「🗣 発音を見る」もどうぞ😊",
+            payload=_action_chips("more_practice", "recheck_song", "pronunciation", "change_task", "finish"),
         ))
         updates = {"phase": LESSON, "current_task": task["id"], "baseline_analysis": analysis, "avoid_task": None}
     else:

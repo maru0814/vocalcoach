@@ -212,6 +212,22 @@ function ProgressCard({ p }: { p: Record<string, any> }) {
   );
 }
 
+function DiagnosisCard({ p }: { p: Record<string, any> }) {
+  return (
+    <CardShell title="声診断" icon="🎤" accent="brand">
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {Array.isArray(p.rows) && p.rows.map((r: any, i: number) => (
+          <div key={i} className="rounded-xl bg-slate-50 px-3 py-2">
+            <div className="text-[11px] text-slate-400">{r.label}</div>
+            <div className="text-sm font-bold text-slate-700">{r.value}</div>
+            {r.hint && <div className="text-[10px] text-slate-400">{r.hint}</div>}
+          </div>
+        ))}
+      </div>
+    </CardShell>
+  );
+}
+
 function ActionChips({
   actions,
   onAction,
@@ -248,7 +264,7 @@ export function MessageBubble({
   actionsDisabled?: boolean;
 }) {
   const isUser = m.role === "user";
-  const isCard = ["feedback", "practice", "judge", "progress"].includes(m.type);
+  const isCard = ["feedback", "practice", "judge", "progress", "diagnosis"].includes(m.type);
   const actions = (m.payload as any)?.actions as { id: string; icon?: string; label: string }[] | undefined;
 
   if (isUser) {
@@ -282,6 +298,7 @@ export function MessageBubble({
         {m.type === "practice" && m.payload && <PracticeCard p={m.payload as any} />}
         {m.type === "judge" && m.payload && <JudgeCard p={m.payload as any} />}
         {m.type === "progress" && m.payload && <ProgressCard p={m.payload as any} />}
+        {m.type === "diagnosis" && m.payload && <DiagnosisCard p={m.payload as any} />}
         {actions && <ActionChips actions={actions} onAction={onAction} disabled={actionsDisabled} />}
       </div>
     </div>
