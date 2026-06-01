@@ -42,8 +42,12 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     # 最安クラス＋無料枠ありの Flash-Lite を既定に。env で上書き可。
     llm_model: str = "gemini-flash-lite-latest"
+    # 発音の聞き取り（音声入力）用。Flash-Lite は音声が弱いので Flash を使う。
+    llm_audio_model: str = "gemini-2.5-flash"
     llm_max_tokens: int = 400
     llm_timeout_sec: float = 20.0
+    # 音声入力は処理が重いのでタイムアウトを長めに
+    llm_audio_timeout_sec: float = 60.0
     # 直近何件の会話履歴を文脈として渡すか
     llm_history_turns: int = 12
 

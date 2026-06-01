@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.audio import analyzer
 from app.audio.convert import to_wav
 from app.audio.reference import ReferenceFetchError, fetch_reference_wav, fetch_youtube_title
-from app.coaching import rule_engine
+from app.coaching import llm, rule_engine
 from app.core.config import settings
 from app.core.ratelimit import check_rate_limit
 from app.db.session import get_db
@@ -119,6 +119,43 @@ def _persist_coach_messages(db: Session, session_id: int, msgs: list[dict]) -> l
     return rows
 
 
+def _pronunciation_reply(db: Session, s: ChatSession) -> dict:
+    """最新の録音を Gemini に聴かせ、発音の講評（原曲があれば比較）を返す。"""
+    last_audio = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == s.id, ChatMessage.type == "audio")
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    if not last_audio or not last_audio.audio_path or not os.path.exists(last_audio.audio_path):
+        return {"type": "text", "text": "発音を見るには、まず歌った録音を送ってくださいね🎤 そのあと「発音を見て」と聞いてください。"}
+
+    wav = last_audio.audio_path + ".wav"
+    if not os.path.exists(wav):
+        try:
+            wav = to_wav(last_audio.audio_path, wav)
+        except Exception:
+            return {"type": "text", "text": "音声の読み込みがうまくいきませんでした。もう一度録音を送ってみてください。"}
+    try:
+        user_bytes = open(wav, "rb").read()
+    except Exception:
+        return {"type": "text", "text": "音声の読み込みに失敗しました。もう一度お試しください。"}
+
+    ref_bytes = None
+    if s.song_ref_path and os.path.exists(s.song_ref_path):
+        try:
+            ref_bytes = open(s.song_ref_path, "rb").read()
+        except Exception:
+            ref_bytes = None
+
+    reply = llm.analyze_pronunciation(user_bytes, ref_bytes)
+    if not reply:
+        return {"type": "text", "text": "発音の聞き取りが今うまくできませんでした。少し時間をおいて、もう一度試してくださいね。"}
+    if ref_bytes is None:
+        reply += "\n\n（原曲＝お手本の音源も用意できれば、原曲と比べた発音アドバイスもできますよ😊）"
+    return {"type": "text", "text": reply}
+
+
 def _get_owned_session(db: Session, session_id: int, user) -> ChatSession:
     s = (
         db.query(ChatSession)
@@ -207,6 +244,16 @@ def send_message(
     user_msg = ChatMessage(session_id=s.id, role="user", type="text", text=body.text)
     db.add(user_msg)
 
+    # 発音アドバイスの依頼は、最新の録音音声を Gemini に聴かせて講評する（特別経路）
+    if rule_engine.is_pronunciation_request(body.text):
+        db.flush()
+        pron = _pronunciation_reply(db, s)
+        rows = _persist_coach_messages(db, s.id, [pron])
+        db.commit()
+        for r in rows:
+            db.refresh(r)
+        return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+
     msgs, updates = rule_engine.handle_text(_session_state(s), body.text, history=history)
     _apply_updates(s, updates)
 
@@ -232,6 +279,15 @@ def send_action(
 ) -> ChatResponse:
     """「次にやること」チップ押下を処理（ユーザー主導フロー）。"""
     s = _get_owned_session(db, session_id, user)
+
+    # 「発音を見る」チップは、最新録音を Gemini に聴かせる特別経路
+    if body.action == "pronunciation":
+        rows = _persist_coach_messages(db, s.id, [_pronunciation_reply(db, s)])
+        db.commit()
+        for r in rows:
+            db.refresh(r)
+        return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+
     msgs, updates = rule_engine.handle_action(_session_state(s), body.action)
     _apply_updates(s, updates)
     rows = _persist_coach_messages(db, s.id, msgs)

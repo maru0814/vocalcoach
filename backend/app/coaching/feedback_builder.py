@@ -114,6 +114,73 @@ def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict]) -> 
     return payload
 
 
+def build_voice_diagnosis_payload(a: dict) -> dict:
+    """Voick風の「声診断」カード。既に算出済みの指標をまとめて可視化する。
+
+    音域 / 使った声区 / いちばん長い伸ばし / 伸ばしの安定度 / ビブラート / 音程の正確さ。
+    """
+    timeline = a.get("timeline", {})
+    holds = [s for s in timeline.get("sustained_segments", []) if (s.get("mean_f0_hz") or 0) >= 100]
+    f0s = [
+        w.get("f0_mean_hz") for w in timeline.get("per_window", [])
+        if w.get("f0_mean_hz") and w["f0_mean_hz"] >= 100
+    ]
+    rows: list[dict] = []
+
+    # 声域（出せている音の範囲）
+    if f0s:
+        lo, hi = min(f0s), max(f0s)
+        rows.append({
+            "label": "声域（おおよそ）",
+            "value": f"{_note_name(lo)} 〜 {_note_name(hi)}",
+            "hint": "この録音で出せていた音の範囲",
+        })
+
+    # 使った声区（地声/ミックス/裏声）
+    if holds:
+        counts: dict[str, int] = {}
+        for h in holds:
+            vt = h.get("voice_type_estimate")
+            if vt:
+                counts[vt] = counts.get(vt, 0) + 1
+        if counts:
+            used = "・".join(_voice_type_jp(vt) for vt, _ in sorted(counts.items(), key=lambda x: -x[1]))
+            rows.append({"label": "使っている声", "value": used, "hint": "地声／ミックス／裏声の使い分け"})
+
+    # いちばん長い伸ばし
+    longest = max(holds, key=lambda s: s.get("duration_sec", 0)) if holds else None
+    if longest:
+        rows.append({
+            "label": "いちばん長い伸ばし",
+            "value": f"約{longest['duration_sec']:.0f}秒（{_note_name(longest['mean_f0_hz'])}）",
+            "hint": "安定して伸ばせた最長の音",
+        })
+
+    lts = a.get("long_tone_stability")
+    rows.append({
+        "label": "伸ばしの安定度",
+        "value": f"{lts:.0f}cents" if lts is not None else "—",
+        "hint": "小さいほど安定（30以下が目標）",
+    })
+
+    vr = a.get("vibrato_rate_hz")
+    vd = a.get("vibrato_depth_cents")
+    if vr is not None:
+        depth = f"・深さ{vd:.0f}cents" if vd is not None else ""
+        rows.append({"label": "ビブラート", "value": f"秒{vr:.1f}回{depth}", "hint": "秒4〜7回が自然"})
+    else:
+        rows.append({"label": "ビブラート", "value": "検出なし", "hint": "まっすぐ伸ばすのも良い／ゆらしは表現の幅"})
+
+    j = a.get("f0_jitter_cents")
+    rows.append({
+        "label": "音程の正確さ",
+        "value": f"{j:.0f}cents" if j is not None else "—",
+        "hint": "小さいほど正確（5以下プロ級／15以下で上手）",
+    })
+
+    return {"rows": rows}
+
+
 def build_practice_payload(task: dict) -> dict:
     return {
         "task_id": task["id"],
