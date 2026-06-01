@@ -305,23 +305,35 @@ def _harmonic_note(a: dict) -> Optional[str]:
     return f"声の響きは息まじりで柔らかめ（整数次倍音 {hr:.2f}）。芯を足すとより通る声になる。"
 
 
-def _stretch_hint(a: dict) -> str:
-    """弱点が無い録音でも必ず提示する「もっと良くできる点」（具体・数値つき）。"""
+def _stretch_target(a: dict) -> tuple[str, Optional[str]]:
+    """弱点が無い録音でも提示する「もっと良くできる点」: (説明文, 対応課題ID)。
+
+    課題IDがあれば、その基礎練カード（手順＋実演動画）を一緒に出して"方法"まで示す。
+    ビブラートと"揺れ(wobble)"を区別し、大きくゆっくりの揺れは「整える」でなく
+    「まず一定に伸ばす」へ誘導する（声の張りとは無関係）。
+    """
     vr = a.get("vibrato_rate_hz")
+    depth = a.get("vibrato_depth_cents") or 0
     rng = a.get("rms_db_range")
     j = a.get("f0_jitter_cents")
     hr = a.get("harmonic_ratio")
     if vr is None:
-        return "伸ばす音に軽くビブラート（秒4〜7回のゆれ）を足すと、表現の幅が広がります。"
-    if vr < 4.0 or vr > 7.5:
-        return f"ビブラートが秒{vr:.1f}回なので、秒4〜7回に整えるともっと自然に揺れます。"
+        return ("伸ばす音に軽くビブラート（秒4〜7回の規則的なゆれ）を足すと、表現の幅が広がります。", "no_vibrato")
+    if vr < 4.0 or depth > 80:
+        return (
+            f"伸ばした音が大きくゆっくり揺れています（秒{vr:.1f}回・幅{depth:.0f}cents）。"
+            f"整ったビブラートというより不安定な揺れなので、まずは一定にまっすぐ伸ばす練習から整えましょう。",
+            "pitch_wobble",
+        )
+    if vr > 7.5:
+        return (f"ビブラートが秒{vr:.1f}回と速めなので、秒4〜7回に落ち着けると聴きやすくなります。", "no_vibrato")
     if rng is not None and rng < 15:
-        return f"強弱の幅が約{rng:.0f}dBなので、サビと静かな所の音量差をもう少し広げると物語が出ます（15dB目安）。"
+        return (f"強弱の幅が約{rng:.0f}dBなので、サビと静かな所の音量差を広げると物語が出ます（15dB目安）。", "expression_flat")
     if j is not None and j > 5:
-        return f"音程の細かい揺れが{j:.0f}centsなので、5cents以下を目指すとさらにプロっぽくなります。"
+        return (f"音程の細かい揺れが{j:.0f}centsなので、5cents以下を目指すとさらに安定します。", "pitch_wobble")
     if hr is not None and hr < 0.4:
-        return "声に芯（整数次倍音）を足すと、もっと前に通る声になります。ハミングで鼻に響かせる練習がおすすめ。"
-    return "今の安定感を保ちつつ、もう一段高い音域や、別の曲にも挑戦すると伸びます。"
+        return ("声に芯（整数次倍音）を足すと、もっと前に通る声になります。ハミングで鼻に響かせる練習がおすすめ。", "throat_tension")
+    return ("今の安定感を保ちつつ、もう一段高い音域や、別の曲にも挑戦すると伸びます。", None)
 
 
 def _audio_diagnose(
@@ -393,8 +405,13 @@ def _audio_diagnose(
         goods = "／".join(fb_payload.get("good_points", [])[:3])
         proj = _projection_note(analysis)
         harm = _harmonic_note(analysis)
-        stretch = _stretch_hint(analysis)
+        stretch, stretch_id = _stretch_target(analysis)
+        stretch_task = get_task(stretch_id) if stretch_id else None
         ref_note = "" if compare_data else "原曲リンクが無いのでリズム/音程の正確さは厳密には比較できない。\n"
+        prac_line = ""
+        if stretch_task:
+            p0 = stretch_task["practices"][0]
+            prac_line = f"次の一歩の基礎練『{p0['name']}』（手順と実演動画はこの後のカードに出る）\n"
         facts = (
             "歌を解析したが、大きな弱点は見当たらなかった。とても良い状態。\n"
             f"録音の長さ: 約{analysis.get('duration_sec', 0):.0f}秒（この秒数を超える時刻は言わない）\n"
@@ -403,17 +420,30 @@ def _audio_diagnose(
             + (f"{harm}\n" if harm else "")
             + (f"張りどころ: {proj}\n" if proj else "")
             + f"もっと良くできる点（必ず1つ伝える）: {stretch}\n"
+            + prac_line
             + ref_note
         )
         instr = (
             "発声・リズム・音感・表現の4観点に軽く触れて、良い状態であることを一緒に喜んでください。"
             "良い点は秒数（と音名）を添えて具体的に。録音の長さを超える秒数は言わないこと。"
-            "そして必ず最後に『もっと良くできる点』を1つ、具体的な数値や秒数を添えて伝えてください。褒めて終わらせないこと。"
+            "必ず最後に『もっと良くできる点』を1つ、具体的な数値を添えて伝え、褒めて終わらせないこと。"
+            "改善提案は1つの技術に絞り、無関係な技術（声の張りとビブラート等）を結びつけないこと。"
+            + ("基礎練を勧めるときは『この後のカードに手順と動画があります』と一言添える。" if stretch_task else "")
         )
-        fallback = "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ さらに伸ばすなら、表現の幅づくりに挑戦してみましょう。"
-        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
-                             payload=_action_chips("recheck_song", "finish")))
-        updates = {"phase": DONE, "baseline_analysis": analysis, "avoid_task": None}
+        fallback = "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ さらに伸ばすなら、下の基礎練に挑戦してみましょう。"
+        text_msg = coach_msg("text", _llm_or(fallback, facts, instr, history))
+        if stretch_task:
+            out.append(text_msg)
+            out.append(coach_msg("practice", payload=feedback_builder.build_practice_payload(stretch_task)))
+            out.append(coach_msg(
+                "text", "やってみたら基礎練の録音を送ってください。発音を見たいときは「🗣 発音を見る」もどうぞ😊",
+                payload=_action_chips("more_practice", "recheck_song", "pronunciation", "finish"),
+            ))
+            updates = {"phase": LESSON, "current_task": stretch_task["id"], "baseline_analysis": analysis, "avoid_task": None}
+        else:
+            text_msg["payload"] = _action_chips("recheck_song", "finish")
+            out.append(text_msg)
+            updates = {"phase": DONE, "baseline_analysis": analysis, "avoid_task": None}
     return out, updates
 
 
