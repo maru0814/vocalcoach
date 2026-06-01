@@ -20,6 +20,7 @@ import re
 from typing import Optional
 
 from app.coaching import scoring
+from app.coaching.feedback_builder import vibrato_label
 from app.coaching.persona import COACH_NAME, COACH_ROLE, SERVICE_NAME
 from app.coaching.taxonomy import get_task, list_weaknesses, projection_point
 from app.core.config import settings
@@ -161,16 +162,11 @@ def build_session_context(state: dict) -> str:
             lines.append(f"- 声の高さ(中心): {_note_name(fm)}")
         j = analysis.get("f0_jitter_cents")
         if j is not None:
-            lines.append(f"- 音程の細かい揺れ(ジッター): {j:.0f}cents（15以下で上手）")
+            lines.append(f"- 音程の安定度(ジッター): {j:.0f}cents（揺れの少なさ。音を外していないか＝正確さ ではない）")
         rng = analysis.get("rms_db_range")
         if rng is not None:
             lines.append(f"- 強弱の幅: {rng:.0f}dB")
-        vr = analysis.get("vibrato_rate_hz")
-        if vr is not None:
-            vd = analysis.get("vibrato_depth_cents")
-            lines.append(f"- ビブラート: 秒{vr:.1f}回" + (f"・深さ{vd:.0f}cents" if vd is not None else ""))
-        else:
-            lines.append("- ビブラート: 検出なし")
+        lines.append(f"- ビブラート／揺れ: {vibrato_label(analysis.get('vibrato_rate_hz'), analysis.get('vibrato_depth_cents'))}")
         lts = analysis.get("long_tone_stability")
         if lts is not None:
             lines.append(f"- 伸ばしの安定度: {lts:.0f}cents")
@@ -178,6 +174,11 @@ def build_session_context(state: dict) -> str:
         if hr is not None:
             q = "豊か（クリアで通る声）" if hr >= 0.55 else ("芯と柔らかさのバランス型" if hr >= 0.35 else "息まじり（柔らかい声）")
             lines.append(f"- 声の響き（整数次倍音）: {q}（{hr:.2f}）")
+        if not state.get("song_ref_url"):
+            lines.append(
+                "- 注意: 原曲（お手本）が無いので、音を外していないか（音程の正確さ）とリズムの正確さは"
+                "厳密には判定できない。出しているのは安定度や概算なので断定しない"
+            )
         # 張りどころ（曲の山で声を張れているか）。「ここは張るべき？」等に答えられるように
         pp = projection_point(analysis)
         if pp:

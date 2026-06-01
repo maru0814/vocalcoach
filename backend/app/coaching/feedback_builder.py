@@ -23,6 +23,22 @@ def _voice_type_jp(vt: Optional[str]) -> str:
     return {"chest": "地声", "mix": "ミックス（地声と裏声の中間）", "head": "裏声"}.get(vt, "不明")
 
 
+def vibrato_label(vr: Optional[float], vd: Optional[float] = None) -> str:
+    """ビブラートと"揺れ(wobble)"を区別したラベル。
+
+    4.0〜7.5Hz が自然なビブラート。それ未満は遅い揺れ（未確立/不安定の可能性）、
+    超過は細かすぎる震え。範囲外を「ビブラートができている」と誤認させない。
+    """
+    if vr is None:
+        return "検出なし"
+    depth = f"・深さ{vd:.0f}cents" if vd is not None else ""
+    if 4.0 <= vr <= 7.5:
+        return f"秒{vr:.1f}回{depth}（自然なビブラート）"
+    if vr < 4.0:
+        return f"秒{vr:.1f}回{depth}（ゆっくりした揺れ。整ったビブラートとしては遅め）"
+    return f"秒{vr:.1f}回{depth}（速め・細かい震え）"
+
+
 def build_good_points(a: dict) -> list[str]:
     pts = []
     j = a.get("f0_jitter_cents")
@@ -61,13 +77,13 @@ def build_analysis_table(a: dict, c: Optional[dict]) -> list[dict]:
     rows.append({"label": "あなたの声の高さ（中心）", "value": f"{_note_name(a.get('f0_median_hz'))}", "hint": "中心となる音の高さ"})
     j = a.get("f0_jitter_cents")
     rows.append({"label": "音程の安定度", "value": f"{j:.0f}cents" if j is not None else "—",
-                 "hint": "小さいほど安定（15以下で上手）"})
+                 "hint": "揺れの少なさ（正確さは原曲があると分かる）"})
     rng = a.get("rms_db_range")
     rows.append({"label": "声の強弱の幅", "value": f"{rng:.0f}dB" if rng is not None else "—",
                  "hint": "大きいほどメリハリがある"})
     vr = a.get("vibrato_rate_hz")
-    rows.append({"label": "ビブラート", "value": f"秒{vr:.1f}回" if vr is not None else "検出なし",
-                 "hint": "秒4〜7回が自然"})
+    vd = a.get("vibrato_depth_cents")
+    rows.append({"label": "ビブラート／揺れ", "value": vibrato_label(vr, vd), "hint": "秒4〜7回が自然なビブラート"})
     lts = a.get("long_tone_stability")
     rows.append({"label": "伸ばした音の安定度", "value": f"{lts:.0f}cents" if lts is not None else "—",
                  "hint": "小さいほど安定（30以下が目標）"})
@@ -127,16 +143,16 @@ def build_voice_diagnosis_payload(a: dict) -> dict:
     ]
     rows: list[dict] = []
 
-    # 声域（出せている音の範囲）
+    # 声域（この曲で出した範囲。本人の最大音域ではない点を明示）
     if f0s:
         lo, hi = min(f0s), max(f0s)
         rows.append({
-            "label": "声域（おおよそ）",
+            "label": "この曲で出した音域",
             "value": f"{_note_name(lo)} 〜 {_note_name(hi)}",
-            "hint": "この録音で出せていた音の範囲",
+            "hint": "この録音で出した範囲（あなたの最大音域ではありません）",
         })
 
-    # 使った声区（地声/ミックス/裏声）
+    # 使った声区（地声/ミックス/裏声）— スペクトル比からの推定で粗いことを明示
     if holds:
         counts: dict[str, int] = {}
         for h in holds:
@@ -145,7 +161,7 @@ def build_voice_diagnosis_payload(a: dict) -> dict:
                 counts[vt] = counts.get(vt, 0) + 1
         if counts:
             used = "・".join(_voice_type_jp(vt) for vt, _ in sorted(counts.items(), key=lambda x: -x[1]))
-            rows.append({"label": "使っている声", "value": used, "hint": "地声／ミックス／裏声の使い分け"})
+            rows.append({"label": "使っている声（推定）", "value": used, "hint": "倍音の比からの推定。目安として"})
 
     # いちばん長い伸ばし
     longest = max(holds, key=lambda s: s.get("duration_sec", 0)) if holds else None
@@ -180,17 +196,15 @@ def build_voice_diagnosis_payload(a: dict) -> dict:
 
     vr = a.get("vibrato_rate_hz")
     vd = a.get("vibrato_depth_cents")
-    if vr is not None:
-        depth = f"・深さ{vd:.0f}cents" if vd is not None else ""
-        rows.append({"label": "ビブラート", "value": f"秒{vr:.1f}回{depth}", "hint": "秒4〜7回が自然"})
-    else:
-        rows.append({"label": "ビブラート", "value": "検出なし", "hint": "まっすぐ伸ばすのも良い／ゆらしは表現の幅"})
+    rows.append({"label": "ビブラート／揺れ", "value": vibrato_label(vr, vd), "hint": "秒4〜7回が自然なビブラート"})
 
+    # ジッターは「音を外していないか(正確さ)」ではなく「揺れの少なさ(安定度)」。
+    # in-tune の正確さは原曲(お手本)があって初めて判定できる、と明示する。
     j = a.get("f0_jitter_cents")
     rows.append({
-        "label": "音程の正確さ",
+        "label": "音程の安定度（揺れの少なさ）",
         "value": f"{j:.0f}cents" if j is not None else "—",
-        "hint": "小さいほど正確（5以下プロ級／15以下で上手）",
+        "hint": "小さいほど揺れが少ない。音を外していないか(正確さ)は原曲があると分かる",
     })
 
     return {"rows": rows}
