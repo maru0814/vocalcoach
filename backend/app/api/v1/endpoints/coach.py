@@ -81,6 +81,19 @@ def _history_for_llm(s: ChatSession) -> list[dict]:
     return hist[-settings.llm_history_turns:]
 
 
+def _looks_like_singing(a: dict) -> bool:
+    """録音に「歌声」が十分含まれるかの軽い判定（無音・極端に短い・ほぼ無声を弾く）。
+
+    実歌唱: dur>20s, voiced≈0.94, rms≈0.02-0.04。無音: rms≈1e-4, voiced<0.25。
+    短尺: dur<1s。これらを安全に分離できるしきい値。
+    """
+    return (
+        (a.get("duration_sec") or 0) >= 1.5
+        and (a.get("rms_mean") or 0) >= 0.003
+        and (a.get("voiced_ratio") or 0) >= 0.25
+    )
+
+
 def _session_state(s: ChatSession) -> dict:
     return {
         "phase": s.phase,
@@ -468,6 +481,22 @@ def send_audio(
 
     if alignment is not None:
         compare_data = {**(compare_data or {}), "alignment": alignment}
+
+    # 歌声プレゼンスのゲート: 無音・極端に短い・ほぼ無声 の録音には
+    # FBを捏造せず録り直しを促す（無音や非歌唱に講評をつけるハルシネーション防止）。
+    if not _looks_like_singing(user_analysis):
+        msg = {
+            "role": "coach", "type": "text",
+            "text": "うまく歌声を聞き取れませんでした🙏 "
+                    "もう少し長め（数秒以上）に、はっきり歌った録音を送ってください。"
+                    "マイクが声を拾えているかもご確認くださいね🎤",
+        }
+        rows = _persist_coach_messages(db, s.id, [msg])
+        db.commit()
+        for r in rows:
+            db.refresh(r)
+        return ChatResponse(phase=s.phase, current_task=s.current_task,
+                            messages=[_msg_out(r) for r in rows])
 
     # 種類が明示されていなければ（"auto"）、音声から曲/基礎練を自動判定する
     if kind not in ("song", "practice"):
