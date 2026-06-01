@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from app.coaching import scoring
@@ -230,6 +231,50 @@ def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
     return contents
 
 
+_RANGE_SEC_RE = re.compile(r"(\d+)\s*[〜～\-–]\s*(\d+)\s*秒")
+_SINGLE_SEC_RE = re.compile(r"(\d+)\s*秒")
+# 「録音内の位置（タイムスタンプ）」らしい N秒 だけを対象にする。
+# 「N秒間 / N秒伸ばす / N秒吐く」のような"長さ"は対象外（誤爆させない）。
+_SCRUB_SEC_RE = re.compile(
+    r"(\d+)\s*秒(付近|あたり|ごろ|頃|地点|のところ|の箇所|の伸ばし|の高音|の音|の部分|の山場|のフレーズ)"
+)
+
+
+def _allowed_seconds(*texts: str) -> set[int]:
+    """与えた文章（解析facts・状況・ユーザー発言）に登場する秒数の集合を作る。
+
+    「a〜b秒」は a..b を全部許可。「N秒」は N を許可。これがコーチが言ってよい秒数。
+    """
+    allowed: set[int] = set()
+    for t in texts:
+        if not t:
+            continue
+        for m in _RANGE_SEC_RE.finditer(t):
+            a, b = int(m.group(1)), int(m.group(2))
+            allowed.update(range(min(a, b), max(a, b) + 1))
+        for m in _SINGLE_SEC_RE.finditer(t):
+            allowed.add(int(m.group(1)))
+    return allowed
+
+
+def _scrub_invented_seconds(reply: str, allowed: set[int]) -> str:
+    """返答中の、許可セットに無い秒数（捏造の時刻）を具体化しない表現に置き換える。
+
+    「20秒付近」→「その箇所付近」、「20秒の高音」→「その高音」のように、
+    秒数だけを伏せて文として自然に保つ。長さ表現(15秒伸ばす等)は対象外。
+    """
+    def repl(m: re.Match) -> str:
+        n = int(m.group(1))
+        marker = m.group(2)
+        if any(abs(n - a) <= 1 for a in allowed):
+            return m.group(0)
+        if marker.startswith("の"):
+            return "その" + marker[1:]   # 「N秒の高音」→「その高音」
+        return "その箇所" + marker        # 「N秒付近」→「その箇所付近」
+
+    return _SCRUB_SEC_RE.sub(repl, reply)
+
+
 def _complete(contents) -> Optional[str]:
     """Gemini を1往復呼び出してテキストを返す。
 
@@ -271,7 +316,12 @@ def generate_reply(
     state: dict, user_text: str, history: Optional[list[dict]] = None
 ) -> Optional[str]:
     """ユーザーのテキストに対するソラ先生の自然言語返答を生成する。"""
-    return _complete(_build_contents(state, user_text, history))
+    context = build_session_context(state)
+    reply = _complete(_build_contents(state, user_text, history))
+    if reply:
+        # facts / 状況 / ユーザー発言 に無い秒数は伏せる（捏造防止の最終ガード）
+        reply = _scrub_invented_seconds(reply, _allowed_seconds(context, user_text))
+    return reply
 
 
 def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> Optional[str]:
@@ -358,4 +408,8 @@ def generate_coach_comment(
         f"事実に無い数値を作らず、2〜4文・120字程度の自然な会話文で返してください。"
     )
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
-    return _complete(contents)
+    reply = _complete(contents)
+    if reply:
+        # facts に無い秒数は伏せる（捏造防止の最終ガード）
+        reply = _scrub_invented_seconds(reply, _allowed_seconds(facts))
+    return reply
