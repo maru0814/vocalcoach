@@ -10,6 +10,7 @@ import {
   sendCoachAction,
   sendCoachAudio,
   sendCoachText,
+  uploadCoachReference,
 } from "@/lib/api";
 import { MessageBubble } from "@/components/coach/Bubbles";
 import { PhaseStepper } from "@/components/coach/PhaseStepper";
@@ -27,7 +28,9 @@ export default function CoachChatPage() {
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("考えています");
   const [error, setError] = useState<string | null>(null);
+  const [hasReference, setHasReference] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const refInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -36,6 +39,7 @@ export default function CoachChatPage() {
         setMessages(s.messages);
         setPhase(s.phase);
         setSongTitle(s.song_title || s.song_ref_url);
+        setHasReference(Boolean(s.has_reference));
       } catch {
         setError("セッションの読み込みに失敗しました。ログインを確認してください。");
       } finally {
@@ -100,6 +104,24 @@ export default function CoachChatPage() {
     }
   }
 
+  async function handleReferenceFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (refInputRef.current) refInputRef.current.value = "";
+    if (!f) return;
+    setBusy(true);
+    setBusyLabel("お手本を取り込んでいます");
+    setError(null);
+    try {
+      const res = await uploadCoachReference(sessionId, f, f.name);
+      setMessages((m) => [...m, ...res.messages]);
+      setHasReference(true);
+    } catch (e) {
+      setError(parseError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleAudio(blob: Blob, filename: string, kind: "song" | "practice" | "auto") {
     setBusy(true);
     setBusyLabel(kind === "practice" ? "基礎練を聴いています" : "あなたの歌を聴いています");
@@ -145,6 +167,28 @@ export default function CoachChatPage() {
       </div>
 
       <PhaseStepper phase={phase} songTitle={songTitle} onRename={handleRename} />
+
+      {/* お手本（原曲）アップロード — あると音程の正確さ/リズムを実測できる */}
+      <div className="flex items-center gap-2 border-b border-white/40 bg-white/40 px-3 py-1.5">
+        <span className="text-xs text-slate-500">
+          {hasReference ? "🎼 お手本セット済み（原曲と聴き比べます）" : "🎼 原曲があると音程・リズムを正確に判定できます"}
+        </span>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => refInputRef.current?.click()}
+          className="ml-auto rounded-full border border-brand-200 bg-white px-3 py-1 text-xs font-medium text-brand-600 transition active:scale-95 disabled:opacity-40"
+        >
+          {hasReference ? "差し替える" : "お手本をアップロード"}
+        </button>
+        <input
+          ref={refInputRef}
+          type="file"
+          accept="audio/*"
+          onChange={handleReferenceFile}
+          className="hidden"
+        />
+      </div>
 
       {/* メッセージ */}
       <div className="scroll-soft flex-1 space-y-4 overflow-y-auto px-3 py-4">

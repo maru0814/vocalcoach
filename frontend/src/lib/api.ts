@@ -73,7 +73,7 @@ export const COACH_API_BASE = API_BASE;
 export type CoachMessage = {
   id: number;
   role: "coach" | "user";
-  type: "text" | "audio" | "feedback" | "practice" | "judge" | "progress";
+  type: "text" | "audio" | "feedback" | "practice" | "judge" | "progress" | "diagnosis";
   text?: string | null;
   audio_url?: string | null;
   payload?: Record<string, unknown> | null;
@@ -101,6 +101,7 @@ export type SessionDetail = {
   user_range: string | null;
   phase: string;
   current_task: string | null;
+  has_reference: boolean;
   messages: CoachMessage[];
 };
 
@@ -142,6 +143,19 @@ export async function sendCoachAudio(
   fd.append("audio_file", blob, filename);
   fd.append("kind", kind);
   return request<ChatResponse>(`/api/v1/coach/sessions/${id}/audio`, {
+    method: "POST",
+    body: fd,
+  });
+}
+
+export async function uploadCoachReference(
+  id: string | number,
+  file: Blob,
+  filename = "reference.mp3",
+) {
+  const fd = new FormData();
+  fd.append("audio_file", file, filename);
+  return request<ChatResponse>(`/api/v1/coach/sessions/${id}/reference`, {
     method: "POST",
     body: fd,
   });

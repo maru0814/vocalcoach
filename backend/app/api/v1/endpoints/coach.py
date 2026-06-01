@@ -202,6 +202,7 @@ def get_session(session_id: int, db: Session = Depends(get_db), user=Depends(get
     return SessionDetail(
         id=s.id, song_title=s.song_title, song_ref_url=s.song_ref_url,
         user_range=s.user_range, phase=s.phase, current_task=s.current_task,
+        has_reference=bool(s.song_ref_path),
         messages=[_msg_out(m) for m in s.messages],
     )
 
@@ -297,6 +298,64 @@ def send_action(
     return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
 
 
+@router.post("/sessions/{session_id}/reference", response_model=ChatResponse)
+def upload_reference(
+    session_id: int,
+    audio_file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+) -> ChatResponse:
+    """原曲（お手本）の音源をアップロードして、このセッションの比較基準にする。
+
+    以降この曲の録音を送ると、原曲とDTWで整列し「音程の正確さ(in-tune)」と
+    「リズムの走り/モタり」を実測してフィードバックする（精度向上の主経路）。
+    """
+    s = _get_owned_session(db, session_id, user)
+
+    _, ext = os.path.splitext(audio_file.filename or "")
+    ext = ext.lower() or ".mp3"
+    if ext not in ALLOWED_EXT:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "BAD_REQUEST", "message": f"対応していない形式です: {ext}"},
+        )
+    audio_file.file.seek(0, os.SEEK_END)
+    size = audio_file.file.tell()
+    audio_file.file.seek(0)
+    if size > settings.max_audio_mb * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "BAD_REQUEST", "message": f"ファイルが大きすぎます（{settings.max_audio_mb}MBまで）"},
+        )
+
+    ensure_dir(settings.reference_cache_dir)
+    raw_path = os.path.join(settings.reference_cache_dir, f"ref_{s.id}{ext}")
+    with open(raw_path, "wb") as f:
+        f.write(audio_file.file.read())
+    try:
+        wav_path = to_wav(raw_path, raw_path + ".wav")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "ANALYSIS_FAILED", "message": f"お手本音源の変換に失敗しました: {e}"},
+        )
+
+    s.song_ref_path = wav_path
+    msg = {
+        "role": "coach", "type": "text",
+        "text": "🎼 お手本（原曲）を受け取りました！\n"
+                "このあと同じ曲を歌って録音を送ってくれたら、原曲と聴き比べて"
+                "「音を外していないか（音程の正確さ）」と「リズムの走り／モタり」を"
+                "具体的に見ていきますね😊",
+    }
+    rows = _persist_coach_messages(db, s.id, [msg])
+    db.commit()
+    for r in rows:
+        db.refresh(r)
+    return ChatResponse(phase=s.phase, current_task=s.current_task,
+                        messages=[_msg_out(r) for r in rows])
+
+
 @router.post("/sessions/{session_id}/audio", response_model=ChatResponse)
 def send_audio(
     session_id: int,
@@ -358,7 +417,8 @@ def send_audio(
     phase = s.phase
     compare_data = None
     alignment = None
-    needs_ref = phase in ("A", "B") and kind != "practice"
+    # 原曲（お手本）がある曲の録音は、フェーズに関係なく常に原曲と比較する（主経路）
+    needs_ref = kind != "practice" and bool(s.song_ref_path or s.song_ref_url)
 
     ref_wav = None
     if needs_ref:

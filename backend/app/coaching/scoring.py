@@ -24,6 +24,11 @@ def pitch_score(a: dict, c: Optional[dict]) -> int:
         base = 70
     else:
         base = 50
+    # 原曲（お手本）があり、メロディとの一致(in-tune)を実測できた場合はそれを主成分にする。
+    # ジッターは「安定度」、in-tuneは「音を外していないか」の実測なので、後者を優先(7:3)。
+    align = (c or {}).get("alignment")
+    if align and align.get("in_tune_score") is not None:
+        return _clamp(round(align["in_tune_score"] * 0.7 + base * 0.3))
     # 原曲との半音差が大きいと減点（オクターブ違い等は除外: 11-13は無視）
     if c and c.get("f0_median_diff_semitones") is not None:
         st = abs(c["f0_median_diff_semitones"])

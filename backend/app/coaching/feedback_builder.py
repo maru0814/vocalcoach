@@ -87,6 +87,14 @@ def build_analysis_table(a: dict, c: Optional[dict]) -> list[dict]:
     lts = a.get("long_tone_stability")
     rows.append({"label": "伸ばした音の安定度", "value": f"{lts:.0f}cents" if lts is not None else "—",
                  "hint": "小さいほど安定（30以下が目標）"})
+    align = (c or {}).get("alignment") if c else None
+    if align and align.get("in_tune_score") is not None:
+        err = align.get("pitch_error_cents")
+        rows.append({
+            "label": "原曲との一致（音程の正確さ）",
+            "value": f"{align['in_tune_score']}点" + (f"（ズレ平均{err:.0f}cents）" if err is not None else ""),
+            "hint": "原曲メロディと比べて音を外していないか（キーずれは除外）",
+        })
     if c:
         rows.append({"label": "原曲とのテンポ差", "value": f"{c.get('tempo_diff_bpm')}BPM" if c.get("tempo_diff_bpm") is not None else "—",
                      "hint": "0に近いほどリズムが合っている"})
