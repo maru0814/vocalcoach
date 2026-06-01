@@ -214,6 +214,26 @@ def build_session_context(state: dict) -> str:
         if hr is not None:
             q = "豊か（クリアで通る声）" if hr >= 0.55 else ("芯と柔らかさのバランス型" if hr >= 0.35 else "息まじり（柔らかい声）")
             lines.append(f"- 声の響き（整数次倍音）: {q}（{hr:.2f}）")
+        # 声区（地声/ミックス/裏声）— フォルマント＋傾斜＋H1-H2の多数決。信頼度が低ければ断定しない
+        _segs = (analysis.get("timeline") or {}).get("sustained_segments", [])
+        _conf = [s for s in _segs if s.get("register_confidence") in ("high", "med")]
+        if _conf:
+            _jp = {"chest": "地声中心", "mix": "ミックス中心", "head": "裏声中心"}
+            _cnt: dict[str, int] = {}
+            for s in _conf:
+                r = s.get("register")
+                if r:
+                    _cnt[r] = _cnt.get(r, 0) + 1
+            if _cnt:
+                dom = max(_cnt, key=_cnt.get)
+                lines.append(f"- 使っている声（推定）: {_jp.get(dom, dom)}（フォルマント・傾斜・倍音からの推定。目安）")
+        elif _segs:
+            lines.append("- 使っている声: 録音が短く推定が難しい（断定しない。長めに伸ばすと判定しやすい）")
+        sf_ratio = analysis.get("singers_formant_ratio")
+        f1, f2 = analysis.get("formant_f1_hz"), analysis.get("formant_f2_hz")
+        if sf_ratio is not None and f1 and f2:
+            res = "前によく通る芯のある共鳴" if sf_ratio >= 0.008 else ("標準的な共鳴バランス" if sf_ratio >= 0.003 else "やわらかく親しみのある響き（前に集めるとより通る）")
+            lines.append(f"- 声の共鳴（フォルマント）: {res}（F1≈{f1}Hz・F2≈{f2}Hz。推定・目安）")
         if not has_ref:
             lines.append(
                 "- 注意: 原曲（お手本）が無いので、音を外していないか（音程の正確さ）とリズムの正確さは"
