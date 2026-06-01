@@ -81,14 +81,74 @@ def _pitch_accuracy(user_y, ref_y, sr, wp, lo, hi) -> tuple[Optional[float], Opt
     return round(mad, 1), _intune_score(mad, off_ratio), round(off_ratio, 3)
 
 
+# 同じ曲として照合できたとみなす最低の識別度（パス一致 − ランダム対応一致）。
+# DTW はどんな信号でも貪欲にマッチさせるため、絶対的なコサイン類似では無関係音源も
+# 高く出る。そこで「ランダム対応にしたときの一致度」を引いた差分で同一曲かを判定する。
+# 実測: 実際の歌い直し ≥0.28 / 無関係・ノイズ ≤0.02 → 0.20 で安全に分離。
+CONFIDENCE_MIN = 0.20
+# リズムずれとして musically 妥当な上限（これを超えるのはDTWの誤対応アーティファクト）
+MAX_PLAUSIBLE_LAG_SEC = 1.0
+
+
+def _best_pc_shift(cu: np.ndarray, cr: np.ndarray) -> tuple[int, float]:
+    """ユーザーと原曲の全体的なキー差（ピッチクラスの回転量, 半音）を推定。
+
+    平均クロマベクトルの巡回相関が最大になる回転量を返す。
+    戻り: (shift_semitones[-5..6], best_similarity[0..1])。
+    """
+    mu = cu.mean(axis=1)
+    mr = cr.mean(axis=1)
+    nu, nr = np.linalg.norm(mu), np.linalg.norm(mr)
+    if nu <= 0 or nr <= 0:
+        return 0, 0.0
+    mu = mu / nu
+    mr = mr / nr
+    best_k, best = 0, -1.0
+    for k in range(12):
+        s = float(np.dot(np.roll(mu, k), mr))
+        if s > best:
+            best, best_k = s, k
+    shift = best_k if best_k <= 6 else best_k - 12
+    return shift, best
+
+
+def _path_confidence(cu: np.ndarray, cr: np.ndarray, wp: np.ndarray, lo: int, hi: int) -> float:
+    """同一曲としての識別度（パス対応の一致 − ランダム対応の一致）。
+
+    DTW は無関係な音源でも貪欲に高コサイン類似のパスを作ってしまうため、絶対値では
+    判定できない。そこで「実際のパス対応」と「参照フレームをシャッフルした対応」の
+    一致度の差をとる。同じ曲なら大きく(>0.25)、無関係なら≈0。
+    """
+    def cos(a, b):
+        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+        return float(np.dot(a, b) / (na * nb)) if na > 0 and nb > 0 else 0.0
+
+    rng = np.random.default_rng(0)
+    perm = rng.permutation(cr.shape[1])
+    path_sims, base_sims = [], []
+    for i in range(lo, hi):
+        ui, ri = int(wp[i, 0]), int(wp[i, 1])
+        path_sims.append(cos(cu[:, ui], cr[:, ri]))
+        base_sims.append(cos(cu[:, ui], cr[:, perm[ri]]))
+    if not path_sims:
+        return 0.0
+    return float(np.median(path_sims) - np.median(base_sims))
+
+
 def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
           lag_threshold_sec: float = 0.25, max_segments: int = 3) -> Optional[dict]:
-    """ユーザーと原曲のDTW対応からフレーズずれを抽出。
+    """ユーザーと原曲のDTW対応から、音程の正確さ(in-tune)とフレーズずれを抽出。
 
     返り値:
       {
-        "mean_lag_sec": float,   # +が遅れ(モタり)、-が走り
-        "worst_segments": [{"user_sec", "ref_sec", "lag_sec"}, ...]
+        "mean_lag_sec": float,        # +が遅れ(モタり)、-が走り
+        "worst_segments": [...],
+        "pitch_error_cents": float,   # in-tune の中央絶対偏差
+        "in_tune_score": int|None,    # 同一曲として照合できた時のみ
+        "off_pitch_ratio": float|None,
+        "key_shift_semitones": int,   # 原曲に対するキー差（同キーなら0）
+        "confidence": float,          # 同一曲としての一致度
+        "low_confidence": bool,       # Trueなら断定しない
       }
     対応が取れない/長さが極端に違う場合は None。
     """
@@ -107,33 +167,53 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
     if cu.shape[1] < 8 or cr.shape[1] < 8:
         return None
 
+    # ② キー差を推定し、ユーザークロマを回転させてキー不変に整列する
+    #    （別キーで上手に歌った録音を「音痴」と誤判定しないため）
+    key_shift, _ = _best_pc_shift(cu, cr)
+    cu_aligned = np.roll(cu, key_shift, axis=0)
+
     # DTW: コスト行列 + ワーピングパス（D, wp）
     try:
-        _, wp = librosa.sequence.dtw(X=cu, Y=cr, metric="cosine")
+        _, wp = librosa.sequence.dtw(X=cu_aligned, Y=cr, metric="cosine")
     except Exception:
         return None
 
     # wp は (user_frame, ref_frame) のペア列（逆順）。時間順に直す。
     wp = wp[::-1]
-    user_t = wp[:, 0] * hop_sec
-    ref_t = wp[:, 1] * hop_sec
-    # DTW は端点で強制的に (0,0)/(末尾,末尾) に固定されるため、境界10%をトリム
     n = len(wp)
     if n < 10:
         return None
     lo, hi = int(n * 0.1), int(n * 0.9)
+
+    # ③ 同一曲としての信頼度。低ければ in-tune/リズムを断定しない
+    confidence = _path_confidence(cu_aligned, cr, wp, lo, hi)
+    low_conf = confidence < CONFIDENCE_MIN
+
+    user_t = (wp[:, 0] * hop_sec)[lo:hi]
+    ref_t = (wp[:, 1] * hop_sec)[lo:hi]
+
+    if low_conf:
+        # 同じ曲として照合できていない（誤った原曲/無関係音源など）。数値は出さない。
+        return {
+            "mean_lag_sec": None,
+            "worst_segments": [],
+            "pitch_error_cents": None,
+            "in_tune_score": None,
+            "off_pitch_ratio": None,
+            "key_shift_semitones": int(key_shift),
+            "confidence": round(confidence, 2),
+            "low_confidence": True,
+        }
+
     # 原曲メロディとの音程の正確さ(in-tune)を実測（ワーピングパスに沿って）
     pitch_err, in_tune, off_ratio = _pitch_accuracy(user_y, ref_y, sr, wp, lo, hi)
-    user_t = user_t[lo:hi]
-    ref_t = ref_t[lo:hi]
+
     # 各対応点のラグ = ユーザー時刻 - 原曲時刻（の相対基準を引く）
     lag = user_t - ref_t
-    # 全体オフセット（区間開始位置の差）を除くため中央値を基準化
-    rel_lag = lag - np.median(lag)
-
+    rel_lag = lag - np.median(lag)  # 全体オフセット（区間開始差）を中央値で基準化
     mean_lag = float(np.mean(rel_lag))
 
-    # ずれの大きい点を間引いて抽出
+    # ④ ずれの大きい点を抽出（巨大な外れ値=DTW誤対応は除外）
     worst = []
     order = np.argsort(-np.abs(rel_lag))
     seen_user = set()
@@ -141,9 +221,10 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
         l = float(rel_lag[idx])
         if abs(l) < lag_threshold_sec:
             break
+        if abs(l) > MAX_PLAUSIBLE_LAG_SEC:
+            continue  # 1秒超のラグはアライメントのアーティファクト。事実として出さない
         u_sec = round(float(user_t[idx]), 1)
-        # 近接点をまとめる（1秒バケツ）
-        bucket = int(u_sec)
+        bucket = int(u_sec)  # 近接点をまとめる（1秒バケツ）
         if bucket in seen_user:
             continue
         seen_user.add(bucket)
@@ -162,4 +243,7 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
         "pitch_error_cents": pitch_err,
         "in_tune_score": in_tune,
         "off_pitch_ratio": off_ratio,
+        "key_shift_semitones": int(key_shift),
+        "confidence": round(confidence, 2),
+        "low_confidence": False,
     }

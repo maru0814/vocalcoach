@@ -128,14 +128,19 @@ def build_session_context(state: dict) -> str:
     lines: list[str] = []
     lines.append(f"- 進行状況: {_phase_label(state.get('phase'))}")
 
-    if state.get("song_ref_url"):
+    has_ref = bool(state.get("song_ref_url") or state.get("song_ref_path"))
+    if state.get("song_ref_path"):
+        lines.append("- 原曲（お手本）がアップロード済み。音程の正確さ・リズムは原曲と実測比較している")
+    elif state.get("song_ref_url"):
         rng = state.get("ref_range") or state.get("user_range")
         lines.append(f"- 原曲リンクあり{('（区間 ' + rng + '）') if rng else ''}")
     else:
-        lines.append("- 原曲リンクは無し（ユーザーの録音単体でアドバイス中）")
+        lines.append("- 原曲（お手本）は無し（ユーザーの録音単体でアドバイス中）")
 
     # 会話の根拠は「最新の録音」を最優先（無ければ最初の録音）。
     analysis = state.get("last_analysis") or state.get("baseline_analysis")
+    cmp = (analysis or {}).get("_compare")  # 原曲との比較結果（あれば）
+    cmp_align = (cmp or {}).get("alignment") or {}
     if state.get("last_analysis"):
         lines.append("- 以下の解析事実は『いちばん最後に送られた録音』のものです（古い録音ではない）")
 
@@ -160,8 +165,9 @@ def build_session_context(state: dict) -> str:
         if dur:
             lines.append(f"- 録音の長さ: 約{dur:.0f}秒（この秒数を超える時刻は言わない）")
         # 声診断の主要数値（数値を聞かれたらこれだけを答える。これ以外の数値は作らない）
+        # 原曲との比較があるときは、それを使ってスコアを出す（FBカードと同じ値にする）
         try:
-            sc = scoring.compute_scores(analysis, None)
+            sc = scoring.compute_scores(analysis, cmp)
             lines.append(
                 f"- スコア(0-100): 音程{sc['pitch_score']}／リズム{sc['rhythm_score']}／表現{sc['expression_score']}／総合{sc['total_score']}"
             )
@@ -173,6 +179,30 @@ def build_session_context(state: dict) -> str:
         j = analysis.get("f0_jitter_cents")
         if j is not None:
             lines.append(f"- 音程の安定度(ジッター): {j:.0f}cents（揺れの少なさ。音を外していないか＝正確さ ではない）")
+        # 原曲との実測比較（あれば、これが音程の"正確さ"の唯一の根拠）
+        if cmp_align.get("low_confidence"):
+            lines.append(
+                "- 原曲との照合: お手本と歌が対応づかなかった（別の曲の可能性）。"
+                "音程の正確さ・リズムは断定せず、同じ曲のお手本か確認を促す"
+            )
+        elif cmp_align.get("in_tune_score") is not None:
+            it = cmp_align["in_tune_score"]
+            err = cmp_align.get("pitch_error_cents")
+            lines.append(
+                f"- 原曲との一致（音程の正確さ）: {it}点"
+                + (f"（ズレ平均{err:.0f}cents）" if err is not None else "")
+                + "。これが音程の『正確さ＝音を外していないか』の根拠（安定度とは別物）"
+            )
+            ks = cmp_align.get("key_shift_semitones")
+            if ks is not None and abs(ks) >= 1:
+                # 負＝ユーザーが原曲より高い、正＝低い
+                lines.append(f"- 歌っているキー: 原曲より約{abs(ks)}半音{'高い' if ks<0 else '低い'}（欠点ではなくキー差）")
+            lag = cmp_align.get("mean_lag_sec")
+            if lag is not None:
+                if abs(lag) < 0.05:
+                    lines.append("- 原曲とのリズム: ほぼ一致")
+                else:
+                    lines.append(f"- 原曲とのリズム: 平均{abs(lag):.2f}秒{'モタり(遅れ)' if lag>0 else '走り(先行)'}")
         rng = analysis.get("rms_db_range")
         if rng is not None:
             lines.append(f"- 強弱の幅: {rng:.0f}dB")
@@ -184,10 +214,11 @@ def build_session_context(state: dict) -> str:
         if hr is not None:
             q = "豊か（クリアで通る声）" if hr >= 0.55 else ("芯と柔らかさのバランス型" if hr >= 0.35 else "息まじり（柔らかい声）")
             lines.append(f"- 声の響き（整数次倍音）: {q}（{hr:.2f}）")
-        if not state.get("song_ref_url"):
+        if not has_ref:
             lines.append(
                 "- 注意: 原曲（お手本）が無いので、音を外していないか（音程の正確さ）とリズムの正確さは"
-                "厳密には判定できない。出しているのは安定度や概算なので断定しない"
+                "厳密には判定できない。出しているのは安定度や概算なので断定しない。"
+                "原曲をアップロードしてもらえれば正確に比較できると案内してよい"
             )
         # 張りどころ（曲の山で声を張れているか）。「ここは張るべき？」等に答えられるように
         pp = projection_point(analysis)
