@@ -562,10 +562,9 @@ def _audio_diagnose(
     else:
         task = diagnose_task(analysis, compare_data, exclude=exclude)
 
+    # 採点カード1枚に集約（声の特徴も payload.voice_profile に同居。別の声診断カードは出さない）
     fb_payload = feedback_builder.build_feedback_payload(analysis, compare_data, task)
     out.append(coach_msg("feedback", payload=fb_payload))
-    # Voick風の声診断カード（音域・声区・ロングトーン・ビブラート・音程精度）
-    out.append(coach_msg("diagnosis", payload=feedback_builder.build_voice_diagnosis_payload(analysis)))
 
     if task:
         prac = task["practices"][0]

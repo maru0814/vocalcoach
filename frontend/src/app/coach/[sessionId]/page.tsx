@@ -168,18 +168,20 @@ export default function CoachChatPage() {
 
       <PhaseStepper phase={phase} songTitle={songTitle} onRename={handleRename} />
 
-      {/* お手本（原曲）アップロード — あると音程の正確さ/リズムを実測できる */}
+      {/* 原曲（お手本）— YouTubeリンクを貼る前提。音源ファイルは補助。 */}
       <div className="flex items-center gap-2 border-b border-white/40 bg-white/40 px-3 py-1.5">
         <span className="text-xs text-slate-500">
-          {hasReference ? "🎼 お手本セット済み（原曲と聴き比べます）" : "🎼 原曲があると音程・リズムを正確に判定できます"}
+          {hasReference
+            ? "🎼 お手本セット済み（原曲と聴き比べます）"
+            : "🎼 原曲のYouTubeリンク＋区間（例 0:48-1:13）をチャットに貼ると、音程・リズムを原曲と比べられます"}
         </span>
         <button
           type="button"
           disabled={busy}
           onClick={() => refInputRef.current?.click()}
-          className="ml-auto rounded-full border border-brand-200 bg-white px-3 py-1 text-xs font-medium text-brand-600 transition active:scale-95 disabled:opacity-40"
+          className="ml-auto shrink-0 text-[11px] text-slate-400 underline-offset-2 transition hover:text-brand-600 hover:underline disabled:opacity-40"
         >
-          {hasReference ? "差し替える" : "お手本をアップロード"}
+          {hasReference ? "差し替える" : "音源ファイルで比較"}
         </button>
         <input
           ref={refInputRef}
