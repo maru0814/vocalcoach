@@ -616,6 +616,9 @@ def compare(user: dict, ref: dict) -> dict:
         "vibrato_depth_diff_cents": diff(user["vibrato_depth_cents"], ref["vibrato_depth_cents"]),
         "spectral_centroid_diff_hz": diff(user["spectral_centroid_hz"], ref["spectral_centroid_hz"], 0),
         "onset_rate_diff": diff(user["onset_rate_per_sec"], ref["onset_rate_per_sec"], 2),
+        # 原曲(お手本)側の実値。ビブラート提案を「原曲にビブラートがある時だけ」にするため。
+        "ref_vibrato_rate_hz": ref.get("vibrato_rate_hz"),
+        "ref_vibrato_depth_cents": ref.get("vibrato_depth_cents"),
     }
 
 

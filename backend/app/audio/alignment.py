@@ -50,35 +50,73 @@ def _intune_score(mad_cents: float, off_ratio: float) -> int:
     return max(20, min(98, base))
 
 
-def _pitch_accuracy(user_y, ref_y, sr, wp, lo, hi) -> tuple[Optional[float], Optional[int], Optional[float]]:
+def _pitch_accuracy(user_y, ref_y, sr, wp, lo, hi) -> tuple[Optional[float], Optional[int], Optional[float], list]:
     """ワーピングパスに沿って、原曲メロディと音を外していないか(in-tune)を実測。
 
     全体の移調（キー差）を中央値で除き、オクターブに畳んだ残差から
     中央絶対偏差(MAD)と「別の音に外れている割合(>80c)」を出す。
     戻り: (pitch_error_cents=MAD, in_tune_score, off_ratio) or (None, None, None)。
     """
+    hop_sec = HOP_LENGTH / sr
     try:
         cu = _f0_cents(user_y, sr)
         cr = _f0_cents(ref_y, sr)
     except Exception:
-        return None, None, None
+        return None, None, None, []
     uf, rf = wp[:, 0], wp[:, 1]
-    devs = []
+    devs, times = [], []
     for i in range(lo, hi):
         ui, ri = int(uf[i]), int(rf[i])
         if ui < len(cu) and ri < len(cr):
             a, b = cu[ui], cr[ri]
             if not (np.isnan(a) or np.isnan(b)):
                 devs.append(a - b)
+                times.append(ui * hop_sec)
     if len(devs) < 8:
-        return None, None, None
+        return None, None, None, []
     arr = np.array(devs, dtype=float)
     rel = arr - np.median(arr)              # 全体の移調(キー差)を除去
     rel = ((rel + 600.0) % 1200.0) - 600.0  # オクターブに畳む(±600c)
     absdev = np.abs(rel)
     mad = float(np.median(absdev))          # 中央絶対偏差(外れ値に強い)
     off_ratio = float(np.mean(absdev > 80))  # 明らかに別の音に外れている割合
-    return round(mad, 1), _intune_score(mad, off_ratio), round(off_ratio, 3)
+    spots = _pitch_off_spots(rel, np.array(times))
+    return round(mad, 1), _intune_score(mad, off_ratio), round(off_ratio, 3), spots
+
+
+def _pitch_off_spots(rel: np.ndarray, times: np.ndarray,
+                     thr_cents: float = 40.0, max_cents: float = 150.0,
+                     max_spots: int = 3) -> list[dict]:
+    """音程が外れている箇所を、方向（高い/低い）と秒数つきで抽出する。
+
+    rel>0 = ユーザーが原曲より高い(シャープ)、rel<0 = 低い(フラット)。
+    近接点は1.5秒バケツでまとめ、ズレの大きい順に最大 max_spots 件。
+    40〜150centの範囲だけ採用する（150c超は別の音/DTW誤対応の可能性が高く、
+    「少し外した」の指摘としては不正確なので事実化しない）。
+    """
+    spots: list[dict] = []
+    order = np.argsort(-np.abs(rel))
+    seen: set[int] = set()
+    for idx in order:
+        c = float(rel[idx])
+        if abs(c) > max_cents:
+            continue  # 別の音/誤対応の可能性 → 採用しない
+        if abs(c) < thr_cents:
+            break
+        t = float(times[idx])
+        bucket = int(t // 1.5)
+        if bucket in seen:
+            continue
+        seen.add(bucket)
+        spots.append({
+            "user_sec": round(t, 1),
+            "cents": round(abs(c)),
+            "direction": "sharp" if c > 0 else "flat",  # 高い / 低い
+        })
+        if len(spots) >= max_spots:
+            break
+    spots.sort(key=lambda s: s["user_sec"])
+    return spots
 
 
 # 同じ曲として照合できたとみなす最低の識別度（パス一致 − ランダム対応一致）。
@@ -206,7 +244,7 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
         }
 
     # 原曲メロディとの音程の正確さ(in-tune)を実測（ワーピングパスに沿って）
-    pitch_err, in_tune, off_ratio = _pitch_accuracy(user_y, ref_y, sr, wp, lo, hi)
+    pitch_err, in_tune, off_ratio, pitch_off_spots = _pitch_accuracy(user_y, ref_y, sr, wp, lo, hi)
 
     # 各対応点のラグ = ユーザー時刻 - 原曲時刻（の相対基準を引く）
     lag = user_t - ref_t
@@ -243,6 +281,7 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
         "pitch_error_cents": pitch_err,
         "in_tune_score": in_tune,
         "off_pitch_ratio": off_ratio,
+        "pitch_off_spots": pitch_off_spots,
         "key_shift_semitones": int(key_shift),
         "confidence": round(confidence, 2),
         "low_confidence": False,
