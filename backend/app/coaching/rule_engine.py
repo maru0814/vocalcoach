@@ -255,6 +255,79 @@ def is_pronunciation_request(text: str) -> bool:
     return any(k in text for k in PRONUNCIATION_KW)
 
 
+# 「動画/見本が欲しい」依頼の検出
+VIDEO_KW = ["動画", "ビデオ", "見本", "お手本", "手本", "参考になる", "youtube", "ユーチューブ", "やり方の映像"]
+# 話題キーワード → 課題ID（複数一致時は先頭の語が出た順で判定）
+TOPIC_KEYWORDS: list[tuple[str, str]] = [
+    ("ミックスボイス", "mixed_voice"), ("ミックス", "mixed_voice"), ("ミドルボイス", "mixed_voice"),
+    ("高音", "mixed_voice"), ("高い声", "mixed_voice"), ("裏声", "mixed_voice"),
+    ("ビブラート", "no_vibrato"), ("ゆらし", "no_vibrato"), ("揺らし", "no_vibrato"),
+    ("リズム", "rhythm_lag"), ("テンポ", "rhythm_lag"), ("走り", "rhythm_lag"), ("モタ", "rhythm_lag"),
+    ("音程", "pitch_wobble"), ("ピッチ", "pitch_wobble"), ("音を外", "pitch_wobble"),
+    ("ロングトーン", "long_tone_decay"), ("伸ば", "long_tone_decay"), ("息の支え", "long_tone_decay"),
+    ("喉", "throat_tension"), ("力み", "throat_tension"), ("詰ま", "throat_tension"), ("張り", "throat_tension"),
+    ("強弱", "expression_flat"), ("ダイナミ", "expression_flat"), ("表現", "expression_flat"),
+]
+
+
+def is_video_request(text: str) -> bool:
+    """「（その練習の）動画ない？／見本が欲しい」等、参考動画カードを求める依頼か。"""
+    return any(k in text.lower() for k in VIDEO_KW)
+
+
+def detect_topic_task(text: str, history: Optional[list[dict]] = None,
+                      fallback: Optional[str] = None) -> Optional[str]:
+    """メッセージ→直近履歴の順に話題キーワードを探し、対応する課題IDを返す。
+
+    「動画で何かない？」のように話題語が無いときは、直近の会話（ユーザー/コーチ）を
+    新しい順に見て話題を引き継ぐ。それでも無ければ fallback（current_task）。
+    """
+    def scan(t: str) -> Optional[str]:
+        for kw, task_id in TOPIC_KEYWORDS:
+            if kw in t:
+                return task_id
+        return None
+
+    hit = scan(text)
+    if hit:
+        return hit
+    # 履歴は「ユーザー自身の発言」だけを新しい順に見る。
+    # コーチの挨拶や例示（「ミックスボイス等の練習が…」）を話題と誤検出しないため。
+    for msg in reversed(history or []):
+        if (msg.get("role") or "") != "user":
+            continue
+        hit = scan(msg.get("content") or msg.get("text") or "")
+        if hit:
+            return hit
+    return fallback
+
+
+def handle_video_request(state: dict, text: str,
+                         history: Optional[list[dict]] = None) -> list[dict]:
+    """「動画ある？」等に、話題に合う実際の練習カード（手順＋実演動画）を確定的に返す。
+
+    LLMに任せると「動画カードを用意しました」と言うだけでカードが出ない/別話題の動画に
+    なる事故が起きるため、ここで話題判定→該当課題の練習カードを必ず一緒に出す。
+    """
+    task_id = detect_topic_task(text, history, fallback=state.get("current_task"))
+    task = get_task(task_id) if task_id else None
+    if not task:
+        return [coach_msg(
+            "text",
+            "どの練習の動画がいいですか？😊 たとえば『ミックスボイス』『ビブラート』"
+            "『リズム』『ロングトーン』『強弱』など、気になるテーマを教えてください。",
+        )]
+    prac = task["practices"][0]
+    intro = (
+        f"「{task['label']}」の参考動画ですね！下のカードに手順と実演動画をのせました。"
+        f"まずは『{prac['name']}』を動画に合わせて真似してみてください😊"
+    )
+    return [
+        coach_msg("text", intro),
+        coach_msg("practice", payload=feedback_builder.build_practice_payload(task)),
+    ]
+
+
 def classify_kind(analysis: dict) -> str:
     """録音が「曲」か「基礎練(単純な発声練習)」かを音声特徴から推定する。
 

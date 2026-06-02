@@ -269,6 +269,16 @@ def send_message(
             db.refresh(r)
         return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
 
+    # 「動画ある？／見本が欲しい」等は、話題に合う実際の練習カード（動画つき）を確定的に返す。
+    # LLM任せだと「動画カードを用意しました」と言うだけでカードが出ない事故が起きるため。
+    if rule_engine.is_video_request(body.text):
+        msgs = rule_engine.handle_video_request(_session_state(s), body.text, history=history)
+        rows = _persist_coach_messages(db, s.id, msgs)
+        db.commit()
+        for r in rows:
+            db.refresh(r)
+        return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+
     msgs, updates = rule_engine.handle_text(_session_state(s), body.text, history=history)
     _apply_updates(s, updates)
 
