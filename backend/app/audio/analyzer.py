@@ -105,6 +105,37 @@ def _voiced_runs(mask: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(starts.tolist(), ends.tolist()))
 
 
+def detect_ornaments(f0_hz: np.ndarray, voiced_flag: np.ndarray, hop_sec: float) -> dict:
+    """歌い回しの装飾を f0 から検出: しゃくり(下から入る)・フォール(語尾で落とす)。
+
+    各有声フレーズの「頭」が本体より低ければ しゃくり、「終わり」が下に落ちれば フォール。
+    戻り: {"scoops":[秒...], "falls":[秒...], "scoop_count", "fall_count"}（目安）。
+    """
+    scoops: list[float] = []
+    falls: list[float] = []
+    edge = max(2, int(round(0.12 / hop_sec)))  # 頭/終わりを見る窓 ≒120ms
+    for s, e in _voiced_runs(voiced_flag.astype(bool)):
+        if (e - s) * hop_sec < 0.30:
+            continue
+        seg = f0_hz[s:e]
+        core = seg[edge:len(seg) - edge] if len(seg) > 2 * edge else seg
+        body = float(np.nanmedian(core))
+        if not np.isfinite(body) or body <= 0:
+            continue
+        head = float(np.nanmedian(seg[:edge]))
+        tail = float(np.nanmedian(seg[-edge:]))
+        if np.isfinite(head) and head > 0:
+            if 1200.0 * np.log2(head / body) <= -55:   # 頭が本体より55c以上低い＝下から入った
+                scoops.append(round(s * hop_sec, 1))
+        if np.isfinite(tail) and tail > 0:
+            if 1200.0 * np.log2(tail / body) <= -80:   # 終わりが80c以上落ちる＝フォール
+                falls.append(round(e * hop_sec, 1))
+    return {
+        "scoops": scoops[:5], "falls": falls[:5],
+        "scoop_count": len(scoops), "fall_count": len(falls),
+    }
+
+
 def _stable_holds(
     f0_hz: np.ndarray, s: int, e: int, hop_sec: float, min_frames: int,
     tol_cents: float = 70.0, min_f0: float = 100.0,
@@ -544,6 +575,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     vib_rate, vib_depth = detect_vibrato(f0_hz, hop_sec)
     lts = long_tone_stability(f0_hz, hop_sec)
     harm = harmonic_ratio(y, sr, f0_hz, voiced_flag)
+    ornaments = detect_ornaments(f0_hz, voiced_flag, hop_sec)
     timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
 
     # 声区/共鳴の全体集計（伸ばし区間のフォルマント・傾斜の中央値＋歌手フォルマント比）
@@ -571,6 +603,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "spectral_centroid_hz": round(centroid_mean, 0),
         "vibrato_rate_hz": round(vib_rate, 2) if vib_rate else None,
         "vibrato_depth_cents": round(vib_depth, 1) if vib_depth else None,
+        "expression_ornaments": ornaments,
         "long_tone_stability": round(lts, 1) if lts else None,
         "harmonic_ratio": round(harm, 3) if harm is not None else None,
         "formant_f1_hz": formant_f1,
