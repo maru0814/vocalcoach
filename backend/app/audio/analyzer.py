@@ -513,13 +513,28 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     onsets = librosa.onset.onset_detect(y=y, sr=sr, hop_length=HOP_LENGTH, units="time")
     onset_rate = len(onsets) / duration if duration > 0 else 0.0
 
-    rms = librosa.feature.rms(y=y, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)[0]
-    rms = rms[rms > 1e-6]
+    rms_full = librosa.feature.rms(y=y, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)[0]
+    rms = rms_full[rms_full > 1e-6]
     if len(rms) > 0:
         rms_db = 20 * np.log10(rms)
         rms_mean = float(np.mean(rms))
-        rms_db_range = float(np.percentile(rms_db, 95) - np.percentile(rms_db, 5))
         rms_crest_db = float(20 * np.log10(np.max(rms) / (np.mean(rms) + 1e-9)))
+        # 「強弱の幅」は“歌っている部分”の音量差。無音・ブレス（ピークより35dB以上小さい
+        # フレーム）を除外しないと、無音→最大音 の差になって過大評価される。
+        # 可能なら有声フレームに限定し、さらにピーク基準の床で無音を落とす。
+        vmask = None
+        if voiced_flag is not None and len(voiced_flag) > 0:
+            n = min(len(voiced_flag), len(rms_full))
+            vm = np.zeros(len(rms_full), dtype=bool)
+            vm[:n] = voiced_flag[:n].astype(bool)
+            vmask = vm & (rms_full > 1e-6)
+        sung_db = rms_db if vmask is None or vmask.sum() < 4 else 20 * np.log10(rms_full[vmask])
+        peak = float(np.percentile(sung_db, 99))
+        sung_db = sung_db[sung_db > peak - 35.0]  # 無音・ブレスを除外
+        if len(sung_db) >= 4:
+            rms_db_range = float(np.percentile(sung_db, 95) - np.percentile(sung_db, 5))
+        else:
+            rms_db_range = float(np.percentile(rms_db, 95) - np.percentile(rms_db, 5))
     else:
         rms_mean = rms_db_range = rms_crest_db = 0.0
 
