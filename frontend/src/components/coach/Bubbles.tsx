@@ -347,11 +347,13 @@ function FeedbackControl({ sessionId, messageId }: { sessionId: string | number;
 export function MessageBubble({
   m,
   sessionId,
+  feedbackable,
   onAction,
   actionsDisabled,
 }: {
   m: CoachMessage;
   sessionId?: string | number;
+  feedbackable?: boolean;
   onAction?: (id: string) => void;
   actionsDisabled?: boolean;
 }) {
@@ -381,7 +383,7 @@ export function MessageBubble({
             <div className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-700 shadow-card ring-1 ring-slate-100">
               {m.text}
             </div>
-            {sessionId != null && <FeedbackControl sessionId={sessionId} messageId={m.id} />}
+            {sessionId != null && feedbackable && <FeedbackControl sessionId={sessionId} messageId={m.id} />}
           </>
         )}
         {m.type === "audio" && m.audio_url && (

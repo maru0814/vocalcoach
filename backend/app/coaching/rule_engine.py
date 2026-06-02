@@ -75,15 +75,16 @@ def initial_messages() -> list[dict]:
         ),
         coach_msg(
             "text",
-            "まずは練習したいところを歌って、録音を送ってください。\n"
-            "下の🎙ボタンでその場録音、または📎で音源をアップロードできます。\n\n"
-            "気になることがあれば先に教えてくれてもOKです"
-            "（高音の力み／音程／リズム／表現／ミックスボイス など）。",
+            "まずは【①どの曲の・②どこ（区間）】を練習したいか教えてください。\n"
+            "原曲のYouTube URLと区間（例: 0:48-1:13 や「サビ」）を送ってもらえると、"
+            "原曲と照らし合わせて具体的にアドバイスできます😊\n"
+            "（曲を決めずに、まず歌って相談だけでもOKです）",
         ),
         coach_msg(
             "text",
-            "💡 原曲と比べてほしいときは、原曲のYouTube URLと区間（例: 0:48-1:13）も送ってくださいね。"
-            "照らし合わせて、より具体的にアドバイスします（任意）。",
+            "曲と箇所が決まったら、その同じところを歌って録音を送ってください🎤\n"
+            "下の🎙ボタンでその場録音、または📎で音源をアップロードできます。\n\n"
+            "気になることを先に教えてくれてもOKです（高音の力み／音程／リズム／表現 など）。",
         ),
     ]
 
@@ -261,8 +262,9 @@ def is_pronunciation_request(text: str) -> bool:
     return any(k in text for k in PRONUNCIATION_KW)
 
 
-# 「動画/見本が欲しい」依頼の検出
-VIDEO_KW = ["動画", "ビデオ", "見本", "お手本", "手本", "参考になる", "youtube", "ユーチューブ", "やり方の映像"]
+# 「（練習の）動画/見本が欲しい」依頼の検出。
+# 注: 原曲URL（YouTubeリンク）はお手本の指定なので動画リクエストではない → "youtube"等は入れない。
+VIDEO_KW = ["動画", "ビデオ", "見本", "手本", "やり方の映像", "実演"]
 # 話題キーワード → 課題ID（複数一致時は先頭の語が出た順で判定）
 TOPIC_KEYWORDS: list[tuple[str, str]] = [
     ("ミックスボイス", "mixed_voice"), ("ミックス", "mixed_voice"), ("ミドルボイス", "mixed_voice"),
@@ -277,8 +279,13 @@ TOPIC_KEYWORDS: list[tuple[str, str]] = [
 
 
 def is_video_request(text: str) -> bool:
-    """「（その練習の）動画ない？／見本が欲しい」等、参考動画カードを求める依頼か。"""
-    return any(k in text.lower() for k in VIDEO_KW)
+    """「（その練習の）動画ない？／見本が欲しい」等、参考動画カードを求める依頼か。
+
+    URL（原曲リンク）を含む場合は、お手本の指定なので動画リクエストではない。
+    """
+    if "http://" in text or "https://" in text:
+        return False
+    return any(k in text for k in VIDEO_KW)
 
 
 def detect_topic_task(text: str, history: Optional[list[dict]] = None,
@@ -403,6 +410,27 @@ def _resonance_note(a: dict) -> Optional[str]:
     if (hard.get("spectral_centroid_hz") or 0) >= 2700:
         parts.append(f"{hard['start_sec']:.0f}〜{hard['end_sec']:.0f}秒あたりは音色が硬め＝喉に力みの可能性（響きを落とさず喉を開く余地）")
     return "発声（響き）の具体箇所: " + "／".join(parts) + "。"
+
+
+def _ornament_note(a: dict) -> Optional[str]:
+    """表現の装飾（ビブラート/しゃくり/フォール）の検出状況を文章化する。
+
+    表現＝強弱だけでなく、歌い回しの技法にも触れられるようにする。
+    """
+    orn = a.get("expression_ornaments") or {}
+    vr = a.get("vibrato_rate_hz")
+    parts = []
+    parts.append("ビブラート: " + feedback_builder.vibrato_label(vr, a.get("vibrato_depth_cents")))
+    sc, fl = orn.get("scoop_count", 0), orn.get("fall_count", 0)
+    if sc:
+        ex = "、".join(f"{t:.0f}秒" for t in (orn.get("scoops") or [])[:3])
+        parts.append(f"しゃくり（下から当てる）を約{sc}回検出（例: {ex}）")
+    else:
+        parts.append("しゃくりはほぼ無し")
+    if fl:
+        ex = "、".join(f"{t:.0f}秒" for t in (orn.get("falls") or [])[:3])
+        parts.append(f"フォール（語尾を落とす）を約{fl}回検出（例: {ex}）")
+    return "表現（歌い回し）: " + "／".join(parts) + "。こぶしは自動検出していない（必要なら一般論で説明可）。"
 
 
 def _voice_brief(a: dict) -> str:
@@ -548,6 +576,7 @@ def _audio_diagnose(
         issue_lines = "\n".join(f"  ・[{w['axis']}] {w['reason']}" for w in issues) or "  ・大きな弱点は少ない"
         harm = _harmonic_note(analysis)
         reson = _resonance_note(analysis)
+        orn = _ornament_note(analysis)
         cmp_brief = _compare_brief(compare_data)
         ref_note = cmp_brief if cmp_brief else (
             "原曲（お手本）が無いので、リズムの走り/モタりや音程の正確さは厳密には比較できない"
@@ -560,6 +589,7 @@ def _audio_diagnose(
             f"良かった点: {goods}\n"
             + (f"{harm}\n" if harm else "")
             + (f"{reson}\n" if reson else "")
+            + (f"{orn}\n" if orn else "")
             + (f"張りどころ: {proj}\n" if proj else "")
             + f"気になる点（観点つき・優先度順）:\n{issue_lines}\n"
             + (f"{ref_note}\n" if ref_note else "")
@@ -570,6 +600,8 @@ def _audio_diagnose(
             "多くの人がまず気にするのは発声と音程なので、そこを先に・厚めに話す。"
             "発声は『どの秒数の響きが良く／どの秒数が硬い・弱いか』を具体箇所つきで述べる（『発声（響き）の具体箇所』の事実を使う）。"
             "音程は、外している箇所があれば『何秒あたりが何centひくい(フラット)/高い(シャープ)か』を具体的に言う（『特に音程が外れている箇所』の事実を使う）。"
+            "リズムに触れるときは必ず根拠を添える: 原曲との照合があれば走り/モタりの秒数を、無ければ『正確なリズム(走り/モタり)は原曲があると分かる・今は概算』と述べる。根拠なく『リズムが悪い・低い』と断じない。"
+            "表現は強弱(ダイナミクス)だけでなく、『表現（歌い回し）』の事実にある ビブラート／しゃくり／フォール にも触れてよい（検出ゼロなら『あまり使っていない』と中立に。装飾はやみくもに勧めず、原曲が使っていれば寄せる方向で）。"
             "良い点と気になる点は、できるだけ具体的な秒数（と音名）を添える。録音の長さを超える秒数は言わない。"
             "音量の上下そのものは表現なので欠点にしない。"
             "ビブラートは『多ければ良い』ものではない。事実に『原曲では…ビブラート』とある時だけ"
@@ -615,6 +647,7 @@ def _audio_diagnose(
             f"良かった点: {goods}\n"
             + (f"{harm}\n" if harm else "")
             + (f"{reson}\n" if reson else "")
+            + (f"{_ornament_note(analysis)}\n")
             + (f"張りどころ: {proj}\n" if proj else "")
             + f"もっと良くできる点（必ず1つ伝える）: {stretch}\n"
             + prac_line

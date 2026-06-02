@@ -38,7 +38,9 @@ def pitch_score(a: dict, c: Optional[dict]) -> int:
 
 
 def rhythm_score(a: dict, c: Optional[dict]) -> int:
-    base = 75
+    # 原曲(お手本)が無いと「走り/モタり」は正確に測れない。確信を持って低く出さず、
+    # 中立(概算)に置く（毎回リズムだけ最下位に見える問題を回避。根拠はFBで明示する）。
+    base = 80
     if c and c.get("tempo_diff_bpm") is not None:
         td = abs(c["tempo_diff_bpm"])
         if td <= 2:

@@ -197,6 +197,13 @@ export default function CoachChatPage() {
             <MessageBubble
               m={m}
               sessionId={sessionId}
+              feedbackable={
+                m.role === "coach" &&
+                m.type === "text" &&
+                i > 0 &&
+                messages[i - 1]?.role === "user" &&
+                messages[i - 1]?.type === "text"
+              }
               onAction={i === messages.length - 1 ? handleAction : undefined}
               actionsDisabled={busy}
             />
