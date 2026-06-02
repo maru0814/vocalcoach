@@ -71,33 +71,52 @@ def build_good_points(a: dict) -> list[str]:
     return pts[:3]
 
 
+def _lvl4(good: bool, ok: bool, weak: bool) -> str:
+    """良し悪し4段階: good=◎ / ok=○ / weak=△ / bad=×。◎は厳しめ。"""
+    return "good" if good else ("ok" if ok else ("weak" if weak else "bad"))
+
+
 def build_analysis_table(a: dict, c: Optional[dict]) -> list[dict]:
-    """FBカードの実測値テーブル（行: label, value, hint）。"""
+    """採点カードの根拠＝この録音の出来（パフォーマンス指標）。◎○△×のlevel付き。
+
+    声のプロフィール(音域/声区/換声点/共鳴)は採点カードの「声の特徴」に同居させる（別カードにしない）。
+    ◎は厳しめ基準（◎が安売りにならないように）。
+    """
     rows = []
-    rows.append({"label": "あなたの声の高さ（中心）", "value": f"{_note_name(a.get('f0_median_hz'))}", "hint": "中心となる音の高さ"})
     j = a.get("f0_jitter_cents")
     rows.append({"label": "音程の安定度", "value": f"{j:.0f}cents" if j is not None else "—",
-                 "hint": "揺れの少なさ（正確さは原曲があると分かる）"})
+                 "hint": "揺れの少なさ（◎は6以下）",
+                 "level": "ok" if j is None else _lvl4(j <= 6, j <= 12, j <= 20)})
     rng = a.get("rms_db_range")
-    rows.append({"label": "声の強弱の幅", "value": f"{rng:.0f}dB" if rng is not None else "—",
-                 "hint": "大きいほどメリハリがある"})
+    rows.append({"label": "声の強弱（メリハリ）", "value": f"{rng:.0f}dB" if rng is not None else "—",
+                 "hint": "大きいほどメリハリ（◎は18dB以上）",
+                 "level": "ok" if rng is None else _lvl4(rng >= 18, rng >= 13, rng >= 8)})
     vr = a.get("vibrato_rate_hz")
     vd = a.get("vibrato_depth_cents")
-    rows.append({"label": "ビブラート／揺れ", "value": vibrato_label(vr, vd), "hint": "秒4〜7回が自然なビブラート"})
+    rows.append({"label": "ビブラート", "value": vibrato_label(vr, vd), "hint": "秒4〜7回が自然",
+                 "level": "good" if (vr is not None and 4.0 <= vr <= 7.5 and (vd or 0) >= 20)
+                          else ("ok" if vr is not None else "weak")})
     lts = a.get("long_tone_stability")
-    rows.append({"label": "伸ばした音の安定度", "value": f"{lts:.0f}cents" if lts is not None else "—",
-                 "hint": "小さいほど安定（30以下が目標）"})
+    rows.append({"label": "伸ばした音の安定", "value": f"{lts:.0f}cents" if lts is not None else "—",
+                 "hint": "小さいほど安定（◎は20以下）",
+                 "level": "ok" if lts is None else _lvl4(lts <= 20, lts <= 35, lts <= 55)})
     align = (c or {}).get("alignment") if c else None
     if align and align.get("in_tune_score") is not None:
         err = align.get("pitch_error_cents")
+        it = align["in_tune_score"]
         rows.append({
-            "label": "原曲との一致（音程の正確さ）",
-            "value": f"{align['in_tune_score']}点" + (f"（ズレ平均{err:.0f}cents）" if err is not None else ""),
-            "hint": "原曲メロディと比べて音を外していないか（キーずれは除外）",
+            "label": "原曲との一致（音程）",
+            "value": f"{it}点" + (f"（ズレ{err:.0f}c）" if err is not None else ""),
+            "hint": "音を外していないか（◎は90点以上）",
+            "level": _lvl4(it >= 90, it >= 78, it >= 62),
         })
-    if c:
-        rows.append({"label": "原曲とのテンポ差", "value": f"{c.get('tempo_diff_bpm')}BPM" if c.get("tempo_diff_bpm") is not None else "—",
-                     "hint": "0に近いほどリズムが合っている"})
+        lag = align.get("mean_lag_sec")
+        if lag is not None:
+            al = abs(lag)
+            rows.append({
+                "label": "原曲とのリズム", "value": f"{al:.2f}秒{'モタり' if lag>0 else '走り'}" if al >= 0.05 else "ほぼ一致",
+                "hint": "走り/モタり（◎は0.08秒未満）",
+                "level": _lvl4(al < 0.08, al < 0.18, al < 0.32)})
     return rows
 
 
@@ -120,12 +139,104 @@ def build_rhythm_note(c: Optional[dict]) -> Optional[str]:
     return " ".join(notes) if notes else None
 
 
+def _axis_level(s: int) -> str:
+    """軸スコア→◎○△×（DAM準拠で◎は厳しめ）。"""
+    return "good" if s >= 90 else ("ok" if s >= 75 else ("weak" if s >= 60 else "bad"))
+
+
+def build_axis_groups(a: dict, c: Optional[dict]) -> list[dict]:
+    """Live DAM風の入れ子構造: 音程 / リズム / 表現  それぞれにスコアと内訳。
+
+    表現は 抑揚・ビブラート・しゃくり・こぶし・フォール を内包。
+    """
+    scores = scoring.compute_scores(a, c)
+    align = (c or {}).get("alignment") if c else None
+    j = a.get("f0_jitter_cents")
+    rng = a.get("rms_db_range")
+    vr = a.get("vibrato_rate_hz")
+    vd = a.get("vibrato_depth_cents")
+    orn = a.get("expression_ornaments") or {}
+
+    # 音程
+    pitch_items: list[dict] = []
+    if align and align.get("in_tune_score") is not None:
+        it = align["in_tune_score"]
+        err = align.get("pitch_error_cents")
+        pitch_items.append({"label": "原曲との一致（正確さ）",
+                            "value": f"{it}点" + (f"（ズレ{err:.0f}c）" if err is not None else ""),
+                            "level": _lvl4(it >= 90, it >= 78, it >= 62)})
+    else:
+        pitch_items.append({"label": "音程の正確さ", "value": "原曲があると判定できます", "level": "ok"})
+    pitch_items.append({"label": "安定度（揺れの少なさ）", "value": f"{j:.0f}cents" if j is not None else "—",
+                        "level": "ok" if j is None else _lvl4(j <= 6, j <= 12, j <= 20)})
+
+    # リズム
+    if align and align.get("mean_lag_sec") is not None:
+        lag = align["mean_lag_sec"]
+        al = abs(lag)
+        rhythm_items = [{"label": "走り／モタり",
+                         "value": f"{al:.2f}秒{'モタり' if lag > 0 else '走り'}" if al >= 0.05 else "ほぼ一致",
+                         "level": _lvl4(al < 0.08, al < 0.18, al < 0.32)}]
+    else:
+        rhythm_items = [{"label": "走り／モタり", "value": "概算（原曲があると正確に分かる）", "level": "ok"}]
+
+    # 表現（抑揚・ビブラート・しゃくり・こぶし・フォール）
+    sc, fl = orn.get("scoop_count", 0), orn.get("fall_count", 0)
+    ref_rng = (c or {}).get("ref_rms_db_range")
+    yoku_val = (f"{rng:.0f}dB" if rng is not None else "—")
+    if ref_rng is not None and rng is not None:
+        yoku_val += f"（原曲{ref_rng:.0f}dB）"
+    expr_items = [
+        {"label": "抑揚（強弱）", "value": yoku_val, "level": scoring.yokuyou_level(rng, c)},
+        {"label": "ビブラート", "value": vibrato_label(vr, vd),
+         "level": "good" if (vr is not None and 4.0 <= vr <= 7.5 and (vd or 0) >= 20) else ("ok" if vr is not None else "weak")},
+        {"label": "しゃくり", "value": f"{sc}回" if sc else "なし", "level": "good" if 1 <= sc <= 12 else "ok"},
+        {"label": "こぶし", "value": "自動判定なし", "level": "ok"},
+        {"label": "フォール", "value": f"{fl}回" if fl else "なし", "level": "good" if 1 <= fl <= 12 else "ok"},
+    ]
+
+    return [
+        {"key": "音程", "icon": "🎵", "score": scores["pitch_score"], "level": _axis_level(scores["pitch_score"]), "items": pitch_items},
+        {"key": "リズム", "icon": "🥁", "score": scores["rhythm_score"], "level": _axis_level(scores["rhythm_score"]), "items": rhythm_items},
+        {"key": "表現", "icon": "🎨", "score": scores["expression_score"], "level": _axis_level(scores["expression_score"]), "items": expr_items},
+    ]
+
+
+def build_voice_profile(a: dict) -> list[dict]:
+    """「声の特徴」をコンパクトに（音域／使っている声／換声点／響き）。採点カードに同居させる。"""
+    timeline = a.get("timeline", {})
+    holds = [s for s in timeline.get("sustained_segments", []) if (s.get("mean_f0_hz") or 0) >= 100]
+    f0s = [w.get("f0_mean_hz") for w in timeline.get("per_window", [])
+           if w.get("f0_mean_hz") and w["f0_mean_hz"] >= 100]
+    out: list[dict] = []
+    if f0s:
+        out.append({"label": "音域", "value": f"{_note_name(min(f0s))}〜{_note_name(max(f0s))}"})
+    conf = [h for h in holds if h.get("register_confidence") in ("high", "med")]
+    cnt: dict[str, int] = {}
+    for h in conf:
+        r = h.get("register")
+        if r:
+            cnt[r] = cnt.get(r, 0) + 1
+    if cnt:
+        used = "・".join(_voice_type_jp(r).split("（")[0] for r, _ in sorted(cnt.items(), key=lambda x: -x[1]))
+        out.append({"label": "使っている声", "value": used})
+    pg = taxonomy.passaggio_estimate(a)
+    if pg:
+        out.append({"label": "換声点", "value": f"{pg['note']}あたり"})
+    hr = a.get("harmonic_ratio")
+    if hr is not None:
+        res = "クリアで通る" if hr >= 0.55 else ("芯と柔らかさのバランス" if hr >= 0.35 else "やわらかい")
+        out.append({"label": "声の響き", "value": res})
+    return out
+
+
 def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict]) -> dict:
     scores = scoring.compute_scores(a, c)
     payload = {
         "scores": scores,
-        "analysis_table": build_analysis_table(a, c),
+        "axes": build_axis_groups(a, c),          # Live DAM風: 音程/リズム/表現 の入れ子
         "good_points": build_good_points(a),
+        "voice_profile": build_voice_profile(a),
         "today_task": None,
         "rhythm_note": build_rhythm_note(c),
     }
@@ -235,26 +346,8 @@ def build_voice_diagnosis_payload(a: dict) -> dict:
             "hint": "整数次倍音が多いほどクリアで通る声",
         })
 
-    lts = a.get("long_tone_stability")
-    rows.append({
-        "label": "伸ばしの安定度",
-        "value": f"{lts:.0f}cents" if lts is not None else "—",
-        "hint": "小さいほど安定（30以下が目標）",
-    })
-
-    vr = a.get("vibrato_rate_hz")
-    vd = a.get("vibrato_depth_cents")
-    rows.append({"label": "ビブラート／揺れ", "value": vibrato_label(vr, vd), "hint": "秒4〜7回が自然なビブラート"})
-
-    # ジッターは「音を外していないか(正確さ)」ではなく「揺れの少なさ(安定度)」。
-    # in-tune の正確さは原曲(お手本)があって初めて判定できる、と明示する。
-    j = a.get("f0_jitter_cents")
-    rows.append({
-        "label": "音程の安定度（揺れの少なさ）",
-        "value": f"{j:.0f}cents" if j is not None else "—",
-        "hint": "小さいほど揺れが少ない。音を外していないか(正確さ)は原曲があると分かる",
-    })
-
+    # ※ 伸ばしの安定度・ビブラート・音程の安定度は「採点カード(歌の診断結果)」に集約し、
+    #   ここ(声のカルテ)では声のプロフィール=音域/声区/換声点/共鳴/響き に専念する（重複回避）。
     return {"rows": rows}
 
 

@@ -324,10 +324,17 @@ def _achieve_rhythm_lag(a: dict) -> bool:
 
 
 def _diag_expression_flat(a: dict, c: Optional[dict]) -> bool:
-    if c and c.get("rms_db_range_diff") is not None:
-        return c["rms_db_range_diff"] < -8  # 原曲より強弱が小さい
+    """抑揚（強弱）の課題判定。原曲基準: 原曲が平坦なら不問、原曲が抑揚をつけている所で
+    つけられていない時だけ課題にする。原曲が無ければ極端に平坦な時だけ。"""
     rng = a.get("rms_db_range")
-    return rng is not None and rng < 8
+    if rng is None:
+        return False
+    ref = (c or {}).get("ref_rms_db_range")
+    if ref is not None:
+        if ref < 12:               # 原曲が平坦 → ユーザーも控えめでOK（課題にしない）
+            return False
+        return (ref - rng) > 6     # 原曲は抑揚があるのに、つけられていない
+    return rng < 8                 # 原曲なし: 極端に平坦な時だけ
 
 
 def _reason_expression_flat(a: dict, c: Optional[dict]) -> str:

@@ -659,6 +659,7 @@ def compare(user: dict, ref: dict) -> dict:
         "tempo_diff_bpm": diff(user["tempo_bpm"], ref["tempo_bpm"]),
         "voiced_ratio_diff": diff(user["voiced_ratio"], ref["voiced_ratio"], 3),
         "rms_db_range_diff": diff(user["rms_db_range"], ref["rms_db_range"]),
+        "ref_rms_db_range": ref.get("rms_db_range"),  # 原曲の抑揚量（原曲基準で抑揚を評価するため）
         "long_tone_stability_diff_cents": diff(user["long_tone_stability"], ref["long_tone_stability"]),
         "vibrato_rate_diff_hz": diff(user["vibrato_rate_hz"], ref["vibrato_rate_hz"], 2),
         "vibrato_depth_diff_cents": diff(user["vibrato_depth_cents"], ref["vibrato_depth_cents"]),

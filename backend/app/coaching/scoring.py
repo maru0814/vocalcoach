@@ -64,22 +64,46 @@ def rhythm_score(a: dict, c: Optional[dict]) -> int:
     return _clamp(base)
 
 
-def expression_score(a: dict, c: Optional[dict]) -> int:
-    rng = a.get("rms_db_range")
+def yokuyou_level(rng: Optional[float], c: Optional[dict]) -> str:
+    """抑揚(強弱)の良し悪し◎○△×。原曲があれば原曲基準で評価する。
+
+    原曲が抑揚をつけていない（平坦）なら、ユーザーも抑揚控えめでOK（不問）。
+    原曲が抑揚をつけている所でつけられていない時だけ △/× で反応する。
+    原曲が無いときは断定しすぎず、極端に平坦な時だけ控えめに指摘。
+    """
     if rng is None:
-        base = 60
-    elif rng >= 18:
-        base = 88
-    elif rng >= 12:
-        base = 80
-    elif rng >= 8:
-        base = 70
-    else:
-        base = 60
-    # ビブラートがあれば加点
+        return "ok"
+    if c and c.get("ref_rms_db_range") is not None:
+        ref = c["ref_rms_db_range"]
+        if ref < 12:                       # 原曲が平坦 → 抑揚控えめでも問題なし
+            return "good" if rng >= ref - 2 else "ok"
+        gap = ref - rng                    # 原曲よりどれだけ平坦か
+        if gap <= 2:
+            return "good"                  # 原曲と同等以上に抑揚をつけられている
+        if gap <= 6:
+            return "ok"
+        if gap <= 12:
+            return "weak"                  # 原曲は抑揚があるのに、つけられていない
+        return "bad"
+    # 原曲なし: 断定しすぎない
+    return "good" if rng >= 18 else ("ok" if rng >= 8 else "weak")
+
+
+def expression_score(a: dict, c: Optional[dict]) -> int:
+    """表現力(DAM風)= 抑揚(強弱) を主軸に、ビブラート・しゃくり/フォール等の技法を加味。
+
+    抑揚は原曲基準（原曲が平坦なら平坦でも減点しない）。技法は適度に入っていれば加点。
+    """
+    rng = a.get("rms_db_range")
+    base = {"good": 84, "ok": 73, "weak": 60, "bad": 48}[yokuyou_level(rng, c)]
     vr = a.get("vibrato_rate_hz")
-    if vr is not None and 4.0 <= vr <= 7.5:
-        base += 5
+    vd = a.get("vibrato_depth_cents") or 0
+    if vr is not None and 4.0 <= vr <= 7.5 and vd >= 20:
+        base += 8          # 整ったビブラート
+    orn = a.get("expression_ornaments") or {}
+    tech = orn.get("scoop_count", 0) + orn.get("fall_count", 0)
+    if 1 <= tech <= 12:
+        base += 5          # しゃくり/フォール等を適度に使えている
     return _clamp(base)
 
 

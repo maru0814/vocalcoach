@@ -4,46 +4,6 @@ import { useState } from "react";
 import { CoachMessage, COACH_API_BASE, submitMessageFeedback } from "@/lib/api";
 import { CoachAvatar } from "@/components/character/Coach";
 
-function scoreColor(v: number) {
-  if (v >= 80) return "#10b981"; // emerald
-  if (v >= 60) return "#f59e0b"; // amber
-  return "#f43f5e"; // rose
-}
-
-/** 円形スコアゲージ（総合用） */
-function ScoreGauge({ value }: { value: number }) {
-  const r = 34;
-  const c = 2 * Math.PI * r;
-  const dash = (value / 100) * c;
-  return (
-    <div className="relative flex h-24 w-24 items-center justify-center">
-      <svg className="h-24 w-24 -rotate-90" viewBox="0 0 80 80">
-        <circle cx="40" cy="40" r={r} fill="none" stroke="#eef2f7" strokeWidth="8" />
-        <circle
-          cx="40" cy="40" r={r} fill="none" stroke={scoreColor(value)} strokeWidth="8"
-          strokeLinecap="round" strokeDasharray={`${dash} ${c}`}
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center">
-        <span className="text-2xl font-black text-slate-800">{value}</span>
-        <span className="text-[10px] text-slate-400">総合</span>
-      </div>
-    </div>
-  );
-}
-
-function ScoreBar({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="w-10 shrink-0 text-slate-500">{label}</span>
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-2 animate-grow-bar rounded-full" style={{ width: `${value}%`, background: scoreColor(value) }} />
-      </div>
-      <span className="w-7 text-right font-bold text-slate-700">{value}</span>
-    </div>
-  );
-}
-
 function CardShell({ title, icon, children, accent = "brand" }: {
   title: string; icon: string; children: React.ReactNode; accent?: "brand" | "amber" | "emerald";
 }) {
@@ -63,62 +23,179 @@ function CardShell({ title, icon, children, accent = "brand" }: {
   );
 }
 
+/** 指標ラベル → 絵文字＆アクセント色。ぱっと見で分かるように。 */
+function metricMeta(label: string): { icon: string; tint: string } {
+  const L = label;
+  if (L.includes("音域")) return { icon: "🎹", tint: "from-violet-50 to-fuchsia-50" };
+  if (L.includes("使っている声") || L.includes("声区")) return { icon: "🎙", tint: "from-sky-50 to-cyan-50" };
+  if (L.includes("換声")) return { icon: "🪜", tint: "from-indigo-50 to-blue-50" };
+  if (L.includes("共鳴") || L.includes("フォルマント")) return { icon: "🔆", tint: "from-amber-50 to-orange-50" };
+  if (L.includes("響き") || L.includes("倍音")) return { icon: "✨", tint: "from-amber-50 to-yellow-50" };
+  if (L.includes("ビブラート") || L.includes("揺れ")) return { icon: "〰️", tint: "from-pink-50 to-rose-50" };
+  if (L.includes("伸ば") || L.includes("ロングトーン")) return { icon: "⏱", tint: "from-teal-50 to-emerald-50" };
+  if (L.includes("強弱") || L.includes("ダイナ")) return { icon: "🔊", tint: "from-orange-50 to-amber-50" };
+  if (L.includes("一致") || L.includes("正確")) return { icon: "🎯", tint: "from-emerald-50 to-green-50" };
+  if (L.includes("安定")) return { icon: "📏", tint: "from-blue-50 to-sky-50" };
+  if (L.includes("テンポ") || L.includes("リズム")) return { icon: "🥁", tint: "from-rose-50 to-pink-50" };
+  if (L.includes("高さ") || L.includes("音程")) return { icon: "🎵", tint: "from-purple-50 to-violet-50" };
+  return { icon: "•", tint: "from-slate-50 to-slate-50" };
+}
+
+// 良し悪し4段階 → 色・バッジ（◎○△×）
+const LEVEL_STYLE: Record<string, { bg: string; ring: string; badge: string; badgeCls: string }> = {
+  good: { bg: "from-emerald-50 to-green-50", ring: "ring-emerald-200", badge: "◎", badgeCls: "bg-emerald-500" },
+  ok: { bg: "from-sky-50 to-slate-50", ring: "ring-sky-100", badge: "○", badgeCls: "bg-sky-400" },
+  weak: { bg: "from-amber-50 to-orange-50", ring: "ring-amber-200", badge: "△", badgeCls: "bg-amber-500" },
+  bad: { bg: "from-rose-50 to-red-50", ring: "ring-rose-200", badge: "×", badgeCls: "bg-rose-500" },
+};
+
+/** 指標タイル（アイコン＋ラベル＋値）。levelがあれば◎○△×で色分け＋バッジ。 */
+function MetricTile({ label, value, hint, level }: { label: string; value: string; hint?: string; level?: string }) {
+  const { icon, tint } = metricMeta(label);
+  const lv = level ? LEVEL_STYLE[level] : undefined;
+  const bg = lv ? lv.bg : tint;
+  const ring = lv ? lv.ring : "ring-black/5";
+  return (
+    <div className={`relative rounded-2xl bg-gradient-to-br ${bg} p-3 ring-1 ${ring}`}>
+      {lv && (
+        <span className={`absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full ${lv.badgeCls} text-[11px] font-bold text-white`}>
+          {lv.badge}
+        </span>
+      )}
+      <div className="flex items-center gap-1.5 pr-5 text-[11px] font-medium text-slate-500">
+        <span className="text-sm">{icon}</span>
+        {label}
+      </div>
+      <div className="mt-0.5 text-sm font-black leading-tight text-slate-800">{value}</div>
+      {hint && <div className="mt-0.5 text-[10px] leading-tight text-slate-400">{hint}</div>}
+    </div>
+  );
+}
+
+function badgeChar(level?: string) {
+  return level === "good" ? "◎" : level === "weak" ? "△" : level === "bad" ? "×" : "○";
+}
+const AXIS_HEAD: Record<string, string> = {
+  good: "from-emerald-500 to-green-500",
+  ok: "from-sky-500 to-blue-500",
+  weak: "from-amber-500 to-orange-500",
+  bad: "from-rose-500 to-red-500",
+};
+
+/** 良し悪しドット（◎○△×） */
+function LevelDot({ level }: { level?: string }) {
+  const cls = LEVEL_STYLE[level || "ok"]?.badgeCls || "bg-sky-400";
+  return (
+    <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${cls} text-[10px] font-bold text-white`}>
+      {badgeChar(level)}
+    </span>
+  );
+}
+
+/** Live DAM風の軸グループ（音程/リズム/表現）。ヘッダーにスコア＋◎○△×、下に内訳。 */
+function AxisGroup({ ax }: { ax: any }) {
+  const head = AXIS_HEAD[ax.level] || AXIS_HEAD.ok;
+  return (
+    <div className="overflow-hidden rounded-2xl ring-1 ring-slate-100">
+      <div className={`flex items-center gap-2 bg-gradient-to-r ${head} px-3 py-2 text-white`}>
+        <span className="text-base">{ax.icon}</span>
+        <span className="text-sm font-black">{ax.key}</span>
+        <span className="ml-auto text-xl font-black leading-none">{ax.score}</span>
+        <span className="text-lg font-black leading-none">{badgeChar(ax.level)}</span>
+      </div>
+      <div className="divide-y divide-slate-50 bg-white">
+        {Array.isArray(ax.items) && ax.items.map((it: any, i: number) => (
+          <div key={i} className="flex items-center gap-2 px-3 py-2 text-sm">
+            <LevelDot level={it.level} />
+            <span className="text-slate-500">{it.label}</span>
+            <span className="ml-auto text-right font-bold text-slate-700">{it.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FeedbackCard({ p }: { p: Record<string, any> }) {
   const s = p.scores || {};
   return (
-    <CardShell title="あなたの歌の分析" icon="📊" accent="brand">
-      <div className="flex items-center gap-4">
-        <ScoreGauge value={s.total_score ?? 0} />
-        <div className="flex-1 space-y-1.5">
-          <ScoreBar label="音程" value={s.pitch_score ?? 0} />
-          <ScoreBar label="リズム" value={s.rhythm_score ?? 0} />
-          <ScoreBar label="表現" value={s.expression_score ?? 0} />
+    <div className="overflow-hidden rounded-3xl rounded-bl-md bg-white shadow-card ring-1 ring-slate-100">
+      {/* ヒーロー: 総合スコア */}
+      <div className="flex items-center gap-4 bg-brand-gradient px-4 py-4 text-white">
+        <div className="relative flex h-[84px] w-[84px] shrink-0 items-center justify-center">
+          <svg className="h-[84px] w-[84px] -rotate-90" viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="8" />
+            <circle cx="40" cy="40" r="34" fill="none" stroke="#fff" strokeWidth="8" strokeLinecap="round"
+              strokeDasharray={`${((s.total_score ?? 0) / 100) * 214} 214`} />
+          </svg>
+          <div className="absolute flex flex-col items-center">
+            <span className="text-3xl font-black leading-none">{s.total_score ?? 0}</span>
+            <span className="text-[10px] text-white/80">総合</span>
+          </div>
+        </div>
+        <div>
+          <div className="text-sm font-black">🎤 歌の診断結果</div>
+          {(() => {
+            const axes = (p.axes || []).slice().sort((a: any, b: any) => b.score - a.score);
+            if (!axes.length) return null;
+            const best = axes[0], worst = axes[axes.length - 1];
+            return (
+              <div className="mt-1.5 space-y-1 text-xs">
+                <div>◎ 得意：<b>{best.key} {best.score}</b></div>
+                <div>△ もう一歩：<b>{worst.key} {worst.score}</b></div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
-      {Array.isArray(p.analysis_table) && (
-        <div className="rounded-xl bg-slate-50 p-2.5 text-xs">
-          {p.analysis_table.map((r: any, i: number) => (
-            <div key={i} className="flex items-center justify-between border-b border-slate-100 py-1 last:border-0">
-              <span className="text-slate-500">{r.label}</span>
-              <span className="text-right font-semibold text-slate-700">
-                {r.value}
-                {r.hint && <span className="ml-1 font-normal text-slate-400">（{r.hint}）</span>}
-              </span>
+      <div className="space-y-3 p-4">
+        {/* Live DAM風: 音程/リズム/表現 の入れ子 */}
+        {Array.isArray(p.axes) && p.axes.map((ax: any, i: number) => (
+          <AxisGroup key={i} ax={ax} />
+        ))}
+
+        {Array.isArray(p.good_points) && p.good_points.length > 0 && (
+          <div className="rounded-2xl bg-emerald-50 p-3">
+            <div className="mb-1.5 flex items-center gap-1 text-sm font-bold text-emerald-700">✨ ここが良かった！</div>
+            <ul className="space-y-1.5">
+              {p.good_points.map((g: string, i: number) => (
+                <li key={i} className="flex gap-2 text-sm text-slate-700">
+                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-400 text-[10px] text-white">✓</span>
+                  <span>{g}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {Array.isArray(p.voice_profile) && p.voice_profile.length > 0 && (
+          <div className="rounded-2xl bg-slate-50 p-3">
+            <div className="mb-1.5 text-xs font-bold text-slate-500">🎤 あなたの声の特徴</div>
+            <div className="flex flex-wrap gap-1.5">
+              {p.voice_profile.map((v: any, i: number) => (
+                <span key={i} className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-600 ring-1 ring-slate-200">
+                  <span className="text-slate-400">{v.label}</span>{" "}
+                  <span className="font-bold text-slate-700">{v.value}</span>
+                </span>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-
-      {Array.isArray(p.good_points) && p.good_points.length > 0 && (
-        <div className="rounded-xl bg-emerald-50/70 p-3">
-          <div className="mb-1 flex items-center gap-1 text-sm font-bold text-emerald-700">
-            <span>✨</span> 良かった点
           </div>
-          <ul className="space-y-1">
-            {p.good_points.map((g: string, i: number) => (
-              <li key={i} className="flex gap-1.5 text-sm text-slate-600">
-                <span className="text-emerald-400">●</span>
-                <span>{g}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        )}
 
-      {p.rhythm_note && (
-        <div className="rounded-xl bg-amber-50 p-2.5 text-sm text-amber-800">🥁 {p.rhythm_note}</div>
-      )}
+        {p.rhythm_note && (
+          <div className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">🥁 {p.rhythm_note}</div>
+        )}
 
-      {p.today_task && (
-        <div className="rounded-xl bg-gradient-to-r from-brand-50 to-pink-50 p-3">
-          <div className="flex items-center gap-1 text-sm font-bold text-brand-700">
-            🎯 今日のポイント：{p.today_task.label}
+        {p.today_task && (
+          <div className="rounded-2xl bg-gradient-to-r from-brand-500 to-pink-500 p-3.5 text-white shadow-soft">
+            <div className="flex items-center gap-1.5 text-sm font-black">🎯 今日のポイント</div>
+            <div className="mt-0.5 text-base font-bold">{p.today_task.label}</div>
+            <div className="mt-1 text-sm text-white/90">{p.today_task.reason}</div>
           </div>
-          <div className="mt-1 text-sm text-slate-600">{p.today_task.reason}</div>
-        </div>
-      )}
-    </CardShell>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -215,17 +292,18 @@ function ProgressCard({ p }: { p: Record<string, any> }) {
 
 function DiagnosisCard({ p }: { p: Record<string, any> }) {
   return (
-    <CardShell title="声診断" icon="🎤" accent="brand">
-      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+    <div className="overflow-hidden rounded-3xl rounded-bl-md bg-white shadow-card ring-1 ring-slate-100">
+      <div className="flex items-center gap-2 bg-gradient-to-r from-sky-500 to-violet-500 px-4 py-3 text-white">
+        <span className="text-lg">🩺</span>
+        <span className="text-sm font-black">声のカルテ</span>
+        <span className="ml-auto text-[10px] text-white/80">あなたの声のプロフィール</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 p-3">
         {Array.isArray(p.rows) && p.rows.map((r: any, i: number) => (
-          <div key={i} className="rounded-xl bg-slate-50 px-3 py-2">
-            <div className="text-[11px] text-slate-400">{r.label}</div>
-            <div className="text-sm font-bold text-slate-700">{r.value}</div>
-            {r.hint && <div className="text-[10px] text-slate-400">{r.hint}</div>}
-          </div>
+          <MetricTile key={i} label={r.label} value={r.value} hint={r.hint} />
         ))}
       </div>
-    </CardShell>
+    </div>
   );
 }
 
