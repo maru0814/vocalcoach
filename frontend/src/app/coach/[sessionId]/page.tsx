@@ -196,6 +196,7 @@ export default function CoachChatPage() {
           <div key={`${m.id}-${m.type}-${i}`} className="animate-fade-in-up">
             <MessageBubble
               m={m}
+              sessionId={sessionId}
               onAction={i === messages.length - 1 ? handleAction : undefined}
               actionsDisabled={busy}
             />

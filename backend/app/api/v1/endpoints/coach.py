@@ -14,10 +14,11 @@ from app.core.config import settings
 from app.core.ratelimit import check_rate_limit
 from app.db.session import get_db
 from app.deps import get_current_user
-from app.models.coaching import ChatMessage, ChatSession
+from app.models.coaching import ChatMessage, ChatSession, MessageFeedback
 from app.schemas.coaching import (
     ActionRequest,
     ChatResponse,
+    FeedbackRequest,
     MessageOut,
     SendTextRequest,
     SessionDetail,
@@ -309,6 +310,81 @@ def send_action(
     for r in rows:
         db.refresh(r)
     return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+
+
+def _analysis_summary(a: dict | None) -> dict | None:
+    """フィードバックに添える解析サマリ（後でレビューしやすい主要値だけ）。"""
+    if not a:
+        return None
+    cmp = (a.get("_compare") or {}).get("alignment") or {}
+    keys = [
+        "duration_sec", "f0_median_hz", "f0_jitter_cents", "estimated_key",
+        "vibrato_rate_hz", "rms_db_range", "harmonic_ratio",
+        "formant_f1_hz", "formant_f2_hz", "spectral_tilt_db_oct",
+    ]
+    out = {k: a.get(k) for k in keys if a.get(k) is not None}
+    if cmp.get("in_tune_score") is not None:
+        out["in_tune_score"] = cmp.get("in_tune_score")
+        out["pitch_error_cents"] = cmp.get("pitch_error_cents")
+    segs = (a.get("timeline") or {}).get("sustained_segments", [])
+    regs = [s.get("register") for s in segs if s.get("register")]
+    if regs:
+        out["registers"] = regs
+    return out
+
+
+@router.post("/sessions/{session_id}/messages/{message_id}/feedback")
+def submit_feedback(
+    session_id: int,
+    message_id: int,
+    body: FeedbackRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict:
+    """コーチ返信への👍/👎＋任意コメント。間違い指摘を蓄積して改善ループに使う。
+
+    1ユーザー×1メッセージにつき1件（再送は上書き）。対象は coach のメッセージのみ。
+    """
+    s = _get_owned_session(db, session_id, user)
+
+    if body.rating not in ("up", "down"):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "BAD_REQUEST", "message": "rating は up または down です"},
+        )
+    msg = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.id == message_id, ChatMessage.session_id == s.id)
+        .first()
+    )
+    if not msg or msg.role != "coach":
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": "対象のコーチ返信が見つかりません"},
+        )
+
+    context = {
+        "message_excerpt": (msg.text or "")[:500],
+        "message_type": msg.type,
+        "analysis": _analysis_summary(s.last_analysis),
+    }
+
+    fb = (
+        db.query(MessageFeedback)
+        .filter(MessageFeedback.message_id == message_id, MessageFeedback.user_id == user.id)
+        .first()
+    )
+    if fb is None:
+        fb = MessageFeedback(
+            message_id=message_id, session_id=s.id, user_id=user.id, rating=body.rating
+        )
+        db.add(fb)
+    fb.rating = body.rating
+    fb.reason = (body.reason or None)
+    fb.comment = (body.comment or None)
+    fb.context = context
+    db.commit()
+    return {"ok": True, "rating": fb.rating}
 
 
 @router.post("/sessions/{session_id}/reference", response_model=ChatResponse)

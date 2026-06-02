@@ -161,6 +161,23 @@ export async function uploadCoachReference(
   });
 }
 
+export async function submitMessageFeedback(
+  sessionId: string | number,
+  messageId: number,
+  rating: "up" | "down",
+  reason?: string,
+  comment?: string,
+) {
+  return request<{ ok: boolean; rating: string }>(
+    `/api/v1/coach/sessions/${sessionId}/messages/${messageId}/feedback`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating, reason, comment }),
+    },
+  );
+}
+
 export async function sendCoachAction(id: string | number, action: string) {
   return request<ChatResponse>(`/api/v1/coach/sessions/${id}/action`, {
     method: "POST",

@@ -55,3 +55,28 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     session = relationship("ChatSession", back_populates="messages")
+
+
+class MessageFeedback(Base):
+    """コーチ返信へのユーザー評価。間違い指摘を蓄積し、改善ループに使う。"""
+
+    __tablename__ = "message_feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_messages.id"), index=True, nullable=False
+    )
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_sessions.id"), index=True, nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+
+    rating: Mapped[str] = mapped_column(String(8), nullable=False)          # up | down
+    reason: Mapped[str | None] = mapped_column(String(32), nullable=True)   # fact|irrelevant|rude|other
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)        # 「何が違った？」
+    context: Mapped[dict | None] = mapped_column(JSON, nullable=True)       # 返信抜粋＋解析サマリ
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
