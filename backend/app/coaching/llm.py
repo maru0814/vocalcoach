@@ -202,6 +202,14 @@ def build_session_context(state: dict) -> str:
             if ks is not None and abs(ks) >= 1:
                 # 負＝ユーザーが原曲より高い、正＝低い
                 lines.append(f"- 歌っているキー: 原曲より約{abs(ks)}半音{'高い' if ks<0 else '低い'}（欠点ではなくキー差）")
+            # 音程が外れている具体箇所（秒数・cents・方向）。これ以外の音程の高低は作らない
+            spots = cmp_align.get("pitch_off_spots") or []
+            if spots:
+                spot_txt = "、".join(
+                    f"{s['user_sec']:.0f}秒あたりが約{s['cents']}cents{'高い(シャープ)' if s['direction']=='sharp' else '低い(フラット)'}"
+                    for s in spots
+                )
+                lines.append(f"- 音程が外れている箇所（これだけが根拠。他の秒数・cents・高低は作らない）: {spot_txt}")
             lag = cmp_align.get("mean_lag_sec")
             if lag is not None:
                 if abs(lag) < 0.05:
@@ -219,6 +227,16 @@ def build_session_context(state: dict) -> str:
         if hr is not None:
             q = "豊か（クリアで通る声）" if hr >= 0.55 else ("芯と柔らかさのバランス型" if hr >= 0.35 else "息まじり（柔らかい声）")
             lines.append(f"- 声の響き（整数次倍音）: {q}（{hr:.2f}）")
+        # 発声: 響きが硬い/詰まり気味の具体箇所（明るさ指標が高い伸ばし）。秒数の根拠にする
+        _holds = [s for s in (analysis.get("timeline") or {}).get("sustained_segments", [])
+                  if (s.get("mean_f0_hz") or 0) >= 100]
+        if _holds:
+            _hard = max(_holds, key=lambda s: s.get("spectral_centroid_hz") or 0)
+            if (_hard.get("spectral_centroid_hz") or 0) >= 2700:
+                lines.append(
+                    f"- 発声で響きが硬い/詰まり気味の箇所: {_hard['start_sec']:.0f}〜{_hard['end_sec']:.0f}秒"
+                    "（喉に力みの可能性。これ以外の秒数を作らない）"
+                )
         # 声区（地声/ミックス/裏声）— フォルマント＋傾斜＋H1-H2の多数決。信頼度が低ければ断定しない
         _segs = (analysis.get("timeline") or {}).get("sustained_segments", [])
         _conf = [s for s in _segs if s.get("register_confidence") in ("high", "med")]
