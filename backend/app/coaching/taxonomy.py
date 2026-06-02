@@ -181,14 +181,34 @@ def _achieve_throat_tension(a: dict) -> bool:
     return seg is not None and (seg.get("spectral_centroid_hz") or 9999) < 2400
 
 
+def _ref_has_vibrato(c: Optional[dict]) -> bool:
+    """原曲(お手本)に、はっきりしたビブラートがあるか。"""
+    if not c:
+        return False
+    vr = c.get("ref_vibrato_rate_hz")
+    vd = c.get("ref_vibrato_depth_cents") or 0
+    return vr is not None and 4.0 <= vr <= 8.0 and vd >= 20
+
+
 def _diag_no_vibrato(a: dict, c: Optional[dict]) -> bool:
-    return a.get("vibrato_rate_hz") is None
+    """ビブラートは「多ければ良い」ものではない。原曲にビブラートがあり、かつ
+    ユーザーがそれを再現できていない時だけ提案する（原曲が無い時は提案しない）。"""
+    if not _ref_has_vibrato(c):
+        return False
+    user_vr = a.get("vibrato_rate_hz")
+    if user_vr is None or user_vr < 4.0:
+        return True  # ユーザーはビブラートが無い/遅い
+    # 原曲よりかなり浅い場合のみ
+    return (a.get("vibrato_depth_cents") or 0) + 20 < (c.get("ref_vibrato_depth_cents") or 0)
 
 
 def _reason_no_vibrato(a: dict, c: Optional[dict]) -> str:
+    rd = (c or {}).get("ref_vibrato_depth_cents")
+    rr = (c or {}).get("ref_vibrato_rate_hz")
+    extra = f"（原曲は秒{rr:.1f}回・幅{rd:.0f}centsのビブラート）" if rr and rd else ""
     return (
-        "伸ばす音に、はっきりしたビブラート（音をゆらす技術）が検出できませんでした。"
-        "まっすぐ伸ばすのも良いですが、ゆらしを意図的にかけられると表現の幅が広がります。"
+        f"原曲では伸ばす音にビブラートがかかっています{extra}が、今の歌唱では弱め/まっすぐです。"
+        "原曲に寄せるなら、伸ばしの後半に軽くゆらしを足すと近づきます。"
     )
 
 
@@ -462,7 +482,7 @@ TASKS: list[dict] = [
     {
         "id": "no_vibrato",
         "label": "ビブラート（音のゆらし）を身につける",
-        "priority": 5,
+        "priority": 6,
         "diagnose": _diag_no_vibrato,
         "reason": _reason_no_vibrato,
         "achieve": _achieve_no_vibrato,
@@ -483,7 +503,7 @@ TASKS: list[dict] = [
     {
         "id": "rhythm_lag",
         "label": "リズム（拍の合わせ方）を整える",
-        "priority": 6,
+        "priority": 5,
         "diagnose": _diag_rhythm_lag,
         "reason": _reason_rhythm_lag,
         "achieve": _achieve_rhythm_lag,
