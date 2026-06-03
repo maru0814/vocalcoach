@@ -595,32 +595,6 @@ def load_clip(path: str | Path, start_sec: float | None = None, end_sec: float |
     return y, sr
 
 
-def build_pitch_contour(f0_hz: np.ndarray, voiced_flag: np.ndarray | None,
-                        hop_sec: float, max_points: int = 180) -> dict | None:
-    """歌の音程の流れ（DAM風の音程バー用）。f0をMIDIノート番号に変換した時系列。
-
-    有声フレームのみ値を持ち、無声部は None（フレーズの切れ目）。
-    max_points 個までに間引いて軽量化（各バケツの中央値）。t=k*dt 秒の点列。
-    """
-    n = len(f0_hz)
-    if n == 0:
-        return None
-    valid = (~np.isnan(f0_hz)) & (f0_hz > 0)
-    if voiced_flag is not None and len(voiced_flag) >= n:
-        valid = valid & voiced_flag[:n].astype(bool)
-    if not bool(np.any(valid)):
-        return None
-    midi = np.full(n, np.nan)
-    midi[valid] = 69.0 + 12.0 * np.log2(f0_hz[valid] / 440.0)
-    step = max(1, int(np.ceil(n / max_points)))
-    out: list[float | None] = []
-    for k in range(0, n, step):
-        seg = midi[k:k + step]
-        seg = seg[~np.isnan(seg)]
-        out.append(round(float(np.median(seg)), 2) if len(seg) else None)
-    return {"t0": 0.0, "dt": round(step * hop_sec, 3), "midi": out}
-
-
 def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: float | None = None,
                  isolate_vocal: bool = False, return_signal: bool = False, light: bool = False):
     """Analyze a single audio clip and return a metrics dict (+ timeline).
@@ -699,7 +673,6 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
                      "kobushi": [], "kobushi_count": 0}
         timeline = {"per_window": [], "sustained_segments": []}
         formant_f1 = formant_f2 = spectral_tilt = singers_formant = None
-        pitch_contour = None
     else:
         harm = harmonic_ratio(y, sr, f0_hz, voiced_flag)
         ornaments = detect_ornaments(f0_hz, voiced_flag, hop_sec)
@@ -714,7 +687,6 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         formant_f2 = _seg_med("formant_f2_hz")
         spectral_tilt = _seg_med("spectral_tilt_db_oct")
         singers_formant = _singers_formant_ratio(y, sr, voiced_flag)
-        pitch_contour = build_pitch_contour(f0_hz, voiced_flag, hop_sec)
 
     result = {
         "duration_sec": round(duration, 2),

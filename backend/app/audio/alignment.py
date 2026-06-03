@@ -123,49 +123,6 @@ def _pitch_off_spots(rel: np.ndarray, times: np.ndarray,
     return spots
 
 
-def _pitch_track(cu, cr, wp, lo, hi, hop_sec, n_bins: int = 160) -> Optional[dict]:
-    """DAM風「音程バー」用: ユーザーの実音程と、原曲メロディをユーザーのキー・時間軸に
-    重ねたターゲットを、同一の時間グリッド上に並べて返す。
-
-    cu/cr は f0(cents, 440Hz基準)。ワーピングパスに沿って (ユーザー時刻, ユーザーcents,
-    原曲cents) を集め、全体のキー差(中央値)で原曲をユーザーの音域へ平行移動して重ねる。
-    戻り: {"t0", "dt", "user_midi":[...], "ref_midi":[...]}（MIDIノート番号 or None）。
-    """
-    if cu is None or cr is None:
-        return None
-    ts, ucs, rcs, offs = [], [], [], []
-    for i in range(lo, hi):
-        ui, ri = int(wp[i, 0]), int(wp[i, 1])
-        if ui < len(cu) and ri < len(cr):
-            a, b = cu[ui], cr[ri]
-            ts.append(ui * hop_sec)
-            ucs.append(a)
-            rcs.append(b)
-            if not (np.isnan(a) or np.isnan(b)):
-                offs.append(a - b)
-    if len(offs) < 8 or not ts:
-        return None
-    med = float(np.median(offs))            # キー差＋オクターブ差（原曲→ユーザー音域）
-    t0, t1 = ts[0], ts[-1]
-    if t1 <= t0:
-        return None
-    dt = (t1 - t0) / n_bins
-    ubk: list[list[float]] = [[] for _ in range(n_bins)]
-    rbk: list[list[float]] = [[] for _ in range(n_bins)]
-    for t, a, b in zip(ts, ucs, rcs):
-        k = min(n_bins - 1, int((t - t0) / dt))
-        if not np.isnan(a):
-            ubk[k].append(a)
-        if not np.isnan(b):
-            rbk[k].append(b)
-    user_midi: list[Optional[float]] = []
-    ref_midi: list[Optional[float]] = []
-    for k in range(n_bins):
-        user_midi.append(round(69.0 + float(np.median(ubk[k])) / 100.0, 2) if ubk[k] else None)
-        ref_midi.append(round(69.0 + (float(np.median(rbk[k])) + med) / 100.0, 2) if rbk[k] else None)
-    return {"t0": round(t0, 2), "dt": round(dt, 3), "user_midi": user_midi, "ref_midi": ref_midi}
-
-
 # 同じ曲として照合できたとみなす最低の識別度（パス一致 − ランダム対応一致）。
 # DTW はどんな信号でも貪欲にマッチさせるため、絶対的なコサイン類似では無関係音源も
 # 高く出る。そこで「ランダム対応にしたときの一致度」を引いた差分で同一曲かを判定する。
@@ -301,7 +258,6 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
 
     # 原曲メロディとの音程の正確さ(in-tune)を実測（ワーピングパスに沿って）
     pitch_err, in_tune, off_ratio, pitch_off_spots = _pitch_accuracy(cu_f0, cr_f0, sr, wp, lo, hi)
-    pitch_track = _pitch_track(cu_f0, cr_f0, wp, lo, hi, hop_sec)
 
     # 各対応点のラグ = ユーザー時刻 - 原曲時刻（の相対基準を引く）
     lag = user_t - ref_t
@@ -339,7 +295,6 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
         "in_tune_score": in_tune,
         "off_pitch_ratio": off_ratio,
         "pitch_off_spots": pitch_off_spots,
-        "pitch_track": pitch_track,
         "key_shift_semitones": int(key_shift),
         "confidence": round(confidence, 2),
         "low_confidence": False,

@@ -144,10 +144,12 @@ def _axis_level(s: int) -> str:
     return "good" if s >= 90 else ("ok" if s >= 75 else ("weak" if s >= 60 else "bad"))
 
 
-def build_axis_groups(a: dict, c: Optional[dict]) -> list[dict]:
+def build_axis_groups(a: dict, c: Optional[dict], ref_attempted: bool = False) -> list[dict]:
     """Live DAM風の入れ子構造: 音程 / リズム / 表現  それぞれにスコアと内訳。
 
     表現は 抑揚・ビブラート・しゃくり・こぶし・フォール を内包。
+    ref_attempted: 原曲(URL/音源)を渡しているか。渡したのに照合できなかった時は
+                   「原曲があれば」ではなく「うまく重ねられなかった」と正直に出す。
     """
     scores = scoring.compute_scores(a, c)
     align = (c or {}).get("alignment") if c else None
@@ -166,7 +168,9 @@ def build_axis_groups(a: dict, c: Optional[dict]) -> list[dict]:
                             "value": f"{it}点" + (f"（ズレ{err:.0f}c）" if err is not None else ""),
                             "level": _lvl4(it >= 90, it >= 78, it >= 62)})
     else:
-        pitch_items.append({"label": "音程の正確さ", "value": "原曲があると判定できます", "level": "ok"})
+        pitch_items.append({"label": "音程の正確さ",
+                            "value": "原曲とうまく重ねられず" if ref_attempted else "原曲を貼ると判定できます",
+                            "level": "ok"})
     pitch_items.append({"label": "安定度（揺れの少なさ）", "value": f"{j:.0f}cents" if j is not None else "—",
                         "level": "ok" if j is None else _lvl4(j <= 6, j <= 12, j <= 20)})
 
@@ -178,7 +182,9 @@ def build_axis_groups(a: dict, c: Optional[dict]) -> list[dict]:
                          "value": f"{al:.2f}秒{'モタり' if lag > 0 else '走り'}" if al >= 0.05 else "ほぼ一致",
                          "level": _lvl4(al < 0.08, al < 0.18, al < 0.32)}]
     else:
-        rhythm_items = [{"label": "走り／モタり", "value": "概算（原曲があると正確に分かる）", "level": "ok"}]
+        rhythm_items = [{"label": "走り／モタり",
+                         "value": "原曲とうまく重ねられず" if ref_attempted else "原曲を貼ると分かります",
+                         "level": "ok"}]
 
     # 表現（抑揚・ビブラート・しゃくり・こぶし・フォール）
     sc, fl, kb = orn.get("scoop_count", 0), orn.get("fall_count", 0), orn.get("kobushi_count", 0)
@@ -230,39 +236,45 @@ def build_voice_profile(a: dict) -> list[dict]:
     return out
 
 
-def build_pitch_graph(a: dict, c: Optional[dict]) -> Optional[dict]:
-    """DAM風「音程バー」(時系列の音程グラフ)のデータ。
+def build_pitch_mistakes(c: Optional[dict]) -> list[dict]:
+    """明確に音を外した箇所だけを「秒数つき」で返す（原曲と照合できた時のみ）。
 
-    原曲と照合できた時は user＋ref を同一時間軸に重ねる。原曲が無い/低信頼の時は
-    ユーザーの音程の流れだけを返す。どちらも MIDIノート番号の点列(None=無声)。
+    原曲との一致が確実に測れた区間で、40〜150centずれた所を方向つきで列挙。
+    照合できない（原曲なし/低信頼）時は空＝何も出さない（憶測で外しを作らない）。
     """
     align = (c or {}).get("alignment") if c else None
-    if align and align.get("pitch_track"):
-        pt = align["pitch_track"]
-        return {
-            "t0": pt.get("t0", 0.0), "dt": pt["dt"],
-            "user": pt["user_midi"], "ref": pt["ref_midi"], "has_ref": True,
-            "off_spots": align.get("pitch_off_spots") or [],
+    spots = (align or {}).get("pitch_off_spots") or []
+    return [
+        {
+            "sec": s["user_sec"],
+            "cents": s["cents"],
+            "direction": s["direction"],
+            "dir_jp": "高め" if s["direction"] == "sharp" else "低め",
         }
-    pc = a.get("pitch_contour")
-    if pc and any(v is not None for v in pc.get("midi", [])):
-        return {
-            "t0": pc.get("t0", 0.0), "dt": pc["dt"],
-            "user": pc["midi"], "ref": None, "has_ref": False, "off_spots": [],
-        }
-    return None
+        for s in spots
+    ]
 
 
-def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict]) -> dict:
+def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict],
+                           ref_attempted: bool = False) -> dict:
     scores = scoring.compute_scores(a, c)
+    align = (c or {}).get("alignment") if c else None
+    compared = bool(align and align.get("in_tune_score") is not None)
     payload = {
         "scores": scores,
-        "axes": build_axis_groups(a, c),          # Live DAM風: 音程/リズム/表現 の入れ子
-        "pitch": build_pitch_graph(a, c),         # Live DAM風: 音程バー(時系列グラフ)
+        "axes": build_axis_groups(a, c, ref_attempted),   # Live DAM風: 音程/リズム/表現 の入れ子
+        "pitch_mistakes": build_pitch_mistakes(c),         # 明確に外した箇所（秒数つき）
         "good_points": build_good_points(a),
         "voice_profile": build_voice_profile(a),
         "today_task": None,
         "rhythm_note": build_rhythm_note(c),
+        # 原曲を渡したのに照合できなかった時の案内（「原曲があれば」と矛盾しないように）
+        "compare_note": (
+            "原曲は受け取りましたが、今回はうまく重ね合わせられませんでした。"
+            "サビなど同じ区間を、歌い出しのタイミングを合わせてもう一度録ると、"
+            "音程やリズムを原曲と比べられます🎤"
+            if (ref_attempted and not compared) else None
+        ),
     }
     if task:
         payload["today_task"] = {
