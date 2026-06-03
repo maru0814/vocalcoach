@@ -87,12 +87,11 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def _warmup_analysis() -> None:
-        # 解析(numba/chroma/DTW)を起動時に温めて、初回録音FBのコールド遅延を無くす。
-        import threading
-
+        # 解析(numba/chroma/DTW/HPSS)を起動時に同期で温め、各ワーカーの初回録音FBの
+        # コールド遅延を無くす（JITはプロセス単位なのでワーカーごとに必要）。
         from app.audio import analyzer
 
-        threading.Thread(target=analyzer.warmup, daemon=True).start()
+        analyzer.warmup()
 
     return app
 
