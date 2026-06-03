@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Optional
 
 from app.core.config import settings
@@ -247,14 +248,26 @@ def handle_text(
     return out, updates
 
 
+_LLM_POOL = ThreadPoolExecutor(max_workers=4)
+
+
 def _llm_or(text_fallback: str, facts: str, instruction: str, history: Optional[list[dict]]) -> str:
     """LLM で自然文コメントを生成。失敗/タイムアウト時はテンプレ文へフォールバック。
 
-    録音FBに添えるコメントは「解析＋コメント」合計10秒以内に収めるため短いタイムアウトを使う。
+    録音FBに添えるコメントは「解析＋コメント」合計10秒以内に収めたい。Gemini の
+    クライアント期限は最低10秒だが、ここでは別スレッドで投げて実時間 llm_coach_wait_sec
+    だけ待ち、間に合わなければルールベース文を返す（遅い時に会話を止めない）。
     """
-    reply = llm.generate_coach_comment(
-        facts, instruction, history, timeout_sec=settings.llm_coach_timeout_sec
+    fut = _LLM_POOL.submit(
+        llm.generate_coach_comment, facts, instruction, history,
+        timeout_sec=settings.llm_coach_timeout_sec,
     )
+    try:
+        reply = fut.result(timeout=settings.llm_coach_wait_sec)
+    except FuturesTimeout:
+        reply = None  # 間に合わない → フォールバック（裏のリクエストは捨てる）
+    except Exception:
+        reply = None
     return reply or text_fallback
 
 
