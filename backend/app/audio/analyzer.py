@@ -734,6 +734,31 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     return result
 
 
+def warmup() -> None:
+    """numba(pyin)・chroma・DTW を起動時に一度走らせて JITコンパイルを済ませておく。
+
+    初回リクエストのコールド遅延（〜10秒）を無くすため、サーバ起動時に別スレッドで呼ぶ。
+    """
+    import tempfile
+    try:
+        import soundfile as sf
+    except Exception:
+        return
+    try:
+        dur = 4.0
+        t = np.linspace(0, dur, int(SR * dur), endpoint=False)
+        a = (0.5 * np.sin(2 * np.pi * 220 * t) + 0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        b = (0.5 * np.sin(2 * np.pi * 247 * t) + 0.2 * np.sin(2 * np.pi * 494 * t)).astype(np.float32)
+        d = tempfile.mkdtemp(prefix="warmup_")
+        pa, pb = f"{d}/a.wav", f"{d}/b.wav"
+        sf.write(pa, a, SR)
+        sf.write(pb, b, SR)
+        analyze_file(pa)
+        analyze_pair(pa, pb)
+    except Exception:
+        pass
+
+
 def analyze_pair(user_path, ref_path, user_range=None, ref_range=None):
     """ユーザー録音と原曲（声分離）を解析し、compare + DTWアライメントを付与して返す。
 
