@@ -49,6 +49,37 @@ def _parse_range(rng: str | None) -> tuple[float | None, float | None]:
     return _parse_time(m.group(1)), _parse_time(m.group(2))
 
 
+def _parse_ref_spec(text: str) -> tuple[float | None, float | None]:
+    """再診断テキストから原曲側の開始/終了時間を抽出する。
+
+    対応: 「0:45-1:13」「45秒-73秒」(範囲) / 「0:45」「1分20秒」「45秒」「45あたりから」(開始のみ)。
+    戻り: (start_sec, end_sec)。見つからなければ (None, None)。
+    """
+    if not text:
+        return None, None
+    s, e = _parse_range(text)           # 0:45-1:13 / 45-73 などの範囲
+    if s is not None:
+        return s, e
+    m = re.search(r"(\d{1,2}):(\d{2})", text)               # mm:ss 単体
+    if m:
+        return int(m.group(1)) * 60 + float(m.group(2)), None
+    m = re.search(r"(?:(\d+)\s*分)?\s*(\d+)\s*秒", text)      # 1分20秒 / 45秒
+    if m:
+        mins = int(m.group(1)) if m.group(1) else 0
+        return mins * 60 + float(m.group(2)), None
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:秒)?\s*(?:あたり|くらい|ぐらい|付近|頃)?\s*から", text)  # 45あたりから
+    if m:
+        return float(m.group(1)), None
+    return None, None
+
+
+def _fmt_time(sec: float | None) -> str:
+    if sec is None:
+        return ""
+    sec = int(round(sec))
+    return f"{sec}秒" if sec < 60 else f"{sec // 60}分{sec % 60}秒"
+
+
 def _msg_out(m: ChatMessage) -> MessageOut:
     return MessageOut(
         id=m.id,
@@ -170,6 +201,73 @@ def _pronunciation_reply(db: Session, s: ChatSession) -> dict:
     return {"type": "text", "text": reply}
 
 
+def _rediagnose_reply(db: Session, s: ChatSession, text: str, history: list[dict]) -> list[dict]:
+    """「今の録音で、原曲の◯秒あたりから重ねて再度診断して」に応える特別経路。
+
+    直前の録音を、テキストで指定された原曲側の区間と重ね直して解析し、採点カードを返す。
+    """
+    last_audio = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == s.id, ChatMessage.type == "audio")
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    if not last_audio or not last_audio.audio_path or not os.path.exists(last_audio.audio_path):
+        return [{"type": "text", "text": "まず歌った録音を送ってくださいね🎤 そのあと「原曲の45秒あたりから重ねて診断して」のように言ってもらえれば、その区間と重ねて見ます。"}]
+
+    wav = last_audio.audio_path + ".wav"
+    if not os.path.exists(wav):
+        try:
+            wav = to_wav(last_audio.audio_path, wav)
+        except Exception:
+            return [{"type": "text", "text": "録音の読み込みがうまくいきませんでした。もう一度録音を送ってみてください。"}]
+
+    # 原曲（お手本）を確保（アップ済み or YouTube から取得）
+    ref_wav = s.song_ref_path
+    if not ref_wav and s.song_ref_url and settings.enable_youtube_reference:
+        try:
+            ref_wav = fetch_reference_wav(s.song_ref_url, settings.reference_cache_dir, name=f"session_{s.id}")
+            s.song_ref_path = ref_wav
+        except ReferenceFetchError:
+            ref_wav = None
+    if not ref_wav:
+        return [{"type": "text", "text": "重ねる原曲が見つかりませんでした🙏 先に原曲のYouTube URLを貼ってから、もう一度お願いします🎼"}]
+
+    # 原曲側の区間（指定が無ければ既存の ref_range を使う）
+    r_start, r_end = _parse_ref_spec(text)
+    if r_start is not None:
+        r_end_eff = r_end if r_end is not None else r_start + 30.0
+        s.ref_range = f"{r_start:.0f}-{r_end_eff:.0f}"
+    else:
+        r_start, r_end = _parse_range(s.ref_range or "")
+    u_start, u_end = _parse_range(s.user_range)
+
+    try:
+        paired = analyzer.analyze_pair(wav, ref_wav, user_range=(u_start, u_end), ref_range=(r_start, r_end))
+    except Exception:
+        return [{"type": "text", "text": "重ね合わせの解析がうまくいきませんでした🙏 少し時間をおいて、もう一度お試しください。"}]
+
+    user_analysis = paired["user"]
+    compare_data = paired["compare"]
+    alignment = paired.get("alignment")
+    if alignment is not None:
+        compare_data = {**(compare_data or {}), "alignment": alignment}
+    if analyzer.is_same_source(user_analysis, paired["reference"]):
+        return [{"type": "text", "text": "いただいた録音が原曲と同じ音源みたいです🎤 あなた自身が歌った録音で試してくださいね😊"}]
+
+    s.last_analysis = {**user_analysis, "_compare": compare_data} if compare_data else user_analysis
+    msgs, updates = rule_engine.handle_audio(_session_state(s), user_analysis, compare_data, "song", history=history)
+    _apply_updates(s, updates)
+
+    ht = _fmt_time(r_start)
+    head = {
+        "type": "text",
+        "text": (f"了解です！原曲の{ht}あたりから重ねて、もう一度見てみますね🎧" if ht
+                 else "原曲と重ねて、もう一度見てみますね🎧"),
+    }
+    return [head] + msgs
+
+
 def _get_owned_session(db: Session, session_id: int, user) -> ChatSession:
     s = (
         db.query(ChatSession)
@@ -258,6 +356,18 @@ def send_message(
 
     user_msg = ChatMessage(session_id=s.id, role="user", type="text", text=body.text)
     db.add(user_msg)
+
+    # 「今の録音で、原曲の◯秒から重ねて再度診断して」→ 直前録音を指定区間で再解析（特別経路）
+    if rule_engine.is_rediagnose_request(body.text):
+        if not check_rate_limit(f"audio:{user.id}", settings.rate_limit_max_audio, settings.rate_limit_window_sec):
+            raise HTTPException(status_code=429, detail={"code": "RATE_LIMITED", "message": "少し間隔をあけてからお願いします🙏"})
+        db.flush()
+        msgs = _rediagnose_reply(db, s, body.text, history)
+        rows = _persist_coach_messages(db, s.id, msgs)
+        db.commit()
+        for r in rows:
+            db.refresh(r)
+        return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
 
     # 発音アドバイスの依頼は、最新の録音音声を Gemini に聴かせて講評する（特別経路）
     if rule_engine.is_pronunciation_request(body.text):
