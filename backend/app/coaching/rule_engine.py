@@ -282,6 +282,26 @@ def is_pronunciation_request(text: str) -> bool:
     return any(k in text for k in PRONUNCIATION_KW)
 
 
+# 「直前の録音を、原曲と（指定区間で）重ねて もう一度 診断/採点して」という再診断の依頼。
+REDIAGNOSE_KW = [
+    "再度診断", "もう一度診断", "もう一回診断", "再診断", "診断し直", "診断しなおし",
+    "再採点", "採点し直", "採点しなおし", "もう一度採点", "もう一回採点",
+    "比べ直", "比較し直", "もう一度比べ", "もう一回比べ", "重ねて診断", "重ねて採点",
+]
+
+
+def is_rediagnose_request(text: str) -> bool:
+    """「今の録音で、原曲の◯秒あたりから重ねて再度診断して」等の再診断依頼か。"""
+    t = text or ""
+    if any(k in t for k in REDIAGNOSE_KW):
+        return True
+    # 「重ねて」+ 診断系の動詞、または「もう一度/もう一回」+ 診断系
+    diag_words = ("診断", "採点", "見て", "比べ", "評価", "判定")
+    if ("重ね" in t or "もう一度" in t or "もう一回" in t or "再度" in t) and any(d in t for d in diag_words):
+        return True
+    return False
+
+
 # 「（練習の）動画/見本が欲しい」依頼の検出。
 # 注: 原曲URL（YouTubeリンク）はお手本の指定なので動画リクエストではない → "youtube"等は入れない。
 VIDEO_KW = ["動画", "ビデオ", "見本", "手本", "やり方の映像", "実演"]
