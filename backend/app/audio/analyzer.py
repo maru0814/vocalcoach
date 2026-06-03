@@ -735,17 +735,23 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
 
 
 def warmup() -> None:
-    """numba(pyin)・chroma・DTW を起動時に一度走らせて JITコンパイルを済ませておく。
+    """numba(pyin)・chroma・DTW・HPSS を起動時に一度走らせて JITコンパイルを済ませておく。
 
-    初回リクエストのコールド遅延（〜10秒）を無くすため、サーバ起動時に別スレッドで呼ぶ。
+    numba の JIT はプロセス単位なので、各ワーカーで一度実行して初回リクエストの
+    コールド遅延（〜+6秒）を無くす。
     """
+    import logging
     import tempfile
+    import time as _time
+    log = logging.getLogger("uvicorn.error")
     try:
         import soundfile as sf
-    except Exception:
+    except Exception as e:
+        log.warning("warmup skip (soundfile不可): %s", e)
         return
+    t0 = _time.time()
     try:
-        dur = 4.0
+        dur = 2.5
         t = np.linspace(0, dur, int(SR * dur), endpoint=False)
         a = (0.5 * np.sin(2 * np.pi * 220 * t) + 0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
         b = (0.5 * np.sin(2 * np.pi * 247 * t) + 0.2 * np.sin(2 * np.pi * 494 * t)).astype(np.float32)
@@ -755,8 +761,9 @@ def warmup() -> None:
         sf.write(pb, b, SR)
         analyze_file(pa)
         analyze_pair(pa, pb)
-    except Exception:
-        pass
+        log.info("analyzer warmup done in %.1fs", _time.time() - t0)
+    except Exception as e:
+        log.warning("warmup failed in %.1fs: %s", _time.time() - t0, e)
 
 
 def analyze_pair(user_path, ref_path, user_range=None, ref_range=None):
