@@ -136,6 +136,70 @@ def detect_ornaments(f0_hz: np.ndarray, voiced_flag: np.ndarray, hop_sec: float)
     }
 
 
+def detect_kobushi(f0_hz: np.ndarray, voiced_flag: np.ndarray, hop_sec: float) -> dict:
+    """こぶし: 伸ばした音の“途中”での一瞬のピッチの跳ね上げ／当て直し（演歌・J-POPの装飾）。
+
+    各有声フレーズの中間部で、なめらかなベースライン(移動中央値)から短時間だけ大きく
+    外れてすぐ戻る“単発の山/谷”を数える。区別:
+      - しゃくり=フレーズの「入り」/ フォール=「終わり」→ 端を除外して中間部だけ見る
+      - ビブラート=周期的な揺れ → イベント周辺の符号反転が多い区間は除外（単発のみ採用）
+    戻り: {"kobushi":[秒...], "kobushi_count": n}（目安）。
+    """
+    try:
+        from scipy.ndimage import median_filter
+    except Exception:
+        return {"kobushi": [], "kobushi_count": 0}
+    f0c = hz_to_cents(f0_hz)
+    vflag = voiced_flag.astype(bool)
+    if len(vflag) == 0:
+        return {"kobushi": [], "kobushi_count": 0}
+    min_run = int(round(0.40 / hop_sec))            # こぶしは伸ばし気味の音に出やすい
+    edge = max(2, int(round(0.12 / hop_sec)))        # 頭(しゃくり)/終わり(フォール)は除外
+    base_win = max(3, (int(round(0.35 / hop_sec)) | 1))
+    around_w = max(1, int(round(0.30 / hop_sec)))
+    dur_min = max(1, int(round(0.05 / hop_sec)))
+    dur_max = max(dur_min + 1, int(round(0.30 / hop_sec)))
+    thr = 45.0                                       # ベースラインからの突出量(cents)
+    spots: list[float] = []
+    for s, e in _voiced_runs(vflag):
+        if (e - s) < min_run:
+            continue
+        seg = f0c[s:e].astype(float).copy()
+        valid = np.isfinite(seg)
+        if int(valid.sum()) < min_run:
+            continue
+        if not valid.all():
+            seg = np.interp(np.arange(len(seg)), np.flatnonzero(valid), seg[valid])
+        base = median_filter(seg, size=base_win, mode="nearest")
+        res = seg - base
+        lo, hi = edge, len(seg) - edge
+        if hi - lo < dur_min:
+            continue
+        i = lo
+        while i < hi:
+            if abs(res[i]) >= thr:
+                sign = res[i] > 0
+                j = i
+                while j < hi and abs(res[j]) >= thr * 0.5 and ((res[j] > 0) == sign):
+                    j += 1
+                dur = j - i
+                peak = float(np.max(np.abs(res[i:j]))) if j > i else 0.0
+                if dur_min <= dur <= dur_max and thr <= peak <= 400.0:
+                    a, b = max(lo, i - around_w), min(hi, j + around_w)
+                    sig = np.sign(res[a:b][np.abs(res[a:b]) >= thr * 0.5])
+                    flips = int(np.sum(np.abs(np.diff(sig)) > 0)) if len(sig) > 1 else 0
+                    if flips <= 2:                   # 周期的(ビブラート)でない＝単発
+                        spots.append(round((s + i) * hop_sec, 1))
+                i = j + dur_min
+            else:
+                i += 1
+    merged: list[float] = []
+    for t in sorted(spots):
+        if not merged or t - merged[-1] >= 0.2:
+            merged.append(t)
+    return {"kobushi": merged[:5], "kobushi_count": len(merged)}
+
+
 def _stable_holds(
     f0_hz: np.ndarray, s: int, e: int, hop_sec: float, min_frames: int,
     tol_cents: float = 70.0, min_f0: float = 100.0,
@@ -602,6 +666,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     lts = long_tone_stability(f0_hz, hop_sec)
     harm = harmonic_ratio(y, sr, f0_hz, voiced_flag)
     ornaments = detect_ornaments(f0_hz, voiced_flag, hop_sec)
+    ornaments.update(detect_kobushi(f0_hz, voiced_flag, hop_sec))
     timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
 
     # 声区/共鳴の全体集計（伸ばし区間のフォルマント・傾斜の中央値＋歌手フォルマント比）

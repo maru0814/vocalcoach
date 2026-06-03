@@ -101,9 +101,9 @@ def expression_score(a: dict, c: Optional[dict]) -> int:
     if vr is not None and 4.0 <= vr <= 7.5 and vd >= 20:
         base += 8          # 整ったビブラート
     orn = a.get("expression_ornaments") or {}
-    tech = orn.get("scoop_count", 0) + orn.get("fall_count", 0)
-    if 1 <= tech <= 12:
-        base += 5          # しゃくり/フォール等を適度に使えている
+    tech = orn.get("scoop_count", 0) + orn.get("fall_count", 0) + orn.get("kobushi_count", 0)
+    if 1 <= tech <= 14:
+        base += 5          # しゃくり/フォール/こぶし等を適度に使えている
     return _clamp(base)
 
 
