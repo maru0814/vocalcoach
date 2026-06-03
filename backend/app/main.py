@@ -85,6 +85,15 @@ def create_app() -> FastAPI:
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.on_event("startup")
+    def _warmup_analysis() -> None:
+        # 解析(numba/chroma/DTW)を起動時に温めて、初回録音FBのコールド遅延を無くす。
+        import threading
+
+        from app.audio import analyzer
+
+        threading.Thread(target=analyzer.warmup, daemon=True).start()
+
     return app
 
 
