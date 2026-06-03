@@ -181,7 +181,7 @@ def build_axis_groups(a: dict, c: Optional[dict]) -> list[dict]:
         rhythm_items = [{"label": "走り／モタり", "value": "概算（原曲があると正確に分かる）", "level": "ok"}]
 
     # 表現（抑揚・ビブラート・しゃくり・こぶし・フォール）
-    sc, fl = orn.get("scoop_count", 0), orn.get("fall_count", 0)
+    sc, fl, kb = orn.get("scoop_count", 0), orn.get("fall_count", 0), orn.get("kobushi_count", 0)
     ref_rng = (c or {}).get("ref_rms_db_range")
     yoku_val = (f"{rng:.0f}dB" if rng is not None else "—")
     if ref_rng is not None and rng is not None:
@@ -191,7 +191,7 @@ def build_axis_groups(a: dict, c: Optional[dict]) -> list[dict]:
         {"label": "ビブラート", "value": vibrato_label(vr, vd),
          "level": "good" if (vr is not None and 4.0 <= vr <= 7.5 and (vd or 0) >= 20) else ("ok" if vr is not None else "weak")},
         {"label": "しゃくり", "value": f"{sc}回" if sc else "なし", "level": "good" if 1 <= sc <= 12 else "ok"},
-        {"label": "こぶし", "value": "自動判定なし", "level": "ok"},
+        {"label": "こぶし", "value": f"{kb}回" if kb else "なし", "level": "good" if 1 <= kb <= 8 else "ok"},
         {"label": "フォール", "value": f"{fl}回" if fl else "なし", "level": "good" if 1 <= fl <= 12 else "ok"},
     ]
 

@@ -229,11 +229,11 @@ def build_session_context(state: dict) -> str:
         lines.append(f"- ビブラート／揺れ: {vibrato_label(analysis.get('vibrato_rate_hz'), analysis.get('vibrato_depth_cents'))}")
         _orn = analysis.get("expression_ornaments") or {}
         if _orn:
-            sc, fl = _orn.get("scoop_count", 0), _orn.get("fall_count", 0)
+            sc, fl, kb = _orn.get("scoop_count", 0), _orn.get("fall_count", 0), _orn.get("kobushi_count", 0)
             lines.append(
-                f"- 歌い回しの装飾(検出): しゃくり{sc}回・フォール{fl}回"
+                f"- 歌い回しの装飾(検出・目安): しゃくり{sc}回・こぶし{kb}回・フォール{fl}回"
                 + (f"（しゃくり例 {('/'.join(str(int(t))+'秒' for t in _orn.get('scoops',[])[:3]))}）" if sc else "")
-                + "。こぶしは自動検出していない（一般論の説明はOK、検出有無は断定しない）"
+                + (f"（こぶし例 {('/'.join(str(int(t))+'秒' for t in _orn.get('kobushi',[])[:3]))}）" if kb else "")
             )
         lts = analysis.get("long_tone_stability")
         if lts is not None:
