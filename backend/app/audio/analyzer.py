@@ -162,9 +162,11 @@ def detect_kobushi(f0_hz: np.ndarray, voiced_flag: np.ndarray, hop_sec: float) -
     edge = max(2, int(round(0.12 / hop_sec)))        # 頭(しゃくり)/終わり(フォール)は除外
     base_win = max(3, (int(round(0.35 / hop_sec)) | 1))
     around_w = max(1, int(round(0.30 / hop_sec)))
+    side_w = max(3, int(round(0.15 / hop_sec)))      # 突出の前後の「保持」を見る窓 ≒150ms
     dur_min = max(1, int(round(0.05 / hop_sec)))
     dur_max = max(dur_min + 1, int(round(0.30 / hop_sec)))
     thr = 45.0                                       # ベースラインからの突出量(cents)
+    return_tol = 45.0                                # 前後の音高がこれ以内なら「同じ音に戻った」
     spots: list[float] = []
     for s, e in _voiced_runs(vflag):
         if (e - s) < min_run:
@@ -190,10 +192,22 @@ def detect_kobushi(f0_hz: np.ndarray, voiced_flag: np.ndarray, hop_sec: float) -
                 dur = j - i
                 peak = float(np.max(np.abs(res[i:j]))) if j > i else 0.0
                 if dur_min <= dur <= dur_max and thr <= peak <= 400.0:
+                    # ① 「同じ音を保持している途中での一瞬の跳ね」だけを こぶし とみなす。
+                    #    突出の前後がともに安定（保持された音）で、かつ同じ音高に戻ること。
+                    #    片側でも揺れていれば（＝メロディが動いている＝音の移り変わり）除外。
+                    pre_seg = seg[max(0, i - side_w):i]
+                    post_seg = seg[j:j + side_w]
+                    if len(pre_seg) >= 2 and len(post_seg) >= 2:
+                        pre, post = float(np.median(pre_seg)), float(np.median(post_seg))
+                        held = float(np.std(pre_seg)) < 22.0 and float(np.std(post_seg)) < 22.0
+                        returned = held and abs(pre - post) <= return_tol
+                    else:
+                        returned = False
+                    # ② 周辺の符号反転が多い区間（周期的＝ビブラート）は除外し、単発のみ採用。
                     a, b = max(lo, i - around_w), min(hi, j + around_w)
                     sig = np.sign(res[a:b][np.abs(res[a:b]) >= thr * 0.5])
                     flips = int(np.sum(np.abs(np.diff(sig)) > 0)) if len(sig) > 1 else 0
-                    if flips <= 2:                   # 周期的(ビブラート)でない＝単発
+                    if returned and flips <= 2:
                         spots.append(round((s + i) * hop_sec, 1))
                 i = j + dur_min
             else:
