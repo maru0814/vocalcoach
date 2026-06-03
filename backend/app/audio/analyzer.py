@@ -711,7 +711,6 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "spectral_tilt_db_oct": spectral_tilt,
         "singers_formant_ratio": singers_formant,
         "timeline": timeline,
-        "pitch_contour": build_pitch_contour(f0_hz, voiced_flag, hop_sec),
         "vocal_isolated": bool(isolate_vocal),
     }
     if return_signal:
