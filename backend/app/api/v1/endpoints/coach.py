@@ -279,8 +279,25 @@ def send_message(
             db.refresh(r)
         return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
 
+    prev_url = s.song_ref_url
+    prev_ref_path = s.song_ref_path
     msgs, updates = rule_engine.handle_text(_session_state(s), body.text, history=history)
     _apply_updates(s, updates)
+
+    # 原曲URLが変わったら、前にYouTubeから取得した原曲キャッシュ(session_*)は無効化する。
+    # （古い曲のwavと比較してしまう事故を防ぐ。アップロードされたお手本(ref_*)は保持する）
+    new_url = updates.get("song_ref_url")
+    if (
+        new_url
+        and new_url != prev_url
+        and prev_ref_path
+        and os.path.basename(prev_ref_path).startswith(f"session_{s.id}")
+    ):
+        try:
+            os.remove(prev_ref_path)
+        except OSError:
+            pass
+        s.song_ref_path = None
 
     # 原曲URLが新たに付いたら、YouTubeタイトルを自動でレッスン名にする（未設定時のみ）
     if updates.get("song_ref_url") and not s.song_title:
@@ -520,6 +537,7 @@ def send_audio(
     needs_ref = kind != "practice" and bool(s.song_ref_path or s.song_ref_url)
 
     ref_wav = None
+    ref_fetch_failed = False
     if needs_ref:
         ref_wav = s.song_ref_path
         # 原曲取得が有効なときだけ YouTube からダウンロード（本番は既定で無効＝録音単体FB）
@@ -531,6 +549,7 @@ def send_audio(
                 s.song_ref_path = ref_wav
             except ReferenceFetchError:
                 ref_wav = None  # 取得失敗時は単体解析にフォールバック
+                ref_fetch_failed = True
 
     try:
         if needs_ref and ref_wav:
@@ -598,6 +617,16 @@ def send_audio(
         _session_state(s), user_analysis, compare_data, kind, history=history
     )
     _apply_updates(s, updates)
+    # 原曲URLを貼ってくれたのに取得できなかった時は、黙って単体FBにせず一言ことわる
+    # （URLを貼った＝聴き比べを期待しているので、比較できなかった事実を隠さない）。
+    if ref_fetch_failed and not compare_data:
+        msgs = [
+            {
+                "role": "coach", "type": "text",
+                "text": "🙏 原曲をうまく取り込めませんでした。今回はあなたの録音だけで講評しますね。"
+                        "（YouTube側の仕様で取得できない動画もあります。別のリンクなら聴き比べできることもあります）",
+            }
+        ] + msgs
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
     db.refresh(user_msg)
