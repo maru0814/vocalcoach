@@ -22,6 +22,8 @@ HOP_LENGTH = 512
 FRAME_LENGTH = 2048
 FMIN_HZ = 65.0
 FMAX_HZ = 1000.0
+# 解析する最大秒数（応答時間を10秒以内に抑える安全上限）。長尺は先頭この秒数だけ解析。
+MAX_ANALYSIS_SEC = 30.0
 PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
@@ -566,6 +568,9 @@ def load_clip(path: str | Path, start_sec: float | None = None, end_sec: float |
         load_duration = end_sec - offset
     else:
         load_duration = None
+    # 解析時間の上限（応答10秒以内を守るため、長尺は先頭 MAX_ANALYSIS_SEC 秒に丸める）
+    if load_duration is None or load_duration > MAX_ANALYSIS_SEC:
+        load_duration = MAX_ANALYSIS_SEC
     y, sr = librosa.load(str(path), sr=SR, mono=True, offset=offset, duration=load_duration)
     if isolate_vocal and len(y) > sr:  # >1s のときだけ分離
         from app.audio.separation import isolate_vocal as _iso
@@ -600,11 +605,13 @@ def build_pitch_contour(f0_hz: np.ndarray, voiced_flag: np.ndarray | None,
 
 
 def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: float | None = None,
-                 isolate_vocal: bool = False, return_signal: bool = False):
+                 isolate_vocal: bool = False, return_signal: bool = False, light: bool = False):
     """Analyze a single audio clip and return a metrics dict (+ timeline).
 
     isolate_vocal: 原曲など伴奏混在音源で True にすると軽量声分離を前処理する。
-    return_signal: True なら (result_dict, y, sr) を返す（DTW用に波形を再利用）。
+    return_signal: True なら (result_dict, y, sr, f0_hz, voiced_flag) を返す（DTW用に再利用）。
+    light: True で原曲(お手本)向けの軽量解析。比較に使わない重い処理
+        （タイムライン/フォルマント/共鳴/装飾/音程バー）を省いて応答を速くする。
     """
     y, sr = load_clip(path, start_sec, end_sec, isolate_vocal=isolate_vocal)
     duration = float(librosa.get_duration(y=y, sr=sr))
@@ -662,22 +669,33 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=HOP_LENGTH)[0]
     centroid_mean = float(np.mean(centroid))
 
+    # vibrato / long-tone は f0 だけで安価に出るので light でも算出（compareで使う）
     vib_rate, vib_depth = detect_vibrato(f0_hz, hop_sec)
     lts = long_tone_stability(f0_hz, hop_sec)
-    harm = harmonic_ratio(y, sr, f0_hz, voiced_flag)
-    ornaments = detect_ornaments(f0_hz, voiced_flag, hop_sec)
-    ornaments.update(detect_kobushi(f0_hz, voiced_flag, hop_sec))
-    timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
 
-    # 声区/共鳴の全体集計（伸ばし区間のフォルマント・傾斜の中央値＋歌手フォルマント比）
-    _segs = timeline.get("sustained_segments", [])
-    def _seg_med(key):
-        vals = [s[key] for s in _segs if s.get(key) is not None]
-        return round(float(np.median(vals)), 1) if vals else None
-    formant_f1 = _seg_med("formant_f1_hz")
-    formant_f2 = _seg_med("formant_f2_hz")
-    spectral_tilt = _seg_med("spectral_tilt_db_oct")
-    singers_formant = _singers_formant_ratio(y, sr, voiced_flag)
+    if light:
+        # 原曲(お手本)向け: 比較に使わない重い処理を省略（応答時間短縮）
+        harm = None
+        ornaments = {"scoops": [], "falls": [], "scoop_count": 0, "fall_count": 0,
+                     "kobushi": [], "kobushi_count": 0}
+        timeline = {"per_window": [], "sustained_segments": []}
+        formant_f1 = formant_f2 = spectral_tilt = singers_formant = None
+        pitch_contour = None
+    else:
+        harm = harmonic_ratio(y, sr, f0_hz, voiced_flag)
+        ornaments = detect_ornaments(f0_hz, voiced_flag, hop_sec)
+        ornaments.update(detect_kobushi(f0_hz, voiced_flag, hop_sec))
+        timeline = extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec)
+        # 声区/共鳴の全体集計（伸ばし区間のフォルマント・傾斜の中央値＋歌手フォルマント比）
+        _segs = timeline.get("sustained_segments", [])
+        def _seg_med(key):
+            vals = [s[key] for s in _segs if s.get(key) is not None]
+            return round(float(np.median(vals)), 1) if vals else None
+        formant_f1 = _seg_med("formant_f1_hz")
+        formant_f2 = _seg_med("formant_f2_hz")
+        spectral_tilt = _seg_med("spectral_tilt_db_oct")
+        singers_formant = _singers_formant_ratio(y, sr, voiced_flag)
+        pitch_contour = build_pitch_contour(f0_hz, voiced_flag, hop_sec)
 
     result = {
         "duration_sec": round(duration, 2),
@@ -706,7 +724,8 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "vocal_isolated": bool(isolate_vocal),
     }
     if return_signal:
-        return result, y, sr
+        # f0/voiced も返す（DTWアライメント側で pyin を再計算しないため＝高速化）
+        return result, y, sr, f0_hz, voiced_flag
     return result
 
 
@@ -720,12 +739,13 @@ def analyze_pair(user_path, ref_path, user_range=None, ref_range=None):
     u_start, u_end = user_range or (None, None)
     r_start, r_end = ref_range or (None, None)
 
-    user, uy, usr = analyze_file(user_path, u_start, u_end, isolate_vocal=False, return_signal=True)
-    ref, ry, rsr = analyze_file(ref_path, r_start, r_end, isolate_vocal=True, return_signal=True)
+    user, uy, usr, u_f0, _u_vf = analyze_file(user_path, u_start, u_end, isolate_vocal=False, return_signal=True)
+    ref, ry, rsr, r_f0, _r_vf = analyze_file(ref_path, r_start, r_end, isolate_vocal=True, return_signal=True, light=True)
 
     out = {"user": user, "reference": ref, "compare": compare(user, ref)}
     try:
-        out["alignment"] = _align.align(uy, ry, usr)
+        # 解析済みの f0 を渡してアライメント側の pyin 再計算を省く（応答時間短縮）
+        out["alignment"] = _align.align(uy, ry, usr, user_f0=u_f0, ref_f0=r_f0)
     except Exception:
         out["alignment"] = None
     return out

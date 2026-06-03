@@ -25,8 +25,14 @@ def _chroma(y: np.ndarray, sr: int) -> np.ndarray:
 def _f0_cents(y: np.ndarray, sr: int) -> np.ndarray:
     f0, _, _ = librosa.pyin(y, fmin=FMIN_HZ, fmax=FMAX_HZ, sr=sr,
                             frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)
+    return _hz_to_cents(f0)
+
+
+def _hz_to_cents(f0: np.ndarray) -> np.ndarray:
+    """f0(Hz, 無声は nan) → cents(440Hz基準)。解析側の pyin 結果を再利用するため共通化。"""
+    f0 = np.asarray(f0, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
-        return np.where((f0 is not None) & (f0 > 0), 1200.0 * np.log2(f0 / 440.0), np.nan)
+        return np.where(np.isfinite(f0) & (f0 > 0), 1200.0 * np.log2(f0 / 440.0), np.nan)
 
 
 def _intune_score(mad_cents: float, off_ratio: float) -> int:
@@ -215,7 +221,8 @@ def _path_confidence(cu: np.ndarray, cr: np.ndarray, wp: np.ndarray, lo: int, hi
 
 
 def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
-          lag_threshold_sec: float = 0.25, max_segments: int = 3) -> Optional[dict]:
+          lag_threshold_sec: float = 0.25, max_segments: int = 3,
+          user_f0: Optional[np.ndarray] = None, ref_f0: Optional[np.ndarray] = None) -> Optional[dict]:
     """ユーザーと原曲のDTW対応から、音程の正確さ(in-tune)とフレーズずれを抽出。
 
     返り値:
@@ -284,10 +291,11 @@ def align(user_y: np.ndarray, ref_y: np.ndarray, sr: int,
             "low_confidence": True,
         }
 
-    # f0(cents)系列は一度だけ計算して in-tune 実測と音程バーで共用する
+    # f0(cents)系列は一度だけ計算して in-tune 実測と音程バーで共用する。
+    # 解析側で計算済みの f0(Hz) があればそれを使い、pyin の再計算を省く（応答時間短縮）。
     try:
-        cu_f0 = _f0_cents(user_y, sr)
-        cr_f0 = _f0_cents(ref_y, sr)
+        cu_f0 = _hz_to_cents(user_f0) if user_f0 is not None else _f0_cents(user_y, sr)
+        cr_f0 = _hz_to_cents(ref_f0) if ref_f0 is not None else _f0_cents(ref_y, sr)
     except Exception:
         cu_f0 = cr_f0 = None
 

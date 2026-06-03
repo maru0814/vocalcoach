@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     llm_timeout_sec: float = 20.0
     # 音声入力は処理が重いのでタイムアウトを長めに
     llm_audio_timeout_sec: float = 60.0
+    # 録音FBに添えるコーチコメントは「解析＋コメント」で合計10秒以内に収めるため短め。
+    # 超過時はルールベースのコメントにフォールバックする（会話は止めない）。
+    llm_coach_timeout_sec: float = 5.0
     # 直近何件の会話履歴を文脈として渡すか
     llm_history_turns: int = 12
 

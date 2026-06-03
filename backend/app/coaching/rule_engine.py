@@ -13,6 +13,8 @@ import math
 import re
 from typing import Optional
 
+from app.core.config import settings
+
 from app.coaching import feedback_builder, llm
 from app.coaching.persona import COACH_NAME
 from app.coaching.taxonomy import (
@@ -246,8 +248,13 @@ def handle_text(
 
 
 def _llm_or(text_fallback: str, facts: str, instruction: str, history: Optional[list[dict]]) -> str:
-    """LLM で自然文コメントを生成。失敗時はテンプレ文へフォールバック。"""
-    reply = llm.generate_coach_comment(facts, instruction, history)
+    """LLM で自然文コメントを生成。失敗/タイムアウト時はテンプレ文へフォールバック。
+
+    録音FBに添えるコメントは「解析＋コメント」合計10秒以内に収めるため短いタイムアウトを使う。
+    """
+    reply = llm.generate_coach_comment(
+        facts, instruction, history, timeout_sec=settings.llm_coach_timeout_sec
+    )
     return reply or text_fallback
 
 

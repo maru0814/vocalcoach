@@ -375,9 +375,10 @@ def _scrub_invented_seconds(reply: str, allowed: set[int]) -> str:
     return _SCRUB_SEC_RE.sub(repl, reply)
 
 
-def _complete(contents) -> Optional[str]:
+def _complete(contents, timeout_sec: Optional[float] = None) -> Optional[str]:
     """Gemini を1往復呼び出してテキストを返す。
 
+    timeout_sec: 応答待ちの上限秒（既定 settings.llm_timeout_sec）。超過時は None。
     APIキー未設定・SDK未導入・API エラー時は None（呼び出し側でフォールバック）。
     """
     if not settings.llm_enabled:
@@ -389,9 +390,10 @@ def _complete(contents) -> Optional[str]:
         logger.warning("google-genai SDK が見つかりません。ルールベース応答にフォールバックします。")
         return None
     try:
+        to = timeout_sec if timeout_sec is not None else settings.llm_timeout_sec
         client = genai.Client(
             api_key=settings.gemini_api_key,
-            http_options=types.HttpOptions(timeout=int(settings.llm_timeout_sec * 1000)),
+            http_options=types.HttpOptions(timeout=int(to * 1000)),
         )
         resp = client.models.generate_content(
             model=settings.llm_model,
@@ -481,7 +483,8 @@ def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> O
 
 
 def generate_coach_comment(
-    facts: str, instruction: str, history: Optional[list[dict]] = None
+    facts: str, instruction: str, history: Optional[list[dict]] = None,
+    timeout_sec: Optional[float] = None,
 ) -> Optional[str]:
     """録音解析の結果（事実）を、ソラ先生の自然文コメントに変換する。
 
@@ -508,7 +511,7 @@ def generate_coach_comment(
         f"事実に無い数値を作らず、2〜4文・120字程度の自然な会話文で返してください。"
     )
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
-    reply = _complete(contents)
+    reply = _complete(contents, timeout_sec=timeout_sec)
     if reply:
         # facts に無い秒数は伏せる（捏造防止の最終ガード）
         reply = _scrub_invented_seconds(reply, _allowed_seconds(facts))
