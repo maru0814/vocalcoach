@@ -305,6 +305,22 @@ def send_message(
         if title:
             s.song_title = title
 
+    # 原曲URLが新しく付いたら、この時点で先に原曲を取得しておく（先読み）。
+    # 録音時にダウンロードを待たずに済み、最初の聴き比べも10秒以内に収めやすくなる。
+    if (
+        new_url
+        and new_url != prev_url
+        and settings.enable_youtube_reference
+        and not s.song_ref_path
+    ):
+        try:
+            ref_wav = fetch_reference_wav(
+                new_url, settings.reference_cache_dir, name=f"session_{s.id}"
+            )
+            s.song_ref_path = ref_wav
+        except ReferenceFetchError:
+            pass  # 失敗しても録音時に再試行・フォールバックする
+
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
     for r in rows:
