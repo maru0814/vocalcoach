@@ -92,6 +92,17 @@ def create_app() -> FastAPI:
         from app.audio import analyzer
 
         analyzer.warmup()
+        # Gemini クライアント(TLS接続/SDK初期化)も温める。初回コーチコメントの
+        # コールド遅延を無くす（best-effort。失敗してもFB自体は出る）。
+        try:
+            from app.coaching import llm
+
+            llm.generate_coach_comment(
+                "ウォームアップ", "「準備OK」とだけ短く返す。",
+                timeout_sec=_settings.llm_coach_timeout_sec,
+            )
+        except Exception:
+            pass
 
     return app
 
