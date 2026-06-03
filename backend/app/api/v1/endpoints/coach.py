@@ -256,7 +256,8 @@ def _rediagnose_reply(db: Session, s: ChatSession, text: str, history: list[dict
         return [{"type": "text", "text": "いただいた録音が原曲と同じ音源みたいです🎤 あなた自身が歌った録音で試してくださいね😊"}]
 
     s.last_analysis = {**user_analysis, "_compare": compare_data} if compare_data else user_analysis
-    msgs, updates = rule_engine.handle_audio(_session_state(s), user_analysis, compare_data, "song", history=history)
+    # 再診断は常に「採点カード（弱点診断）」を出す（前回比較カードにしない）
+    msgs, updates = rule_engine._audio_diagnose(_session_state(s), user_analysis, compare_data, history)
     _apply_updates(s, updates)
 
     ht = _fmt_time(r_start)
