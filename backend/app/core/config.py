@@ -48,9 +48,12 @@ class Settings(BaseSettings):
     llm_timeout_sec: float = 20.0
     # 音声入力は処理が重いのでタイムアウトを長めに
     llm_audio_timeout_sec: float = 60.0
-    # 録音FBに添えるコーチコメントは「解析＋コメント」で合計10秒以内に収めるため短め。
-    # 超過時はルールベースのコメントにフォールバックする（会話は止めない）。
-    llm_coach_timeout_sec: float = 5.0
+    # 録音FBに添えるコーチコメント用。Gemini はクライアント期限を最低10秒要求するため
+    # deadline は 10 秒にしつつ、実際の待ち時間は llm_coach_wait_sec で打ち切る
+    # （超過時はルールベースのコメントにフォールバック。会話は止めない）。
+    llm_coach_timeout_sec: float = 10.0
+    # 録音FBのコーチコメントを待つ最大の実時間（秒）。解析＋これで合計10秒以内を狙う。
+    llm_coach_wait_sec: float = 3.5
     # 直近何件の会話履歴を文脈として渡すか
     llm_history_turns: int = 12
 

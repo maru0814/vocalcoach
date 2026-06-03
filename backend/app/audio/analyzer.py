@@ -18,10 +18,13 @@ import numpy as np
 
 
 SR = 22050
-HOP_LENGTH = 512
+# hop=1024（50%オーバーラップ）で pyin/chroma/DTW を約2倍高速化。f0_jitter だけは
+# フレーム間隔に比例して増えるので JITTER_REF_HOP で正規化し従来スケールを保つ。
+HOP_LENGTH = 1024
 FRAME_LENGTH = 2048
 FMIN_HZ = 65.0
 FMAX_HZ = 1000.0
+JITTER_REF_HOP = 512  # f0_jitter の基準ホップ（この値での値に正規化する）
 # 解析する最大秒数（応答時間を10秒以内に抑える安全上限）。長尺は先頭この秒数だけ解析。
 MAX_ANALYSIS_SEC = 30.0
 PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -630,7 +633,9 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         f0_median = float(np.median(voiced_f0))
         cents = hz_to_cents(voiced_f0)
         d = np.abs(np.diff(cents))
-        f0_jitter = float(np.median(d)) if len(d) > 0 else None
+        # フレーム間隔が広いほど隣接フレーム差は大きく出るので、基準ホップへ正規化して
+        # 「揺れの少なさ」の閾値（◎≤6cents 等）をホップ非依存に保つ。
+        f0_jitter = (float(np.median(d)) * (JITTER_REF_HOP / HOP_LENGTH)) if len(d) > 0 else None
     else:
         f0_median = None
         f0_jitter = None
@@ -734,13 +739,22 @@ def analyze_pair(user_path, ref_path, user_range=None, ref_range=None):
 
     返り値: {"user": ..., "reference": ..., "compare": ..., "alignment": ...}
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     from app.audio import alignment as _align
 
     u_start, u_end = user_range or (None, None)
     r_start, r_end = ref_range or (None, None)
 
-    user, uy, usr, u_f0, _u_vf = analyze_file(user_path, u_start, u_end, isolate_vocal=False, return_signal=True)
-    ref, ry, rsr, r_f0, _r_vf = analyze_file(ref_path, r_start, r_end, isolate_vocal=True, return_signal=True, light=True)
+    # ユーザーと原曲の解析は独立なので並列実行（2コアで重なり、応答時間を短縮）。
+    # 原曲は light=True（比較に使わない重い処理を省略）。
+    with ThreadPoolExecutor(max_workers=2) as _ex:
+        fu = _ex.submit(analyze_file, user_path, u_start, u_end,
+                        isolate_vocal=False, return_signal=True)
+        fr = _ex.submit(analyze_file, ref_path, r_start, r_end,
+                        isolate_vocal=True, return_signal=True, light=True)
+        user, uy, usr, u_f0, _u_vf = fu.result()
+        ref, ry, rsr, r_f0, _r_vf = fr.result()
 
     out = {"user": user, "reference": ref, "compare": compare(user, ref)}
     try:

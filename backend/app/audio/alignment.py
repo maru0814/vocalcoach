@@ -12,7 +12,7 @@ from typing import Optional
 import librosa
 import numpy as np
 
-HOP_LENGTH = 512
+HOP_LENGTH = 1024  # analyzer と一致させる（chroma/DTW のフレームレート）
 FMIN_HZ = 65.0
 FMAX_HZ = 1000.0
 FRAME_LENGTH = 2048
