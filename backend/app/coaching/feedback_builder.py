@@ -230,11 +230,35 @@ def build_voice_profile(a: dict) -> list[dict]:
     return out
 
 
+def build_pitch_graph(a: dict, c: Optional[dict]) -> Optional[dict]:
+    """DAM風「音程バー」(時系列の音程グラフ)のデータ。
+
+    原曲と照合できた時は user＋ref を同一時間軸に重ねる。原曲が無い/低信頼の時は
+    ユーザーの音程の流れだけを返す。どちらも MIDIノート番号の点列(None=無声)。
+    """
+    align = (c or {}).get("alignment") if c else None
+    if align and align.get("pitch_track"):
+        pt = align["pitch_track"]
+        return {
+            "t0": pt.get("t0", 0.0), "dt": pt["dt"],
+            "user": pt["user_midi"], "ref": pt["ref_midi"], "has_ref": True,
+            "off_spots": align.get("pitch_off_spots") or [],
+        }
+    pc = a.get("pitch_contour")
+    if pc and any(v is not None for v in pc.get("midi", [])):
+        return {
+            "t0": pc.get("t0", 0.0), "dt": pc["dt"],
+            "user": pc["midi"], "ref": None, "has_ref": False, "off_spots": [],
+        }
+    return None
+
+
 def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict]) -> dict:
     scores = scoring.compute_scores(a, c)
     payload = {
         "scores": scores,
         "axes": build_axis_groups(a, c),          # Live DAM風: 音程/リズム/表現 の入れ子
+        "pitch": build_pitch_graph(a, c),         # Live DAM風: 音程バー(時系列グラフ)
         "good_points": build_good_points(a),
         "voice_profile": build_voice_profile(a),
         "today_task": None,

@@ -116,6 +116,121 @@ function AxisGroup({ ax }: { ax: any }) {
   );
 }
 
+function midiName(m: number): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const r = Math.round(m);
+  return names[((r % 12) + 12) % 12] + (Math.floor(r / 12) - 1);
+}
+
+/** Live DAM風の「音程バー」: 時系列の音程グラフ。原曲があれば原曲メロディ(灰)に
+ *  あなたの音程(紫)を重ねて、どこで上/下に外したかをぱっと見せる。 */
+function PitchGraph({ pitch }: { pitch: any }) {
+  const user: (number | null)[] = pitch?.user || [];
+  const ref: (number | null)[] | null = pitch?.ref || null;
+  const dt: number = pitch?.dt || 0.05;
+  const t0: number = pitch?.t0 || 0;
+  const offs: any[] = pitch?.off_spots || [];
+  const n = user.length;
+  const vals: number[] = [];
+  for (const v of user) if (v != null) vals.push(v);
+  if (ref) for (const v of ref) if (v != null) vals.push(v);
+  if (n < 2 || vals.length < 2) return null;
+
+  const W = 320, H = 138, padL = 30, padR = 10, padT = 12, padB = 20;
+  let minY = Math.floor(Math.min(...vals)) - 1;
+  let maxY = Math.ceil(Math.max(...vals)) + 1;
+  if (maxY - minY < 7) { const c = (maxY + minY) / 2; minY = c - 3.5; maxY = c + 3.5; }
+  const totalDur = (n - 1) * dt;
+  const xOf = (i: number) => padL + (n > 1 ? i / (n - 1) : 0) * (W - padL - padR);
+  const xOfT = (t: number) => padL + (totalDur > 0 ? (t - t0) / totalDur : 0) * (W - padL - padR);
+  const yOf = (v: number) => padT + (1 - (v - minY) / (maxY - minY)) * (H - padT - padB);
+
+  const polylines = (arr: (number | null)[]): string[] => {
+    const out: string[] = [];
+    let cur: string[] = [];
+    for (let i = 0; i < arr.length; i++) {
+      const v = arr[i];
+      if (v == null) { if (cur.length > 1) out.push(cur.join(" ")); cur = []; }
+      else cur.push(`${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`);
+    }
+    if (cur.length > 1) out.push(cur.join(" "));
+    return out;
+  };
+
+  const gridMidis = Array.from(new Set([
+    Math.ceil(minY), Math.round((minY + maxY) / 2), Math.floor(maxY),
+  ])).filter((m) => m > minY && m < maxY);
+
+  const offColor = (d: string) => (d === "flat" ? "#6366f1" : "#f43f5e"); // 低い=藍 / 高い=赤
+
+  return (
+    <div className="overflow-hidden rounded-2xl ring-1 ring-slate-100">
+      <div className="flex items-center gap-2 bg-gradient-to-r from-violet-500 to-purple-500 px-3 py-2 text-white">
+        <span className="text-base">🎵</span>
+        <span className="text-sm font-black">音程バー</span>
+        <span className="ml-auto flex items-center gap-2 text-[10px]">
+          {ref && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-[3px] w-3 rounded-full bg-white/60" />お手本
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-[3px] w-3 rounded-full bg-white" />あなた
+          </span>
+        </span>
+      </div>
+      <div className="bg-white p-2">
+        <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" preserveAspectRatio="xMidYMid meet">
+          {/* 音程グリッド（半音ライン＋ノート名） */}
+          {gridMidis.map((m) => (
+            <g key={m}>
+              <line x1={padL} y1={yOf(m)} x2={W - padR} y2={yOf(m)} stroke="#eef2f7" strokeWidth="1" />
+              <text x={4} y={yOf(m) + 3} fontSize="8" fill="#94a3b8">{midiName(m)}</text>
+            </g>
+          ))}
+          {/* 時間軸の目盛り */}
+          <text x={padL} y={H - 6} fontSize="8" fill="#cbd5e1">0s</text>
+          <text x={W - padR} y={H - 6} fontSize="8" fill="#cbd5e1" textAnchor="end">
+            {(t0 + totalDur).toFixed(0)}s
+          </text>
+          {/* お手本（原曲）メロディ */}
+          {ref && polylines(ref).map((pts, i) => (
+            <polyline key={`r${i}`} points={pts} fill="none" stroke="#c4b5fd" strokeWidth="2.5"
+              strokeLinejoin="round" strokeLinecap="round" opacity="0.85" />
+          ))}
+          {/* あなたの音程 */}
+          {polylines(user).map((pts, i) => (
+            <polyline key={`u${i}`} points={pts} fill="none" stroke="#7c3aed" strokeWidth="2"
+              strokeLinejoin="round" strokeLinecap="round" />
+          ))}
+          {/* 外した箇所マーク（高い▲/低い▼＋cents） */}
+          {offs.map((o: any, i: number) => {
+            const x = xOfT(o.user_sec);
+            const idx = Math.max(0, Math.min(n - 1, Math.round((o.user_sec - t0) / dt)));
+            const yv = user[idx];
+            const y = yv != null ? yOf(yv) : (padT + (H - padT - padB) / 2);
+            const up = o.direction === "sharp";
+            return (
+              <g key={`o${i}`}>
+                <circle cx={x} cy={y} r="3" fill={offColor(o.direction)} />
+                <text x={x} y={up ? y - 5 : y + 10} fontSize="8" fill={offColor(o.direction)}
+                  textAnchor="middle" fontWeight="bold">
+                  {up ? "▲" : "▼"}{Math.round(o.cents)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+        <div className="px-1 pb-0.5 text-[10px] leading-tight text-slate-400">
+          {ref
+            ? "お手本（紫の太線）に対して、あなたの音程（濃い紫）の沿い具合。●は外した箇所（▲高い／▼低い・cents）。"
+            : "あなたの音程の動き（時間 →）。原曲リンクを貼るとお手本メロディと重ねて比べられます。"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FeedbackCard({ p }: { p: Record<string, any> }) {
   const s = p.scores || {};
   return (
@@ -150,6 +265,9 @@ function FeedbackCard({ p }: { p: Record<string, any> }) {
       </div>
 
       <div className="space-y-3 p-4">
+        {/* Live DAM風: 音程バー（時系列の音程グラフ） */}
+        {p.pitch && <PitchGraph pitch={p.pitch} />}
+
         {/* Live DAM風: 音程/リズム/表現 の入れ子 */}
         {Array.isArray(p.axes) && p.axes.map((ax: any, i: number) => (
           <AxisGroup key={i} ax={ax} />
