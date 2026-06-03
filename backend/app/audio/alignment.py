@@ -84,38 +84,52 @@ def _pitch_accuracy(cu, cr, sr, wp, lo, hi) -> tuple[Optional[float], Optional[i
     absdev = np.abs(rel)
     mad = float(np.median(absdev))          # 中央絶対偏差(外れ値に強い)
     off_ratio = float(np.mean(absdev > 80))  # 明らかに別の音に外れている割合
-    spots = _pitch_off_spots(rel, np.array(times))
+    spots = _pitch_off_spots(rel, np.array(times), hop_sec)
     return round(mad, 1), _intune_score(mad, off_ratio), round(off_ratio, 3), spots
 
 
-def _pitch_off_spots(rel: np.ndarray, times: np.ndarray,
-                     thr_cents: float = 40.0, max_cents: float = 150.0,
-                     max_spots: int = 3) -> list[dict]:
-    """音程が外れている箇所を、方向（高い/低い）と秒数つきで抽出する。
+def _pitch_off_spots(rel: np.ndarray, times: np.ndarray, hop_sec: float,
+                     thr_cents: float = 50.0, max_cents: float = 150.0,
+                     min_dur_sec: float = 0.18, max_spots: int = 3) -> list[dict]:
+    """「明確に」音を外している箇所だけを、方向（高い/低い）と秒数つきで抽出する。
 
-    rel>0 = ユーザーが原曲より高い(シャープ)、rel<0 = 低い(フラット)。
-    近接点は1.5秒バケツでまとめ、ズレの大きい順に最大 max_spots 件。
-    40〜150centの範囲だけ採用する（150c超は別の音/DTW誤対応の可能性が高く、
-    「少し外した」の指摘としては不正確なので事実化しない）。
+    rel>0 = 原曲より高い(シャープ)、rel<0 = 低い(フラット)。
+    ノート境界でのDTWの一瞬のズレを拾わないよう、同じ方向に min_dur_sec 以上
+    continuousに外している区間だけを採用する（その区間の中央絶対偏差で代表）。
+    50〜150cent の範囲のみ（150c超は別の音/誤対応の可能性が高く事実化しない）。
     """
+    n = len(rel)
+    if n == 0:
+        return []
+    min_run = max(2, int(round(min_dur_sec / hop_sec)))
+    cand: list[tuple[float, bool, float]] = []  # (cents, is_sharp, center_time)
+    i = 0
+    while i < n:
+        c = float(rel[i])
+        if thr_cents <= abs(c) <= max_cents:
+            sign = c > 0
+            j = i
+            while j < n and abs(rel[j]) >= thr_cents * 0.6 and ((rel[j] > 0) == sign):
+                j += 1
+            run = np.abs(rel[i:j])
+            med = float(np.median(run))
+            if (j - i) >= min_run and thr_cents <= med <= max_cents:
+                cand.append((med, sign, float(times[(i + j) // 2])))
+            i = max(j, i + 1)
+        else:
+            i += 1
+    cand.sort(key=lambda x: -x[0])  # ズレの大きい順
     spots: list[dict] = []
-    order = np.argsort(-np.abs(rel))
     seen: set[int] = set()
-    for idx in order:
-        c = float(rel[idx])
-        if abs(c) > max_cents:
-            continue  # 別の音/誤対応の可能性 → 採用しない
-        if abs(c) < thr_cents:
-            break
-        t = float(times[idx])
-        bucket = int(t // 1.5)
+    for med, is_sharp, ct in cand:
+        bucket = int(ct // 1.5)
         if bucket in seen:
             continue
         seen.add(bucket)
         spots.append({
-            "user_sec": round(t, 1),
-            "cents": round(abs(c)),
-            "direction": "sharp" if c > 0 else "flat",  # 高い / 低い
+            "user_sec": round(ct, 1),
+            "cents": round(med),
+            "direction": "sharp" if is_sharp else "flat",
         })
         if len(spots) >= max_spots:
             break
