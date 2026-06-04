@@ -556,32 +556,81 @@ def _stretch_target(a: dict, compare_data: Optional[dict] = None) -> tuple[str, 
     ビブラートは「多ければ良い」ものではないので、原曲(お手本)にビブラートがあって
     ユーザーが再現できていない時だけ最後に提案する（原曲が無ければ提案しない）。
     """
-    vr = a.get("vibrato_rate_hz")
-    depth = a.get("vibrato_depth_cents") or 0
-    rng = a.get("rms_db_range")
+    vc = (compare_data or {}).get("voice_compare") or {}
+    h = a.get("h1h2_db")
+    sf = a.get("singers_formant_ratio")
     j = a.get("f0_jitter_cents")
-    hr = a.get("harmonic_ratio")
-    # 1) 発声（響き・芯）を最優先
-    if hr is not None and hr < 0.4:
-        return ("声に芯（整数次倍音）を足すと、もっと前に通る声になります。ハミングで鼻に響かせる練習がおすすめ。", "throat_tension")
-    # 2) 音程の安定（細かい揺れ）
-    if j is not None and j > 8:
+    lts = a.get("long_tone_stability")
+    # 1) 声帯の閉じ（息漏れ/締めすぎ）— 原曲比較を優先
+    clo = vc.get("closure")
+    if (clo and clo.get("verdict") == "breathier") or (h is not None and h >= 10):
+        return ("声に少し息が混じり気味なので、ストロー発声で声帯の閉じを揃えると、同じ息でもっと前に鳴ります。", "breathy_closure")
+    if (clo and clo.get("verdict") == "pressed") or (h is not None and h <= -1):
+        return ("やや締めすぎ気味なので、リップロールで力を抜くと、楽に響く声に近づきます。", "throat_tension")
+    # 2) 響き（前に集める）
+    ring = vc.get("ring")
+    if (ring and ring.get("verdict") == "weaker") or (sf is not None and sf < 0.004):
+        return ("響きをもう少し前（鼻〜前歯）に集めると、芯が出てさらに前に通る声になります。ハミング→母音の練習がおすすめ。", "weak_resonance")
+    # 3) 高音の声区（原曲はミックスなのに地声で押し上げ）
+    rh = vc.get("register_high")
+    if rh and rh.get("verdict") == "differ" and rh.get("user") == "chest" and rh.get("ref") in ("mix", "head"):
+        return ("高音を原曲はミックスで運んでいます。地声で押し上げず軽く前に当てると、もっと楽に届きます。", "mixed_voice")
+    # 4) 支え（伸ばしの安定）
+    if lts is not None and lts > 30:
+        return (f"伸ばした音が後半で少し動きます（{lts:.0f}cents）。息の支えを一定にするとまっすぐ保てます。", "long_tone_decay")
+    # 5) 音程の細かい揺れ
+    if j is not None and j > 10:
         return (f"音程の細かい揺れが{j:.0f}centsなので、まっすぐ保つともっと安定して聞こえます（15cents以下が目安）。", "pitch_wobble")
-    # 3) 大きくゆっくりの不安定な揺れ（整ったビブラートではない）→ まず一定に
-    if vr is not None and (vr < 4.0 or depth > 80):
-        return (
-            f"伸ばした音が大きくゆっくり揺れています（秒{vr:.1f}回・幅{depth:.0f}cents）。"
-            f"整ったビブラートというより不安定な揺れなので、まずは一定にまっすぐ伸ばす練習から。",
-            "pitch_wobble",
-        )
-    # 4) 強弱（表現）
-    if rng is not None and rng < 12:
-        return (f"強弱の幅が約{rng:.0f}dBなので、サビと静かな所の音量差を広げると物語が出ます（15dB目安）。", "expression_flat")
-    # 5) ビブラート: 原曲にビブラートがあり、ユーザーが再現できていない時だけ
-    if _ref_has_vibrato(compare_data) and (vr is None or vr < 4.0):
-        return ("原曲では伸ばしにビブラートがかかっています。後半に軽くゆらしを足すと原曲に近づきます。", "no_vibrato")
-    # 6) それ以上の伸びしろ
-    return ("今の安定感を保ちつつ、もう一段高い音域や、別の曲にも挑戦すると伸びます。", None)
+    return ("今の発声バランスを保ちつつ、もう一段高い音域や別の曲にも挑戦すると伸びます。", None)
+
+
+_REG_JP = {"chest": "地声", "mix": "ミックス", "head": "裏声"}
+
+
+def _voice_facts(analysis: dict, c: Optional[dict]) -> str:
+    """録音FBコーチ文用の『発声の事実』。声帯の閉じ・響き・声区・音程（原曲比較込み・docs/21）。"""
+    lines: list[str] = []
+    h = analysis.get("h1h2_db")
+    if h is not None:
+        cl = "息漏れ気味（声帯の閉じがゆるめ）" if h >= 8 else ("締めすぎ気味（力みに注意）" if h <= 1 else "効率の良いバランス(flow phonation)")
+        lines.append(f"声帯の閉じ・息の効率: {cl}（H1-H2≈{h:.0f}dB・目安）")
+    sf = analysis.get("singers_formant_ratio")
+    if sf is not None:
+        r = "前に通る芯のある響き" if sf >= 0.008 else ("標準的な響き" if sf >= 0.003 else "やわらかい響き（前に集めると通る）")
+        lines.append(f"響き(シンガーズフォルマント=声の芯・通り): {r}")
+    vc = (c or {}).get("voice_compare") or {}
+    if vc.get("ring"):
+        v = {"weaker": "原曲より響きが弱め（前に集めたい）", "richer": "原曲と同等以上の響き", "match": "原曲と同程度の響き"}.get(vc["ring"]["verdict"])
+        lines.append(f"原曲との響き比較: {v}")
+    if vc.get("closure"):
+        v = {"breathier": "原曲より息漏れ寄り（閉じがゆるい）", "pressed": "原曲より締めすぎ寄り（力み）", "match": "原曲と同じくバランスの良い閉じ"}.get(vc["closure"]["verdict"])
+        lines.append(f"原曲との声帯の閉じ比較: {v}")
+    rh = vc.get("register_high")
+    if rh:
+        if rh["verdict"] == "match":
+            lines.append(f"高音の声区: 原曲と同じ{_REG_JP.get(rh['ref'], rh['ref'])}で運べている")
+        else:
+            lines.append(f"高音の声区: あなたは{_REG_JP.get(rh['user'], '?')}、原曲は{_REG_JP.get(rh['ref'], '?')}（原曲に寄せる余地）")
+    al = (c or {}).get("alignment") or {}
+    if al.get("in_tune_score") is not None:
+        lines.append(f"原曲との音程の一致: {al['in_tune_score']}点（音を外していないかの実測。安定度とは別物）")
+    lts = analysis.get("long_tone_stability")
+    if lts is not None:
+        lines.append(f"伸ばしの安定（息の支え）: {lts:.0f}cents（小さいほど安定）")
+    return "\n".join(lines)
+
+
+_VOICE_INSTR = (
+    "あなたは世界最高峰のボイストレーナーです。発声だけに絞って講評してください（リズム・抑揚・しゃくり/こぶし等の表現技法は扱わない）。"
+    "順序は ①声帯の閉じ・息の効率 → ②響き（芯・通り） → ③声区の運び（高音の声区・換声点） → ④音程の正確さ。"
+    "原曲との比較の事実があれば必ずそれを根拠に語る（例:『原曲はここをミックスで明るく前に当てています。あなたは地声で押し上げ気味です』）。"
+    "機構→原因→処方の順で具体的に（例:『息が漏れ気味＝声帯の閉じがゆるい→ ストロー発声で閉じを揃えると、同じ息でもっと前に鳴ります』）。専門語は必ず一言で補足する。"
+    "音程を外している箇所が事実にあれば『何秒あたりが何centひくい(フラット)/高い(シャープ)か』を具体的に言う。録音の長さを超える秒数は言わない。"
+    "良い点と『もっと良くできる発声ポイント』を最低1つずつ、数値や秒数を添えて伝える。褒めて終わらせない。"
+    "一面的にしない（声は均衡した全体として機能する）。一度の改善提案は1点に絞り、無関係な技術を混ぜない。"
+    "事実に無い数値・秒数・声区は作らない。原曲照合が無ければ音程の正確さは断定せず『手元の安定度では…』と前置きし、原曲を送れば実測できると一言案内する。"
+    "最後に、今日の最優先課題の基礎練を1つだけ前向きに勧める（基礎練カードが一緒に出る時だけ『この後のカードに手順と動画があります』と添える）。"
+)
 
 
 def _audio_diagnose(
@@ -611,51 +660,17 @@ def _audio_diagnose(
 
     if task:
         prac = task["practices"][0]
-        scores = fb_payload.get("scores", {})
         goods = "／".join(fb_payload.get("good_points", [])[:2])
-        proj = _projection_note(analysis)
-        issues = list_weaknesses(analysis, compare_data, limit=3, exclude=[avoid] if avoid else [])
-        issue_lines = "\n".join(f"  ・[{w['axis']}] {w['reason']}" for w in issues) or "  ・大きな弱点は少ない"
-        harm = _harmonic_note(analysis)
-        reson = _resonance_note(analysis)
-        orn = _ornament_note(analysis)
-        cmp_brief = _compare_brief(compare_data)
-        ref_note = cmp_brief if cmp_brief else (
-            "原曲（お手本）が無いので、リズムの走り/モタりや音程の正確さは厳密には比較できない"
-            "（手元の安定度・声の質で判断している）。原曲の音源を送ってもらえれば実測できる。"
-        )
+        headline = fb_payload.get("headline", "")
         facts = (
-            "歌を解析した。\n"
+            "歌を発声の観点で解析した。\n"
             f"録音の長さ: 約{analysis.get('duration_sec', 0):.0f}秒（この秒数を超える時刻は言わない）\n"
-            f"スコア(0-100): 音程{scores.get('pitch_score')} / リズム{scores.get('rhythm_score')} / 表現{scores.get('expression_score')} / 総合{scores.get('total_score')}\n"
+            f"発声の一言総評: {headline}\n"
             f"良かった点: {goods}\n"
-            + (f"{harm}\n" if harm else "")
-            + (f"{reson}\n" if reson else "")
-            + (f"{orn}\n" if orn else "")
-            + (f"張りどころ: {proj}\n" if proj else "")
-            + f"気になる点（観点つき・優先度順）:\n{issue_lines}\n"
-            + (f"{ref_note}\n" if ref_note else "")
-            + f"今日の最優先課題: 「{task['label']}」。おすすめ基礎練『{prac['name']}』（目安: {prac.get('checkpoint','')}）。手順カードはこの後に表示される。"
+            + _voice_facts(analysis, compare_data) + "\n"
+            + f"今日の最優先課題: 「{task['label']}」。おすすめ基礎練『{prac['name']}』（目安: {prac.get('checkpoint', '')}）。手順カードはこの後に表示される。"
         )
-        instr = (
-            "録音の講評を、次の優先順位で伝えてください: ①発声（声の響き・喉の開き・息の支え）→②音程→③リズム→④表現（強弱・ビブラート等）。"
-            "多くの人がまず気にするのは発声と音程なので、そこを先に・厚めに話す。"
-            "発声は『どの秒数の響きが良く／どの秒数が硬い・弱いか』を具体箇所つきで述べる（『発声（響き）の具体箇所』の事実を使う）。"
-            "音程は、外している箇所があれば『何秒あたりが何centひくい(フラット)/高い(シャープ)か』を具体的に言う（『特に音程が外れている箇所』の事実を使う）。"
-            "リズムに触れるときは必ず根拠を添える: 原曲との照合があれば走り/モタりの秒数を、無ければ『正確なリズム(走り/モタり)は原曲があると分かる・今は概算』と述べる。根拠なく『リズムが悪い・低い』と断じない。"
-            "表現は強弱(ダイナミクス)だけでなく、『表現（歌い回し）』の事実にある ビブラート／しゃくり／フォール にも触れてよい（検出ゼロなら『あまり使っていない』と中立に。装飾はやみくもに勧めず、原曲が使っていれば寄せる方向で）。"
-            "良い点と気になる点は、できるだけ具体的な秒数（と音名）を添える。録音の長さを超える秒数は言わない。"
-            "音量の上下そのものは表現なので欠点にしない。"
-            "ビブラートは『多ければ良い』ものではない。事実に『原曲では…ビブラート』とある時だけ"
-            "『原曲に寄せるなら足す』と勧めてよく、原曲が無い/原曲にビブラートが無いなら自分からビブラート不足を指摘しない。"
-            "『原曲との照合（実測）』がある場合は、音程の正確さ(in-tune)とリズムはその実測値だけを根拠に話す"
-            "（安定度(揺れ)が小さくても原曲と外れていれば『音程は完璧』とは言わない。両者は別物）。"
-            "原曲との一致の点数が事実にあるときは良し悪しに関わらず必ず一度触れる。"
-            "『別キーで歌っている』は欠点でなくキーの違いとして中立に伝える。"
-            "実測が無い場合は『原曲を送ってもらえれば音程・リズムを正確に見られる』と一言案内する。"
-            "張りどころで張りきれていない場合は、どうすれば張れるか（息の支え・喉を開く）も添える。"
-            "最後に、今日の最優先課題の基礎練を1つだけ前向きに勧めてください。"
-        )
+        instr = _VOICE_INSTR
         fallback = (
             f"今日のポイントは「{task['label']}」ですね。これに効く基礎練を用意したので、一緒にやってみましょう👇"
         )
@@ -669,40 +684,26 @@ def _audio_diagnose(
         ))
         updates = {"phase": LESSON, "current_task": task["id"], "baseline_analysis": analysis, "avoid_task": None}
     else:
-        scores = fb_payload.get("scores", {})
         goods = "／".join(fb_payload.get("good_points", [])[:3])
-        proj = _projection_note(analysis)
-        harm = _harmonic_note(analysis)
-        reson = _resonance_note(analysis)
+        headline = fb_payload.get("headline", "")
         stretch, stretch_id = _stretch_target(analysis, compare_data)
         stretch_task = get_task(stretch_id) if stretch_id else None
-        cmp_brief = _compare_brief(compare_data)
-        ref_note = (cmp_brief + "\n") if cmp_brief else "原曲（お手本）が無いのでリズム/音程の正確さは厳密には比較できない。\n"
         prac_line = ""
         if stretch_task:
             p0 = stretch_task["practices"][0]
             prac_line = f"次の一歩の基礎練『{p0['name']}』（手順と実演動画はこの後のカードに出る）\n"
         facts = (
-            "歌を解析したが、大きな弱点は見当たらなかった。とても良い状態。\n"
+            "歌を発声の観点で解析した。大きな弱点は少なく、とても良い状態。\n"
             f"録音の長さ: 約{analysis.get('duration_sec', 0):.0f}秒（この秒数を超える時刻は言わない）\n"
-            f"スコア(0-100): 音程{scores.get('pitch_score')} / リズム{scores.get('rhythm_score')} / 表現{scores.get('expression_score')} / 総合{scores.get('total_score')}\n"
+            f"発声の一言総評: {headline}\n"
             f"良かった点: {goods}\n"
-            + (f"{harm}\n" if harm else "")
-            + (f"{reson}\n" if reson else "")
-            + (f"{_ornament_note(analysis)}\n")
-            + (f"張りどころ: {proj}\n" if proj else "")
-            + f"もっと良くできる点（必ず1つ伝える）: {stretch}\n"
+            + _voice_facts(analysis, compare_data) + "\n"
+            + f"もっと良くできる発声の点（必ず1つ伝える）: {stretch}\n"
             + prac_line
-            + ref_note
         )
         instr = (
-            "良い状態であることを一緒に喜びつつ、発声→音程→リズム→表現 の順で軽く触れてください（発声と音程を先に）。"
-            "発声は『どの秒数の響きが良いか（硬い箇所があればそこも）』を具体箇所つきで。良い点は秒数（と音名）を添える。"
-            "録音の長さを超える秒数は言わないこと。"
-            "必ず最後に『もっと良くできる点』を1つ、具体的な数値を添えて伝え、褒めて終わらせないこと。"
-            "ビブラートは多ければ良いものではない。事実に『原曲では…ビブラート』とある時だけ勧め、"
-            "原曲が無い/原曲にビブラートが無ければ自分からビブラート不足を指摘しない。"
-            "改善提案は1つの技術に絞り、無関係な技術（声の張りとビブラート等）を結びつけないこと。"
+            _VOICE_INSTR
+            + "今回は大きな弱点が少ない良い状態なので、まず一緒に喜びつつ、それでも『もっと良くできる発声の点』を必ず1つ具体的に伝える。"
             + ("基礎練を勧めるときは『この後のカードに手順と動画があります』と一言添える。" if stretch_task else "")
         )
         fallback = "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ さらに伸ばすなら、下の基礎練に挑戦してみましょう。"
