@@ -249,6 +249,8 @@ def _rediagnose_reply(db: Session, s: ChatSession, text: str, history: list[dict
 
     user_analysis = paired["user"]
     compare_data = paired["compare"]
+    if paired.get("voice_compare"):
+        compare_data = {**(compare_data or {}), "voice_compare": paired["voice_compare"]}
     alignment = paired.get("alignment")
     if alignment is not None:
         compare_data = {**(compare_data or {}), "alignment": alignment}
@@ -688,6 +690,8 @@ def send_audio(
             user_analysis = paired["user"]
             ref_analysis = paired["reference"]
             compare_data = paired["compare"]
+            if paired.get("voice_compare"):
+                compare_data = {**compare_data, "voice_compare": paired["voice_compare"]}
             alignment = paired.get("alignment")
             if analyzer.is_same_source(user_analysis, ref_analysis):
                 same_msg = {

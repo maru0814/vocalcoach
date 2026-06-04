@@ -144,27 +144,75 @@ def _axis_level(s: int) -> str:
     return "good" if s >= 90 else ("ok" if s >= 75 else ("weak" if s >= 60 else "bad"))
 
 
-def build_axis_groups(a: dict, c: Optional[dict], ref_attempted: bool = False) -> list[dict]:
-    """Live DAM風の入れ子構造: 音程 / リズム / 表現  それぞれにスコアと内訳。
+REG_JP = {"chest": "地声", "mix": "ミックス", "head": "裏声"}
 
-    表現は 抑揚・ビブラート・しゃくり・こぶし・フォール を内包。
-    ref_attempted: 原曲(URL/音源)を渡しているか。渡したのに照合できなかった時は
-                   「原曲があれば」ではなく「うまく重ねられなかった」と正直に出す。
+
+def _closure_item(a: dict, vc: dict) -> dict:
+    """声帯の閉じ（内転＝息の効率）。原曲比較を優先、無ければ単体ラベル（docs/21）。"""
+    clo = vc.get("closure")
+    if clo:
+        v = clo["verdict"]
+        if v == "breathier":
+            return {"label": "声帯の閉じ（息の効率）", "value": "息漏れ寄り（原曲より閉じがゆるい）", "level": "weak"}
+        if v == "pressed":
+            return {"label": "声帯の閉じ（息の効率）", "value": "締めすぎ寄り（原曲より力み）", "level": "weak"}
+        return {"label": "声帯の閉じ（息の効率）", "value": "原曲と同じくバランス◎", "level": "good"}
+    cl = (a.get("voice") or {}).get("closure") or {}
+    lab = cl.get("label")
+    return {"label": "声帯の閉じ（息の効率）", "value": cl.get("jp") or "—",
+            "level": "good" if lab == "balanced" else "ok"}
+
+
+def _ring_item(a: dict, vc: dict) -> dict:
+    """響き（シンガーズフォルマント＝芯・通り）。"""
+    ring = vc.get("ring")
+    if ring:
+        if ring["verdict"] == "weaker":
+            return {"label": "響き（芯・通り）", "value": "原曲より弱め（前に集めたい）", "level": "weak"}
+        return {"label": "響き（芯・通り）", "value": "原曲と同等以上の響き", "level": "good"}
+    rv = (a.get("voice") or {}).get("ring") or {}
+    lab = rv.get("label")
+    return {"label": "響き（芯・通り）", "value": rv.get("jp") or "—",
+            "level": "good" if lab == "strong" else "ok"}
+
+
+def _register_item(a: dict, vc: dict) -> dict:
+    """高音の声区（原曲と同じ運び方か）。"""
+    rh = vc.get("register_high")
+    if rh:
+        if rh["verdict"] == "match":
+            return {"label": "高音の声区", "value": f"原曲と同じ{REG_JP.get(rh['ref'], '—')}", "level": "good"}
+        return {"label": "高音の声区",
+                "value": f"あなた{REG_JP.get(rh['user'], '?')}／原曲{REG_JP.get(rh['ref'], '?')}", "level": "weak"}
+    v = (a.get("voice") or {}).get("register_high") or {}
+    reg, hz = v.get("register"), v.get("hz")
+    if reg:
+        return {"label": "高音の声区", "value": f"{REG_JP.get(reg, '—')}（{_note_name(hz)}）", "level": "ok"}
+    return {"label": "高音の声区", "value": "—", "level": "ok"}
+
+
+def _passaggio_item(a: dict) -> dict:
+    pg = taxonomy.passaggio_estimate(a)
+    return {"label": "換声点（声区の変わり目）", "value": f"{pg['note']}あたり" if pg else "—", "level": "ok"}
+
+
+def build_voice_axes(a: dict, c: Optional[dict], ref_attempted: bool = False) -> list[dict]:
+    """発声特化の入れ子構造: 音程の正確さ / 声の鳴り・効率 / 声区の運び / 支え・安定（docs/21）。
+
+    各軸は原曲(お手本)と比較し、◎○△× とスコアで示す。リズム・表現は扱わない。
     """
-    scores = scoring.compute_scores(a, c)
+    sc = scoring.voice_scores(a, c)
     align = (c or {}).get("alignment") if c else None
+    vc = (c or {}).get("voice_compare") or {}
     j = a.get("f0_jitter_cents")
-    rng = a.get("rms_db_range")
-    vr = a.get("vibrato_rate_hz")
-    vd = a.get("vibrato_depth_cents")
-    orn = a.get("expression_ornaments") or {}
+    lts = a.get("long_tone_stability")
 
-    # 音程
+    # 音程の正確さ（原曲とのin-tune ＋ 安定度）
     pitch_items: list[dict] = []
     if align and align.get("in_tune_score") is not None:
         it = align["in_tune_score"]
         err = align.get("pitch_error_cents")
-        pitch_items.append({"label": "原曲との一致（正確さ）",
+        pitch_items.append({"label": "原曲との一致",
                             "value": f"{it}点" + (f"（ズレ{err:.0f}c）" if err is not None else ""),
                             "level": _lvl4(it >= 90, it >= 78, it >= 62)})
     else:
@@ -174,38 +222,63 @@ def build_axis_groups(a: dict, c: Optional[dict], ref_attempted: bool = False) -
     pitch_items.append({"label": "安定度（揺れの少なさ）", "value": f"{j:.0f}cents" if j is not None else "—",
                         "level": "ok" if j is None else _lvl4(j <= 6, j <= 12, j <= 20)})
 
-    # リズム
-    if align and align.get("mean_lag_sec") is not None:
-        lag = align["mean_lag_sec"]
-        al = abs(lag)
-        rhythm_items = [{"label": "走り／モタり",
-                         "value": f"{al:.2f}秒{'モタり' if lag > 0 else '走り'}" if al >= 0.05 else "ほぼ一致",
-                         "level": _lvl4(al < 0.08, al < 0.18, al < 0.32)}]
-    else:
-        rhythm_items = [{"label": "走り／モタり",
-                         "value": "原曲とうまく重ねられず" if ref_attempted else "原曲を貼ると分かります",
-                         "level": "ok"}]
-
-    # 表現（抑揚・ビブラート・しゃくり・こぶし・フォール）
-    sc, fl, kb = orn.get("scoop_count", 0), orn.get("fall_count", 0), orn.get("kobushi_count", 0)
-    ref_rng = (c or {}).get("ref_rms_db_range")
-    yoku_val = (f"{rng:.0f}dB" if rng is not None else "—")
-    if ref_rng is not None and rng is not None:
-        yoku_val += f"（原曲{ref_rng:.0f}dB）"
-    expr_items = [
-        {"label": "抑揚（強弱）", "value": yoku_val, "level": scoring.yokuyou_level(rng, c)},
-        {"label": "ビブラート", "value": vibrato_label(vr, vd),
-         "level": "good" if (vr is not None and 4.0 <= vr <= 7.5 and (vd or 0) >= 20) else ("ok" if vr is not None else "weak")},
-        {"label": "しゃくり", "value": f"{sc}回" if sc else "なし", "level": "good" if 1 <= sc <= 12 else "ok"},
-        {"label": "こぶし", "value": f"{kb}回" if kb else "なし", "level": "good" if 1 <= kb <= 8 else "ok"},
-        {"label": "フォール", "value": f"{fl}回" if fl else "なし", "level": "good" if 1 <= fl <= 12 else "ok"},
-    ]
+    phon_items = [_closure_item(a, vc), _ring_item(a, vc)]
+    reg_items = [_register_item(a, vc), _passaggio_item(a)]
+    sup_items = [{"label": "伸ばしの安定（息の支え）", "value": f"{lts:.0f}cents" if lts is not None else "—",
+                  "level": "ok" if lts is None else _lvl4(lts <= 20, lts <= 30, lts <= 45)}]
 
     return [
-        {"key": "音程", "icon": "🎵", "score": scores["pitch_score"], "level": _axis_level(scores["pitch_score"]), "items": pitch_items},
-        {"key": "リズム", "icon": "🥁", "score": scores["rhythm_score"], "level": _axis_level(scores["rhythm_score"]), "items": rhythm_items},
-        {"key": "表現", "icon": "🎨", "score": scores["expression_score"], "level": _axis_level(scores["expression_score"]), "items": expr_items},
+        {"key": "音程の正確さ", "icon": "🎯", "score": sc["pitch_score"], "level": _axis_level(sc["pitch_score"]), "items": pitch_items},
+        {"key": "声の鳴り・効率", "icon": "🔊", "score": sc["phonation_score"], "level": _axis_level(sc["phonation_score"]), "items": phon_items},
+        {"key": "声区の運び", "icon": "🪜", "score": sc["registration_score"], "level": _axis_level(sc["registration_score"]), "items": reg_items},
+        {"key": "支え・安定", "icon": "🫁", "score": sc["support_score"], "level": _axis_level(sc["support_score"]), "items": sup_items},
     ]
+
+
+def build_headline(a: dict, c: Optional[dict]) -> str:
+    """発声の最重要ポイントを一言で（プロトレーナーの総評）。原曲比較を優先（docs/21）。"""
+    vc = (c or {}).get("voice_compare") or {}
+    rh = vc.get("register_high")
+    if rh and rh.get("verdict") != "match" and rh.get("user") == "chest" and rh.get("ref") in ("mix", "head"):
+        return "高音は原曲がミックスで運んでいます。地声で押し上げず、軽く前に当てるのが近道です。"
+    if rh and rh.get("verdict") != "match" and rh.get("user") == "head" and rh.get("ref") in ("mix", "chest"):
+        return "原曲より薄い裏声に逃げ気味。声帯の閉じを少し足してミックスに寄せましょう。"
+    ring = vc.get("ring")
+    if ring and ring["verdict"] == "weaker":
+        return "原曲より響きが奥に。声を前歯〜鼻のあたりに集めると、芯が出て前に通ります。"
+    clo = vc.get("closure")
+    if clo and clo["verdict"] == "breathier":
+        return "息がやや漏れ気味。ストロー発声で声帯の閉じを揃えると、同じ息でもっと鳴ります。"
+    if clo and clo["verdict"] == "pressed":
+        return "少し締めすぎ。力を抜いてリップロールで通すと、楽に響きます。"
+    cl = (a.get("voice") or {}).get("closure") or {}
+    if cl.get("label") == "breathy":
+        return "息が少し漏れ気味。ストロー発声で閉じを整えると、効率よく鳴ります。"
+    if cl.get("label") == "pressed":
+        return "やや力みやすい発声です。脱力＋SOVTで、楽に通る声を目指しましょう。"
+    return "発声の土台は良好です。響きと支えをさらに磨いていきましょう。"
+
+
+def build_voice_good_points(a: dict, c: Optional[dict]) -> list[str]:
+    """発声の良い点（原曲一致・閉じのバランス・響き・支え・音域）。"""
+    pts: list[str] = []
+    align = (c or {}).get("alignment") or {}
+    voice = a.get("voice") or {}
+    if align.get("in_tune_score") and align["in_tune_score"] >= 85:
+        pts.append(f"原曲のメロディによく沿えています（一致 {align['in_tune_score']}点）。")
+    if (voice.get("closure") or {}).get("label") == "balanced":
+        pts.append("声帯の閉じが効率的で、息と声のバランスが取れています（flow phonation）。")
+    if (voice.get("ring") or {}).get("label") == "strong":
+        pts.append("前に通る芯のある響き（シンガーズフォルマント）が出せています。")
+    if (voice.get("support") or {}).get("label") == "steady":
+        pts.append("伸ばした音が安定していて、息の支えがしっかりしています。")
+    f0s = [w.get("f0_mean_hz") for w in (a.get("timeline") or {}).get("per_window", [])
+           if w.get("f0_mean_hz") and w["f0_mean_hz"] >= 100]
+    if f0s and len(pts) < 3:
+        pts.append(f"この録音で {_note_name(min(f0s))}〜{_note_name(max(f0s))} の音域を出せています。")
+    if not pts:
+        pts.append("最後まで歌い切れています。発声の土台はここからです。")
+    return pts[:3]
 
 
 def build_voice_profile(a: dict) -> list[dict]:
@@ -257,22 +330,23 @@ def build_pitch_mistakes(c: Optional[dict]) -> list[dict]:
 
 def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict],
                            ref_attempted: bool = False) -> dict:
-    scores = scoring.compute_scores(a, c)
+    """発声特化の採点カード payload（docs/21）。原曲と比較した発声FBを1枚に集約。"""
+    scores = scoring.voice_scores(a, c)
     align = (c or {}).get("alignment") if c else None
     compared = bool(align and align.get("in_tune_score") is not None)
     payload = {
         "scores": scores,
-        "axes": build_axis_groups(a, c, ref_attempted),   # Live DAM風: 音程/リズム/表現 の入れ子
+        "focus": "voice",                                  # 発声特化カードであることの目印
+        "headline": build_headline(a, c),                  # 発声の一言総評（原曲比較）
+        "axes": build_voice_axes(a, c, ref_attempted),     # 音程/鳴り・効率/声区/支え
         "pitch_mistakes": build_pitch_mistakes(c),         # 明確に外した箇所（秒数つき）
-        "good_points": build_good_points(a),
+        "good_points": build_voice_good_points(a, c),
         "voice_profile": build_voice_profile(a),
         "today_task": None,
-        "rhythm_note": build_rhythm_note(c),
-        # 原曲を渡したのに照合できなかった時の案内（「原曲があれば」と矛盾しないように）
         "compare_note": (
             "原曲は受け取りましたが、今回はうまく重ね合わせられませんでした。"
             "サビなど同じ区間を、歌い出しのタイミングを合わせてもう一度録ると、"
-            "音程やリズムを原曲と比べられます🎤"
+            "発声や音程を原曲と比べられます🎤"
             if (ref_attempted and not compared) else None
         ),
     }

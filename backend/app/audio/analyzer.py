@@ -485,6 +485,98 @@ def _singers_formant_ratio(y: np.ndarray, sr: int,
     return round(float(np.sum(S[band])) / total, 4)
 
 
+def _clip_h1h2(y: np.ndarray, sr: int, f0_hz: np.ndarray,
+               voiced_flag: np.ndarray, max_samples: int = 48) -> float | None:
+    """録音全体の H1-H2(dB) 中央値。声帯の閉じ(内転)の効率指標。
+
+    大きい=息漏れ気味(閉じがゆるい)／小さい・負=締めすぎ(過内転)／中庸=効率的(flow phonation)。
+    有声フレームを間引いてサンプリングし中央値をとる。docs/21 参照。
+    """
+    vf = voiced_flag.astype(bool)
+    idxs = np.flatnonzero(vf)
+    if idxs.size == 0:
+        return None
+    if idxs.size > max_samples:
+        idxs = idxs[np.linspace(0, idxs.size - 1, max_samples).astype(int)]
+    vals: list[float] = []
+    for i in idxs:
+        f0 = f0_hz[i] if i < len(f0_hz) else np.nan
+        if np.isnan(f0) or f0 <= 0:
+            continue
+        st = int(i) * HOP_LENGTH
+        seg = y[st:st + FRAME_LENGTH]
+        if len(seg) < FRAME_LENGTH // 2:
+            continue
+        hh = _h1_h2(seg, sr, float(f0))
+        if hh is not None:
+            vals.append(hh)
+    return round(float(np.median(vals)), 1) if vals else None
+
+
+def _hi_register(a: dict, min_hz: float = 150.0) -> tuple[str | None, int | None]:
+    """いちばん高い伸ばし区間の声区と概略の高さ(Hz)。声区比較に使う。"""
+    holds = [
+        s for s in (a.get("timeline") or {}).get("sustained_segments", [])
+        if (s.get("mean_f0_hz") or 0) >= min_hz and s.get("register_confidence") in ("high", "med")
+    ]
+    if not holds:
+        return None, None
+    h = max(holds, key=lambda s: s.get("mean_f0_hz") or 0)
+    return h.get("register"), int(round(h.get("mean_f0_hz") or 0))
+
+
+def voice_summary(a: dict) -> dict:
+    """発声プロフィールのラベル化（声帯の閉じ／響き／声区／支え）。表示・LLM用（docs/21）。"""
+    out: dict = {}
+    h = a.get("h1h2_db")
+    if h is not None:
+        if h >= 8.0:
+            out["closure"] = {"label": "breathy", "jp": "息漏れ気味（声帯の閉じがゆるめ）", "value": h}
+        elif h <= 1.0:
+            out["closure"] = {"label": "pressed", "jp": "締めすぎ気味（力みに注意）", "value": h}
+        else:
+            out["closure"] = {"label": "balanced", "jp": "効率の良い閉じ（息と声のバランス◎）", "value": h}
+    sf = a.get("singers_formant_ratio")
+    if sf is not None:
+        if sf >= 0.008:
+            out["ring"] = {"label": "strong", "jp": "前に通る芯のある響き", "value": sf}
+        elif sf >= 0.003:
+            out["ring"] = {"label": "mid", "jp": "標準的な響き", "value": sf}
+        else:
+            out["ring"] = {"label": "soft", "jp": "やわらかい響き（前に集めると通る）", "value": sf}
+    reg, hz = _hi_register(a)
+    if reg:
+        out["register_high"] = {"register": reg, "hz": hz}
+    lts = a.get("long_tone_stability")
+    if lts is not None:
+        out["support"] = {"label": "steady" if lts <= 25 else ("ok" if lts <= 45 else "wavery"), "value": lts}
+    return out
+
+
+def compare_voice(user: dict, ref: dict, alignment: dict | None = None) -> dict:
+    """発声を原曲(お手本)と比較。響き・声帯の閉じ・声区・音程の正確さの差と所見（docs/21）。"""
+    out: dict = {}
+    us, rs = user.get("singers_formant_ratio"), ref.get("singers_formant_ratio")
+    if us is not None and rs is not None:
+        d = us - rs
+        out["ring"] = {"user": us, "ref": rs, "delta": round(d, 4),
+                       "verdict": "weaker" if d < -0.002 else ("richer" if d > 0.002 else "match")}
+    uh, rh = user.get("h1h2_db"), ref.get("h1h2_db")
+    if uh is not None and rh is not None:
+        d = uh - rh  # +なら原曲より息漏れ寄り、−なら締めすぎ寄り
+        out["closure"] = {"user": uh, "ref": rh, "delta": round(d, 1),
+                          "verdict": "breathier" if d > 2.5 else ("pressed" if d < -2.5 else "match")}
+    ureg, uhz = _hi_register(user)
+    rreg, rhz = _hi_register(ref)
+    if ureg and rreg:
+        out["register_high"] = {"user": ureg, "ref": rreg, "user_hz": uhz, "ref_hz": rhz,
+                                "verdict": "match" if ureg == rreg else "differ"}
+    al = alignment or {}
+    if al.get("in_tune_score") is not None:
+        out["in_tune"] = {"score": al["in_tune_score"], "error_cents": al.get("pitch_error_cents")}
+    return out
+
+
 def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain_min_sec=0.6) -> dict:
     rms = librosa.feature.rms(y=y, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)[0]
     centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=HOP_LENGTH)[0]
@@ -666,6 +758,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     vib_rate, vib_depth = detect_vibrato(f0_hz, hop_sec)
     lts = long_tone_stability(f0_hz, hop_sec)
 
+    h1h2_clip = None
     if light:
         # 原曲(お手本)向け: 比較に使わない重い処理を省略（応答時間短縮）
         harm = None
@@ -687,6 +780,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         formant_f2 = _seg_med("formant_f2_hz")
         spectral_tilt = _seg_med("spectral_tilt_db_oct")
         singers_formant = _singers_formant_ratio(y, sr, voiced_flag)
+        h1h2_clip = _clip_h1h2(y, sr, f0_hz, voiced_flag)
 
     result = {
         "duration_sec": round(duration, 2),
@@ -710,9 +804,12 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "formant_f2_hz": formant_f2,
         "spectral_tilt_db_oct": spectral_tilt,
         "singers_formant_ratio": singers_formant,
+        "h1h2_db": h1h2_clip,                      # 声帯の閉じ(内転)の効率指標（docs/21）
         "timeline": timeline,
         "vocal_isolated": bool(isolate_vocal),
     }
+    if not light:
+        result["voice"] = voice_summary(result)   # 発声プロフィール（声帯の閉じ/響き/声区/支え）
     if return_signal:
         # f0/voiced も返す（DTWアライメント側で pyin を再計算しないため＝高速化）
         return result, y, sr, f0_hz, voiced_flag
@@ -764,12 +861,12 @@ def analyze_pair(user_path, ref_path, user_range=None, ref_range=None):
     r_start, r_end = ref_range or (None, None)
 
     # ユーザーと原曲の解析は独立なので並列実行（2コアで重なり、応答時間を短縮）。
-    # 原曲は light=True（比較に使わない重い処理を省略）。
+    # 発声比較のため原曲も声区・響き・閉じ等の発声メトリクスを算出する（light=False）。
     with ThreadPoolExecutor(max_workers=2) as _ex:
         fu = _ex.submit(analyze_file, user_path, u_start, u_end,
                         isolate_vocal=False, return_signal=True)
         fr = _ex.submit(analyze_file, ref_path, r_start, r_end,
-                        isolate_vocal=True, return_signal=True, light=True)
+                        isolate_vocal=True, return_signal=True)
         user, uy, usr, u_f0, _u_vf = fu.result()
         ref, ry, rsr, r_f0, _r_vf = fr.result()
 
@@ -779,6 +876,8 @@ def analyze_pair(user_path, ref_path, user_range=None, ref_range=None):
         out["alignment"] = _align.align(uy, ry, usr, user_f0=u_f0, ref_f0=r_f0)
     except Exception:
         out["alignment"] = None
+    # 原曲との発声比較（響き・声帯の閉じ・声区・音程の正確さ）
+    out["voice_compare"] = compare_voice(user, ref, out.get("alignment"))
     return out
 
 
