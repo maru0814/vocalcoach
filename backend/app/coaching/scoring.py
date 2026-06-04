@@ -118,3 +118,103 @@ def compute_scores(a: dict, c: Optional[dict]) -> dict:
         "expression_score": e,
         "total_score": total,
     }
+
+
+# ============================================================================
+# 発声特化スコア（docs/21）。原曲(お手本)との比較を主成分にし、単体時は控えめに。
+# ============================================================================
+
+def pitch_accuracy_score(a: dict, c: Optional[dict]) -> int:
+    """音程の正確さ。原曲とのin-tune実測があればそれを主に、無ければ安定度(ジッター)で近似。"""
+    align = (c or {}).get("alignment") if c else None
+    if align and align.get("in_tune_score") is not None:
+        return _clamp(align["in_tune_score"])
+    j = a.get("f0_jitter_cents")
+    if j is None:
+        return 62
+    return _clamp(94 if j <= 6 else (84 if j <= 12 else (72 if j <= 20 else 58)))
+
+
+def phonation_score(a: dict, c: Optional[dict]) -> int:
+    """声の鳴り・効率（声帯の閉じ＝flow phonation＋響き/シンガーズフォルマント）。
+
+    原曲があれば「原曲の閉じ・響きへの近さ」を主成分にする（H1-H2の絶対値はドメイン依存のため）。
+    """
+    sf = a.get("singers_formant_ratio") or 0.0
+    h = a.get("h1h2_db")
+    vc = (c or {}).get("voice_compare") if c else None
+    if vc:
+        base = 84
+        clo = vc.get("closure")
+        if clo and clo.get("verdict") != "match":
+            base -= 12        # 原曲と声帯の閉じ方が乖離（息漏れ/締めすぎ）
+        ring = vc.get("ring")
+        if ring and ring.get("verdict") == "weaker":
+            base -= 12        # 原曲より響きが弱い
+        elif ring and ring.get("verdict") == "richer":
+            base += 2
+        return _clamp(base)
+    # 原曲なし: 内転バランス＋響きの絶対評価（控えめ）
+    if h is None:
+        base = 70
+    elif 2.0 <= h <= 6.0:
+        base = 84             # バランスの良い閉じ
+    elif 1.0 <= h <= 8.0:
+        base = 77
+    elif h > 12.0 or h < -2.0:
+        base = 60             # 顕著な息漏れ/締めすぎ
+    else:
+        base = 70
+    if sf >= 0.008:
+        base += 8
+    elif sf >= 0.003:
+        base += 3
+    return _clamp(base)
+
+
+def registration_score(a: dict, c: Optional[dict]) -> int:
+    """声区の運び。高音を原曲と同じように（多くはミックスで）運べているか＋換声点の段差。"""
+    vc = (c or {}).get("voice_compare") if c else None
+    rh = (vc or {}).get("register_high")
+    if rh:
+        if rh.get("verdict") == "match":
+            base = 86
+        elif rh.get("user") == "chest" and rh.get("ref") in ("mix", "head"):
+            base = 62         # 原曲はミックス/裏声なのに地声で引っぱっている
+        elif rh.get("user") == "head" and rh.get("ref") in ("mix", "chest"):
+            base = 70         # 原曲より薄い裏声に逃げ気味
+        else:
+            base = 74
+        return _clamp(base)
+    # 原曲なし: 高音側の声区が出せていれば中立よりやや上
+    v = (a.get("voice") or {}).get("register_high") or {}
+    reg = v.get("register")
+    if reg == "mix":
+        return 80
+    if reg in ("chest", "head"):
+        return 74
+    return 70
+
+
+def support_score(a: dict, c: Optional[dict]) -> int:
+    """支え・安定（appoggio）。伸ばした音の安定度で近似。"""
+    lts = a.get("long_tone_stability")
+    if lts is None:
+        return 70
+    return _clamp(90 if lts <= 20 else (82 if lts <= 30 else (72 if lts <= 45 else 58)))
+
+
+def voice_scores(a: dict, c: Optional[dict]) -> dict:
+    """発声4軸＋総合。音程・鳴り/効率・声区・支え。"""
+    pitch = pitch_accuracy_score(a, c)
+    phon = phonation_score(a, c)
+    reg = registration_score(a, c)
+    sup = support_score(a, c)
+    total = _clamp(pitch * 0.30 + phon * 0.34 + reg * 0.22 + sup * 0.14)
+    return {
+        "pitch_score": pitch,
+        "phonation_score": phon,
+        "registration_score": reg,
+        "support_score": sup,
+        "total_score": total,
+    }

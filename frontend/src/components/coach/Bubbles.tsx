@@ -167,7 +167,7 @@ function FeedbackCard({ p }: { p: Record<string, any> }) {
           </div>
         </div>
         <div>
-          <div className="text-sm font-black">🎤 歌の診断結果</div>
+          <div className="text-sm font-black">{p.focus === "voice" ? "🎤 発声診断（原曲と比較）" : "🎤 歌の診断結果"}</div>
           {(() => {
             const axes = (p.axes || []).slice().sort((a: any, b: any) => b.score - a.score);
             if (!axes.length) return null;
@@ -183,7 +183,17 @@ function FeedbackCard({ p }: { p: Record<string, any> }) {
       </div>
 
       <div className="space-y-3 p-4">
-        {/* Live DAM風: 音程/リズム/表現 の入れ子 */}
+        {/* プロトレーナーの一言総評（発声の最重要ポイント・原曲比較） */}
+        {p.headline && (
+          <div className="rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 p-3.5 ring-1 ring-indigo-100">
+            <div className="flex gap-2">
+              <span className="text-lg leading-none">🎙️</span>
+              <p className="text-sm font-bold leading-relaxed text-slate-700">{p.headline}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 発声の入れ子: 音程の正確さ / 声の鳴り・効率 / 声区の運び / 支え・安定 */}
         {Array.isArray(p.axes) && p.axes.map((ax: any, i: number) => (
           <AxisGroup key={i} ax={ax} />
         ))}

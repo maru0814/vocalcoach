@@ -191,15 +191,8 @@ def _ref_has_vibrato(c: Optional[dict]) -> bool:
 
 
 def _diag_no_vibrato(a: dict, c: Optional[dict]) -> bool:
-    """ビブラートは「多ければ良い」ものではない。原曲にビブラートがあり、かつ
-    ユーザーがそれを再現できていない時だけ提案する（原曲が無い時は提案しない）。"""
-    if not _ref_has_vibrato(c):
-        return False
-    user_vr = a.get("vibrato_rate_hz")
-    if user_vr is None or user_vr < 4.0:
-        return True  # ユーザーはビブラートが無い/遅い
-    # 原曲よりかなり浅い場合のみ
-    return (a.get("vibrato_depth_cents") or 0) + 20 < (c.get("ref_vibrato_depth_cents") or 0)
+    """発声特化版では自動診断しない（ビブラート＝表現要素は今は扱わない）。"""
+    return False
 
 
 def _reason_no_vibrato(a: dict, c: Optional[dict]) -> str:
@@ -253,6 +246,10 @@ def _diag_mixed_voice(a: dict, c: Optional[dict]) -> bool:
     高音の伸ばしが揺れている(地声で押して苦しい/裏返る)、または
     高音区間が地声(chest)で f0 が大きく揺れているケースを拾う。
     """
+    # 原曲比較: 高音を原曲はミックス/裏声で運んでいるのに、地声で押し上げている(pulled chest)
+    rh = ((c or {}).get("voice_compare") or {}).get("register_high")
+    if rh and rh.get("verdict") == "differ" and rh.get("user") == "chest" and rh.get("ref") in ("mix", "head"):
+        return True
     seg = _high_segment(a)
     if not seg:
         return False
@@ -262,6 +259,11 @@ def _diag_mixed_voice(a: dict, c: Optional[dict]) -> bool:
 
 
 def _reason_mixed_voice(a: dict, c: Optional[dict]) -> str:
+    rh = ((c or {}).get("voice_compare") or {}).get("register_high")
+    if rh and rh.get("verdict") == "differ" and rh.get("user") == "chest" and rh.get("ref") in ("mix", "head"):
+        rj = {"mix": "ミックス", "head": "裏声"}.get(rh.get("ref"), "ミックス")
+        return (f"高音を原曲は{rj}で運んでいますが、今は地声で押し上げ気味です。"
+                "地声で引っぱると喉に力みが出やすいので、軽く前に当てるミックスに寄せると楽に届きます。")
     seg = _high_segment(a)
     if not seg:
         return "高い音をミックスボイスで楽に出せると、サビがぐっと安定します。"
@@ -294,13 +296,7 @@ def _note_label(hz: Optional[float]) -> str:
 
 
 def _diag_rhythm_lag(a: dict, c: Optional[dict]) -> bool:
-    align = (c or {}).get("alignment") if c else None
-    if align and align.get("mean_lag_sec") is not None:
-        return abs(align["mean_lag_sec"]) >= 0.25
-    # アライメントが無ければテンポ差で代替（half/double誤判定は除外）
-    if c and c.get("tempo_diff_bpm") is not None:
-        td = abs(c["tempo_diff_bpm"])
-        return 6 < td < 40
+    """発声特化版では自動診断しない（リズムは今は扱わない）。"""
     return False
 
 
@@ -324,17 +320,8 @@ def _achieve_rhythm_lag(a: dict) -> bool:
 
 
 def _diag_expression_flat(a: dict, c: Optional[dict]) -> bool:
-    """抑揚（強弱）の課題判定。原曲基準: 原曲が平坦なら不問、原曲が抑揚をつけている所で
-    つけられていない時だけ課題にする。原曲が無ければ極端に平坦な時だけ。"""
-    rng = a.get("rms_db_range")
-    if rng is None:
-        return False
-    ref = (c or {}).get("ref_rms_db_range")
-    if ref is not None:
-        if ref < 12:               # 原曲が平坦 → ユーザーも控えめでOK（課題にしない）
-            return False
-        return (ref - rng) > 6     # 原曲は抑揚があるのに、つけられていない
-    return rng < 8                 # 原曲なし: 極端に平坦な時だけ
+    """発声特化版では自動診断しない（抑揚＝表現要素は今は扱わない）。"""
+    return False
 
 
 def _reason_expression_flat(a: dict, c: Optional[dict]) -> str:
@@ -347,6 +334,54 @@ def _reason_expression_flat(a: dict, c: Optional[dict]) -> str:
 def _achieve_expression_flat(a: dict) -> bool:
     rng = a.get("rms_db_range")
     return rng is not None and rng >= 12
+
+
+def _diag_breathy_closure(a: dict, c: Optional[dict]) -> bool:
+    """息漏れ（声帯の閉じがゆるい）。原曲比較があれば breathier、無ければ H1-H2 が大（docs/21）。"""
+    vc = (c or {}).get("voice_compare") or {}
+    clo = vc.get("closure")
+    if clo:
+        return clo.get("verdict") == "breathier"
+    h = a.get("h1h2_db")
+    return h is not None and h >= 11
+
+
+def _reason_breathy_closure(a: dict, c: Optional[dict]) -> str:
+    vc = (c or {}).get("voice_compare") or {}
+    if (vc.get("closure") or {}).get("verdict") == "breathier":
+        return ("原曲に比べて息が漏れ気味で、声帯の閉じがゆるい状態です（同じ息でも前に鳴りにくい）。"
+                "ストロー発声などで閉じを楽に揃えると、無駄な息が減って芯のある声になります。")
+    return ("声に息が混じり気味で、声帯の閉じがゆるめです。ストロー発声・リップロールで"
+            "閉じを整えると、効率よく前に通る声（flow phonation）に近づきます。")
+
+
+def _achieve_breathy_closure(a: dict) -> bool:
+    h = a.get("h1h2_db")
+    return h is not None and h < 8
+
+
+def _diag_weak_resonance(a: dict, c: Optional[dict]) -> bool:
+    """響きが弱い（前に集まらない）。原曲比較で weaker、無ければ singers_formant が低い（docs/21）。"""
+    vc = (c or {}).get("voice_compare") or {}
+    ring = vc.get("ring")
+    if ring:
+        return ring.get("verdict") == "weaker"
+    sf = a.get("singers_formant_ratio")
+    return sf is not None and sf < 0.003
+
+
+def _reason_weak_resonance(a: dict, c: Optional[dict]) -> str:
+    vc = (c or {}).get("voice_compare") or {}
+    if (vc.get("ring") or {}).get("verdict") == "weaker":
+        return ("原曲に比べて響きが奥にこもり気味です（前に通る芯＝シンガーズフォルマントが弱め）。"
+                "声を前歯〜鼻のあたりに集めるイメージ（プレースメント）で、芯が出て前に通ります。")
+    return ("響きがやや奥にこもり気味です。ハミングから母音へ移す練習で声を前に集めると、"
+            "芯のある通る声に近づきます。")
+
+
+def _achieve_weak_resonance(a: dict) -> bool:
+    sf = a.get("singers_formant_ratio")
+    return sf is not None and sf >= 0.004
 
 
 TASKS: list[dict] = [
@@ -382,9 +417,41 @@ TASKS: list[dict] = [
         ],
     },
     {
+        "id": "breathy_closure",
+        "label": "息漏れを減らす（声帯の閉じ・効率）",
+        "priority": 2,
+        "diagnose": _diag_breathy_closure,
+        "reason": _reason_breathy_closure,
+        "achieve": _achieve_breathy_closure,
+        "achieve_label": "息漏れが減り、同じ息でも前に鳴る（H1-H2が下がる）",
+        "practices": [
+            {
+                "name": "ストロー発声（SOVT）",
+                "steps": [
+                    "細めのストローを軽くくわえる（口の端から息が漏れないように）。",
+                    "ストロー越しに『ウーー』と中音域で5秒、ラクに声を出す。",
+                    "低い音→高い音へ、サイレンのようになめらかに上下する。",
+                    "ストローを外し、同じ感覚で『ウー』→母音『オー』に置き換える。",
+                ],
+                "checkpoint": "ストロー中に唇と頬が軽く震え、声がブレずに続けば成功（声帯の閉じが整っているサイン）。",
+                "video": {"title": "リップロール／ストローのやり方と練習法", "url": "https://www.youtube.com/watch?v=TakKKIdIGgQ"},
+            },
+            {
+                "name": "ハミング → 母音（前に集める）",
+                "steps": [
+                    "口を閉じて『んーー』とハミング。鼻〜前歯のあたりがムズムズ響くポイントを探す。",
+                    "その響きを保ったまま口を開いて『んーまーー』と母音に移す。",
+                    "息を強く吐かず、響きで前に運ぶ意識（息漏れの『ハー』にしない）。",
+                ],
+                "checkpoint": "母音にしても響きが前（鼻〜前歯）に残り、息っぽさが減れば成功。",
+                "video": {"title": "ミックスが掴める簡単ハミング練習法", "url": "https://www.youtube.com/watch?v=s1Ju6C1iP6k"},
+            },
+        ],
+    },
+    {
         "id": "long_tone_decay",
         "label": "ロングトーンの後半安定（息の支え）",
-        "priority": 2,
+        "priority": 5,
         "diagnose": _diag_long_tone_decay,
         "reason": _reason_long_tone_decay,
         "achieve": _achieve_long_tone_decay,
@@ -466,9 +533,40 @@ TASKS: list[dict] = [
         ],
     },
     {
+        "id": "weak_resonance",
+        "label": "響きを前に集める（芯・通り）",
+        "priority": 4,
+        "diagnose": _diag_weak_resonance,
+        "reason": _reason_weak_resonance,
+        "achieve": _achieve_weak_resonance,
+        "achieve_label": "声の芯（シンガーズフォルマント）が増え、前に通る",
+        "practices": [
+            {
+                "name": "ハミング → 母音（マスクに集める）",
+                "steps": [
+                    "口を閉じて『んーー』。鼻〜前歯（マスク）が一番ムズムズ響く高さを探す。",
+                    "その響きを保ったまま口を開け『んーまーー』『んーみーー』と母音へ。",
+                    "息で押さず、響きで前に運ぶ（『当てる位置』を前に保つ＝プレースメント）。",
+                ],
+                "checkpoint": "母音にしても響きが前に残り、声がキンと前に通れば成功。",
+                "video": {"title": "ミックスが掴める簡単ハミング練習法", "url": "https://www.youtube.com/watch?v=s1Ju6C1iP6k"},
+            },
+            {
+                "name": "あくび → 前当て（喉は開け、響きは前へ）",
+                "steps": [
+                    "あくびの始まりで喉の奥を縦に開く（喉頭が少し下がる感覚）。",
+                    "その空間を保ったまま、声は前歯のあたりに集めて『ネーー』と出す。",
+                    "奥を開けつつ前に当てる＝芯と豊かさを両立（一面的にしない）。",
+                ],
+                "checkpoint": "こもらず、かつキンキンせず、芯のある『ネー』が前に飛べば成功。",
+                "video": {"title": "響く声になるあくび声トレ", "url": "https://www.youtube.com/watch?v=tE_JxKjWka4"},
+            },
+        ],
+    },
+    {
         "id": "pitch_wobble",
         "label": "音程の細かい揺れをおさえる",
-        "priority": 4,
+        "priority": 6,
         "diagnose": _diag_pitch_wobble,
         "reason": _reason_pitch_wobble,
         "achieve": _achieve_pitch_wobble,
