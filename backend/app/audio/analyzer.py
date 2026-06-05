@@ -759,6 +759,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     lts = long_tone_stability(f0_hz, hop_sec)
 
     h1h2_clip = None
+    vlab: dict = {}
     if light:
         # 原曲(お手本)向け: 比較に使わない重い処理を省略（応答時間短縮）
         harm = None
@@ -781,6 +782,8 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         spectral_tilt = _seg_med("spectral_tilt_db_oct")
         singers_formant = _singers_formant_ratio(y, sr, voiced_flag)
         h1h2_clip = _clip_h1h2(y, sr, f0_hz, voiced_flag)
+        from app.audio import voice_lab as _vlab
+        vlab = _vlab.analyze_voice_lab(y, sr, f0_hz, voiced_flag)   # CPP/Jitter/Shimmer/HNR/フォルマント（資料2章）
 
     result = {
         "duration_sec": round(duration, 2),
@@ -805,6 +808,12 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "spectral_tilt_db_oct": spectral_tilt,
         "singers_formant_ratio": singers_formant,
         "h1h2_db": h1h2_clip,                      # 声帯の閉じ(内転)の効率指標（docs/21）
+        # 音声医学指標（資料2章, parselmouth。未導入時は None）
+        "cpp_db": vlab.get("cpp_db"),              # 声の芯(ケプストラムピーク突出度)
+        "jitter_pct": vlab.get("jitter_pct"),      # 周期の微小ゆらぎ(%)
+        "shimmer_pct": vlab.get("shimmer_pct"),    # 振幅の微小ゆらぎ(%)
+        "hnr_db": vlab.get("hnr_db"),              # 倍音対雑音比
+        "formants_praat": vlab.get("formants"),    # F1-F3(Burg)
         "timeline": timeline,
         "vocal_isolated": bool(isolate_vocal),
     }

@@ -223,6 +223,10 @@ def build_voice_axes(a: dict, c: Optional[dict], ref_attempted: bool = False) ->
                         "level": "ok" if j is None else _lvl4(j <= 6, j <= 12, j <= 20)})
 
     phon_items = [_closure_item(a, vc), _ring_item(a, vc)]
+    cpp = a.get("cpp_db")
+    if cpp is not None:
+        phon_items.append({"label": "声の芯（CPP）", "value": f"{cpp:.0f}dB",
+                           "level": _lvl4(cpp >= 11, cpp >= 7, cpp >= 4)})
     reg_items = [_register_item(a, vc), _passaggio_item(a)]
     sup_items = [{"label": "伸ばしの安定（息の支え）", "value": f"{lts:.0f}cents" if lts is not None else "—",
                   "level": "ok" if lts is None else _lvl4(lts <= 20, lts <= 30, lts <= 45)}]
@@ -235,27 +239,35 @@ def build_voice_axes(a: dict, c: Optional[dict], ref_attempted: bool = False) ->
     ]
 
 
+_HEADLINE_BY_ISSUE = {
+    "pulled_chest": "高音を地声で押し上げ気味。軽く前に当ててミックスへ寄せると、楽に届きます。",
+    "breathy": "息がやや漏れ気味。ストロー発声で声帯の閉じを揃えると、同じ息でもっと鳴ります。",
+    "lack_resonance": "声が前に集まりきっていません。前歯〜鼻のマスクに響きを集めると芯が出ます。",
+    "artificial_vibrato": "ビブラートの揺れが不自然。まっすぐ伸ばしてから自然な揺れに任せましょう。",
+    "unstable_support": "伸ばしが揺れ気味。息の支え（アッポッジョ）を整えると安定します。",
+    "mix_incoordination": "声区の繋ぎに段差。ネイ／リップロールでミックスを滑らかにしましょう。",
+}
+
+
 def build_headline(a: dict, c: Optional[dict]) -> str:
-    """発声の最重要ポイントを一言で（プロトレーナーの総評）。原曲比較を優先（docs/21）。"""
+    """発声の最重要ポイントを一言で（プロトレーナーの総評）。診断と整合させる（docs/21・資料）。"""
+    # 原曲比較で高音の声区差が明確なら最優先
     vc = (c or {}).get("voice_compare") or {}
     rh = vc.get("register_high")
     if rh and rh.get("verdict") != "match" and rh.get("user") == "chest" and rh.get("ref") in ("mix", "head"):
         return "高音は原曲がミックスで運んでいます。地声で押し上げず、軽く前に当てるのが近道です。"
     if rh and rh.get("verdict") != "match" and rh.get("user") == "head" and rh.get("ref") in ("mix", "chest"):
         return "原曲より薄い裏声に逃げ気味。声帯の閉じを少し足してミックスに寄せましょう。"
-    ring = vc.get("ring")
-    if ring and ring["verdict"] == "weaker":
+    # 検知された発声課題があればそれを総評にする（カードのheadlineと診断を一致させる）
+    try:
+        from app.coaching import voice_coach
+        issues = voice_coach.diagnose(a, c)
+        if issues:
+            return _HEADLINE_BY_ISSUE.get(issues[0]["id"], "発声をさらに磨いていきましょう。")
+    except Exception:
+        pass
+    if vc.get("ring", {}).get("verdict") == "weaker":
         return "原曲より響きが奥に。声を前歯〜鼻のあたりに集めると、芯が出て前に通ります。"
-    clo = vc.get("closure")
-    if clo and clo["verdict"] == "breathier":
-        return "息がやや漏れ気味。ストロー発声で声帯の閉じを揃えると、同じ息でもっと鳴ります。"
-    if clo and clo["verdict"] == "pressed":
-        return "少し締めすぎ。力を抜いてリップロールで通すと、楽に響きます。"
-    cl = (a.get("voice") or {}).get("closure") or {}
-    if cl.get("label") == "breathy":
-        return "息が少し漏れ気味。ストロー発声で閉じを整えると、効率よく鳴ります。"
-    if cl.get("label") == "pressed":
-        return "やや力みやすい発声です。脱力＋SOVTで、楽に通る声を目指しましょう。"
     return "発声の土台は良好です。響きと支えをさらに磨いていきましょう。"
 
 
