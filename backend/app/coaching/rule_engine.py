@@ -289,7 +289,17 @@ _REGISTER_Q = ["どっち", "どちら", "判断", "聞き分け", "聴き分け
 
 
 _REGISTER_DEFN = ["とは", "なんですか", "なんでしょう", "何ですか", "ってなに", "って何",
-                  "教えて", "違いは", "どう違う", "意味", "やり方", "出し方", "コツ", "練習"]
+                  "教えて", "違いは", "どう違う", "意味", "やり方", "出し方", "コツ", "練習",
+                  # 「〜を強くするには」「鍛えたい」等の技術・上達系も一般会話で答える（録音判定に飛ばさない）
+                  "強く", "鍛え", "習得", "上達", "どうすれ", "どうやって", "するには",
+                  "出すには", "できるよう", "伸ばすには"]
+
+
+def _register_both_terms(t: str) -> bool:
+    """地声と裏声を並べて『どっち?』と聞いている（この録音の声区判定の強い信号）。"""
+    chest = ("地声" in t or "チェスト" in t)
+    head = ("裏声" in t or "ファルセット" in t or "ヘッドボイス" in t)
+    return chest and head
 
 
 def is_register_question(text: str) -> bool:
@@ -298,9 +308,11 @@ def is_register_question(text: str) -> bool:
     「ミックスボイスとは？」「裏声の出し方は？」のような一般的な質問は除外する（通常チャットへ）。
     """
     t = text or ""
-    if not any(k in t for k in _REGISTER_TERMS):
+    if any(k in t for k in _REGISTER_DEFN):   # 一般的な定義/方法/上達の質問は対象外（通常チャットへ）
         return False
-    if any(k in t for k in _REGISTER_DEFN):   # 一般的な定義/方法の質問は対象外
+    if _register_both_terms(t):               # 地声と裏声を並べて「どっち?」＝この録音の声区判定
+        return True
+    if not any(k in t for k in _REGISTER_TERMS):
         return False
     return any(k in t for k in _REGISTER_Q)
 
