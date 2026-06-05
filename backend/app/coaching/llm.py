@@ -466,6 +466,19 @@ def generate_reply(
     return reply
 
 
+_LYRIC_QUOTE_RE = re.compile(r"「[^」]*[A-Za-z][^」]*」")     # 英字を含む「」＝歌詞の引用
+_MMSS_RE = re.compile(r"\d{1,2}:\d{2}\s*[〜~\-]\s*\d{1,2}:\d{2}\s*の?")  # 0:05〜0:08の …
+
+
+def _scrub_lyrics(text: Optional[str]) -> Optional[str]:
+    """音声講評からの歌詞引用（英語フレーズの「」や mm:ss の時刻参照）を除去する。"""
+    if not text:
+        return text
+    out = _LYRIC_QUOTE_RE.sub("その部分", text)
+    out = _MMSS_RE.sub("", out)
+    return re.sub(r"[ 　]{2,}", " ", out).strip() or text
+
+
 def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> Optional[str]:
     """録音そのものを Gemini に聴かせ、声区（地声/ミックス/裏声）を音色から聞き分ける。
 
@@ -492,18 +505,37 @@ def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> 
             "1つに断定しづらければ『ミックス（地声寄り／裏声寄り）』と答えてOKです。"
             "判断の根拠になった音色の特徴を一言添え、やわらかい敬体で2〜3文。"
             + (f"（参考: 数値解析の推定は『{dsp_hint}』ですが、最終判断は実際の音色を優先してください）" if dsp_hint else "")
-            + " 歌詞や母音は推測しないでください。Markdown記号は使わない。"
+            + " 重要: 歌詞・曲名・英語や日本語の歌詞フレーズを絶対に引用しない（「」で歌詞を囲まない）。"
+            + "場所は『高い音の箇所』『サビあたり』『〜秒あたり』のように音楽的にだけ言う。母音も推測しない。Markdown記号は使わない。"
         )
         parts = [types.Part.from_bytes(data=user_wav, mime_type="audio/wav"),
                  types.Part.from_text(text=prompt)]
-        resp = client.models.generate_content(
-            model=settings.llm_audio_model,
-            contents=[types.Content(role="user", parts=parts)],
-            config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.3),
+        cfg = types.GenerateContentConfig(
+            max_output_tokens=600, temperature=0.3,
+            # thinking を無効化。これが無いと思考トークンが出力枠を食い尽くし、本文が
+            # 数文字で途切れる（声区回答が壊れていた原因）。
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
-        return (resp.text or "").strip() or None
+        last_err = None
+        for attempt in range(2):  # 503(過負荷)など一過性失敗を1回リトライ
+            try:
+                resp = client.models.generate_content(
+                    model=settings.llm_audio_model,
+                    contents=[types.Content(role="user", parts=parts)],
+                    config=cfg,
+                )
+                text = (resp.text or "").strip()
+                if text:
+                    return _scrub_lyrics(text)
+            except Exception as e:
+                last_err = e
+                import time as _t
+                _t.sleep(1.2)
+        if last_err:
+            logger.warning("声区の聞き分けに失敗: %s", last_err)
+        return None
     except Exception as e:
-        logger.warning("声区の聞き分けに失敗: %s", e)
+        logger.warning("声区の聞き分けに失敗(初期化): %s", e)
         return None
 
 
