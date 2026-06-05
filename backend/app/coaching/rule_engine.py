@@ -86,8 +86,7 @@ def initial_messages() -> list[dict]:
         coach_msg(
             "text",
             "曲と箇所が決まったら、その同じところを歌って録音を送ってください🎤\n"
-            "下の🎙ボタンでその場録音、または📎で音源をアップロードできます。\n\n"
-            "気になることを先に教えてくれてもOKです（高音の力み／音程／リズム／表現 など）。",
+            "下の🎙ボタンでその場録音、または📎で音源をアップロードできます。",
         ),
     ]
 
@@ -738,9 +737,10 @@ def _audio_diagnose(
                     break
 
     # 採点カード1枚に集約（声の特徴も payload.voice_profile に同居。別の声診断カードは出さない）
+    # 声タイプ診断は独立した別機能（/voice-type ページ）。コーチング講評には混ぜない。
     ref_attempted = bool(state.get("song_ref_url") or state.get("song_ref_path"))
     fb_payload = feedback_builder.build_feedback_payload(
-        analysis, compare_data, task, ref_attempted=ref_attempted
+        analysis, compare_data, task, ref_attempted=ref_attempted,
     )
     out.append(coach_msg("feedback", payload=fb_payload))
 
@@ -767,7 +767,7 @@ def _audio_diagnose(
             "text",
             "やってみたら基礎練の録音を、もう同じ箇所を歌い直して確かめたいなら曲の録音を送ってください。"
             "発音を詳しく見たいときは「🗣 発音を見る」もどうぞ😊",
-            payload=_action_chips("more_practice", "recheck_song", "pronunciation", "change_task", "finish"),
+            payload=_action_chips("more_practice", "recheck_song", "pronunciation", "finish"),
         ))
         updates = {"phase": LESSON, "current_task": task["id"], "baseline_analysis": analysis, "avoid_task": None}
     else:

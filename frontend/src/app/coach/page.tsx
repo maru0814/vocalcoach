@@ -103,6 +103,21 @@ export default function CoachListPage() {
           </div>
         </button>
 
+        {/* 声タイプ診断（別機能・いつでも） */}
+        <Link
+          href="/voice-type"
+          className="group flex items-center gap-3 rounded-2xl bg-white/80 p-4 shadow-card ring-1 ring-brand-100 transition hover:shadow-soft"
+        >
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-cyan-500 text-2xl text-white shadow-soft">
+            🎤
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold text-slate-800">声タイプ診断</div>
+            <div className="text-xs text-slate-500">15秒歌うだけ。8タイプから診断＆シェア（いつでもOK）</div>
+          </div>
+          <span className="text-xl text-brand-400 transition group-hover:translate-x-1">→</span>
+        </Link>
+
         {error && (
           <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
         )}

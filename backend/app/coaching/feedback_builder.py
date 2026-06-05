@@ -347,14 +347,25 @@ def build_pitch_mistakes(c: Optional[dict]) -> list[dict]:
 
 
 def build_feedback_payload(a: dict, c: Optional[dict], task: Optional[dict],
-                           ref_attempted: bool = False) -> dict:
-    """発声特化の採点カード payload（docs/21）。原曲と比較した発声FBを1枚に集約。"""
+                           ref_attempted: bool = False, include_voice_type: bool = False) -> dict:
+    """発声特化の採点カード payload（docs/21）。原曲と比較した発声FBを1枚に集約。
+
+    include_voice_type: 声タイプ診断（シェア用フック）を載せるか。初回録音の時だけ True。
+    """
     scores = scoring.voice_scores(a, c)
     align = (c or {}).get("alignment") if c else None
     compared = bool(align and align.get("in_tune_score") is not None)
+    voice_type = None
+    if include_voice_type:
+        try:
+            from app.coaching import voice_coach
+            voice_type = voice_coach.classify_voice_type(a)
+        except Exception:
+            voice_type = None
     payload = {
         "scores": scores,
         "focus": "voice",                                  # 発声特化カードであることの目印
+        "voice_type": voice_type,                          # 声タイプ診断（シェア用フック）
         "headline": build_headline(a, c),                  # 発声の一言総評（原曲比較）
         "axes": build_voice_axes(a, c, ref_attempted),     # 音程/鳴り・効率/声区/支え
         "pitch_mistakes": build_pitch_mistakes(c),         # 明確に外した箇所（秒数つき）

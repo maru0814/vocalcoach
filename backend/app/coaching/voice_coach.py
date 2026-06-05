@@ -200,6 +200,109 @@ def primary_issue(issues: list[dict]) -> Optional[dict]:
     return issues[0] if issues else None
 
 
+# ============================================================================
+# 声タイプ診断（3軸＝声の成分バランス／響き／音色 → 8タイプ）。シェア用の入口フック。
+# 軸1 地声成分↔裏声成分: H1-H2(開放率)＋声区。 軸2 パワフル↔エアリー: CPP/HNR(芯・雑音)。
+# 軸3 クリア↔ディープ: スペクトル傾斜(高域の量＝明るさ)。各軸の絶対しきい値はマイク等で
+# ドメイン依存のため「近い傾向」として見せる（断定しない）。実ラベル音源で要再較正。
+# ============================================================================
+VOICE_TYPES: dict[tuple, dict] = {
+    ("chest", "power", "clear"): {
+        "id": "rock", "name": "Rock Singer", "emoji": "🔥",
+        "desc": "芯のある地声成分で、明るくまっすぐ前に出るパワフルな声。",
+        "artists": {"female": ["LiSA", "YUKI"], "male": ["稲葉浩志(B'z)", "優里"]}},
+    ("chest", "power", "deep"): {
+        "id": "groovy", "name": "Groovy Singer", "emoji": "🎙",
+        "desc": "太く温かい地声成分。うねるような厚みとコクのある声。",
+        "artists": {"female": ["Superfly", "あいみょん"], "male": ["玉置浩二", "鈴木雅之"]}},
+    ("chest", "airy", "clear"): {
+        "id": "pop", "name": "Pop Singer", "emoji": "🌤",
+        "desc": "自然体で親しみやすい、軽やかで明るい地声成分の声。",
+        "artists": {"female": ["aiko", "いきものがかり"], "male": ["北村匠海", "マカロニえんぴつ"]}},
+    ("chest", "airy", "deep"): {
+        "id": "mysterious", "name": "Mysterious Singer", "emoji": "🌒",
+        "desc": "翳りのある深い地声成分。浮遊感と余韻をまとう声。",
+        "artists": {"female": ["宇多田ヒカル", "MISIA"], "male": ["米津玄師", "藤井風"]}},
+    ("head", "power", "clear"): {
+        "id": "husky", "name": "Husky Singer", "emoji": "💎",
+        "desc": "高く抜ける裏声成分に芯がある、きらびやかな声。",
+        "artists": {"female": ["西野カナ", "ACAね(ずとまよ)"], "male": ["藤原聡(髭男)", "Taka(ONE OK ROCK)"]}},
+    ("head", "power", "deep"): {
+        "id": "dramatic", "name": "Dramatic Singer", "emoji": "🎭",
+        "desc": "裏声成分に情感と伸びがある、切なく響くドラマチックな声。",
+        "artists": {"female": ["Aimer", "ヨルシカ(suis)"], "male": ["星野源", "菅田将暉"]}},
+    ("head", "airy", "clear"): {
+        "id": "whisper", "name": "Whisper Singer", "emoji": "🍃",
+        "desc": "やわらかく透明な裏声成分。そっと寄り添う軽やかな声。",
+        "artists": {"female": ["幾田りら", "miwa"], "male": ["小田和正", "三浦大知"]}},
+    ("head", "airy", "deep"): {
+        "id": "sexy", "name": "Sexy Singer", "emoji": "🌙",
+        "desc": "息まじりの深い裏声成分。しっとり包み込む大人の声。",
+        "artists": {"female": ["Uru", "中島美嘉"], "male": ["平井堅", "秦基博"]}},
+}
+
+_AXIS_JP = {
+    "chest": "地声成分が多め", "head": "裏声成分が多め",
+    "power": "パワフル（芯がある）", "airy": "エアリー（息まじり）",
+    "clear": "クリア（明るい）", "deep": "ディープ（深い）",
+}
+
+
+def classify_voice_type(a: dict) -> Optional[dict]:
+    """声の成分バランス/響き/音色の3軸から8つの声タイプを判定（シェア用フック）。
+
+    断定しないため、各軸が境界に近い時は near=True を返す（コピーで「やや〜」と表現）。
+    """
+    h1h2 = a.get("h1h2_db")
+    reg = ((a.get("voice") or {}).get("register_high") or {}).get("register")
+    cpp = a.get("cpp_db")
+    hnr = a.get("hnr_db")
+    tilt = a.get("spectral_tilt_db_oct")
+    sf = a.get("singers_formant_ratio")
+    if h1h2 is None and tilt is None and cpp is None:
+        return None  # 発声指標が無い（解析不足）
+
+    # 軸1: 地声成分(chest) vs 裏声成分(head) ← H1-H2(声門開放率)＋声区
+    s1 = 0.0
+    if h1h2 is not None:
+        s1 += -(h1h2 - 4.0) / 4.0          # H1-H2 小→地声(+) / 大→裏声(-)
+    if reg == "chest":
+        s1 += 0.7
+    elif reg == "head":
+        s1 -= 0.7
+    a1 = "chest" if s1 >= 0 else "head"
+
+    # 軸2: パワフル(power) vs エアリー(airy) ← CPP/HNR(声の芯・雑音の少なさ)
+    s2 = 0.0
+    if cpp is not None:
+        s2 += (cpp - 8.0) / 4.0
+    if hnr is not None:
+        s2 += (hnr - 14.0) / 10.0
+    if sf is not None:
+        s2 += (sf - 0.004) / 0.008
+    a2 = "power" if s2 >= 0 else "airy"
+
+    # 軸3: クリア(明るい) vs ディープ(深い) ← スペクトル傾斜(高域の量)
+    s3 = 0.0
+    if tilt is not None:
+        s3 += (tilt + 9.0) / 4.0           # 傾斜が浅い(>-9)→明るい(+) / 急→暗い(-)
+    if sf is not None:
+        s3 += (sf - 0.004) / 0.010
+    a3 = "clear" if s3 >= 0 else "deep"
+
+    t = VOICE_TYPES[(a1, a2, a3)]
+
+    def _near(s: float) -> bool:
+        return abs(s) < 0.4
+
+    return {
+        **t,
+        "axes": {"register": a1, "power": a2, "color": a3},
+        "axes_jp": {"register": _AXIS_JP[a1], "power": _AXIS_JP[a2], "color": _AXIS_JP[a3]},
+        "near": {"register": _near(s1), "power": _near(s2), "color": _near(s3)},
+    }
+
+
 def build_llm_block(a: dict, c: Optional[dict] = None) -> str:
     """LLMに渡す『発声の事実＋検知課題＋処方候補(RAG)』テキスト。捏造防止のため実測のみ。"""
     lines: list[str] = []
