@@ -3,6 +3,19 @@ import { SiteHeader } from "@/components/site/SiteHeader";
 import { Reveal } from "@/components/site/Reveal";
 import { AnimatedDemo } from "@/components/site/AnimatedDemo";
 import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
+import { VoiceTypeMascot } from "@/components/voice/VoiceTypeMascot";
+
+// 声タイプ診断（集客フック）の8キャラ
+const LP_TYPES = [
+  { id: "rock", name: "Rock", grad: "from-rose-500 to-orange-500" },
+  { id: "groovy", name: "Groovy", grad: "from-amber-500 to-yellow-600" },
+  { id: "pop", name: "Pop", grad: "from-sky-400 to-cyan-500" },
+  { id: "mysterious", name: "Mysterious", grad: "from-violet-600 to-indigo-700" },
+  { id: "husky", name: "Husky", grad: "from-cyan-400 to-blue-500" },
+  { id: "dramatic", name: "Dramatic", grad: "from-fuchsia-600 to-purple-700" },
+  { id: "whisper", name: "Whisper", grad: "from-emerald-400 to-teal-500" },
+  { id: "sexy", name: "Sexy", grad: "from-slate-600 to-indigo-900" },
+];
 
 const STATS = [
   { value: "4軸", label: "音程・リズム・表現・総合をAI解析" },
@@ -184,6 +197,40 @@ export default function HomePage() {
                 <div className="mt-1 text-xs text-slate-500">{s.label}</div>
               </div>
             ))}
+          </div>
+        </Reveal>
+
+        {/* 声タイプ診断（集客フック・シェアの入口） */}
+        <Reveal className="mt-20">
+          <div className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-fuchsia-50 to-cyan-50 p-8 text-center shadow-card sm:p-12">
+            <span className="inline-flex rounded-full bg-white/85 px-3 py-1 text-xs font-bold text-brand-600">
+              🎤 無料・登録だけ・何度でも
+            </span>
+            <h2 className="mt-3 text-2xl font-black text-slate-800 sm:text-4xl">
+              あなたの声は、<span className="text-brand-gradient">どのタイプ？</span>
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-slate-600">
+              15秒ほど歌うだけ。AIが発声を解析して、8つの声タイプから診断します。
+              似た声質のアーティストつきで、結果はそのままシェアできます。
+            </p>
+            <div className="mx-auto mt-8 grid max-w-2xl grid-cols-4 gap-2.5 sm:gap-3">
+              {LP_TYPES.map((t) => (
+                <div
+                  key={t.id}
+                  className={`flex flex-col items-center gap-1 rounded-2xl bg-gradient-to-br ${t.grad} px-1 py-2.5 text-white shadow-soft`}
+                >
+                  <VoiceTypeMascot id={t.id} size={42} />
+                  <span className="text-[10px] font-bold">{t.name}</span>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/voice-type"
+              className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-gradient px-7 py-3.5 font-bold text-white shadow-soft transition hover:scale-[1.02] active:scale-95"
+            >
+              声タイプを診断する → <span className="text-sm font-normal text-white/80">無料</span>
+            </Link>
+            <p className="mt-3 text-xs text-slate-400">※ 診断には無料登録（30秒）が必要です</p>
           </div>
         </Reveal>
 

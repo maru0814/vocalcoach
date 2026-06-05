@@ -185,3 +185,45 @@ export async function sendCoachAction(id: string | number, action: string) {
     body: JSON.stringify({ action }),
   });
 }
+
+// ---------- Voice Type（独立機能：声タイプ診断） ----------
+export type VoiceType = {
+  id: string;
+  name: string;
+  emoji: string;
+  desc: string;
+  artists?: { female?: string[]; male?: string[] };
+  axes_jp?: { register?: string; power?: string; color?: string };
+  near?: { register?: boolean; power?: boolean; color?: boolean };
+};
+
+export type VoiceTypeResult = {
+  voice_type: VoiceType;
+  score: number;
+  scores?: Record<string, number>;
+  duration_sec?: number;
+};
+
+/** 録音1本を送って声タイプ（8種）を診断。チャットセッション非依存。 */
+export async function analyzeVoiceType(blob: Blob, filename = "voice.webm") {
+  const fd = new FormData();
+  fd.append("audio_file", blob, filename);
+  const response = await fetch(`${API_BASE}/api/v1/voice-type/analyze`, {
+    method: "POST",
+    credentials: "include",
+    body: fd,
+  });
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      message = data?.message || data?.detail?.message || message;
+    } catch {
+      /* ignore parse error */
+    }
+    const err = new Error(message) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
+  }
+  return (await response.json()) as VoiceTypeResult;
+}
