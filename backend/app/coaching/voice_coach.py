@@ -129,13 +129,15 @@ def diagnose(a: dict, c: Optional[dict] = None) -> list[dict]:
     hi_reg = (hi or {}).get("register")
     hi_hz = (hi or {}).get("mean_f0_hz")
 
-    # ケース1: 張り上げ(Pulled Chest)
+    # ケース1: 張り上げ(Pulled Chest) — 資料ケース1準拠で「力みの兆候(Jitter/Shimmer上昇)」を必須にする。
+    #   安定して内転の効いた高音は健全なベルト/ミックスのこともあるので“押し上げ”と断定しない。
     if hi_hz and hi_hz > _passaggio_hz(a) and hi_reg == "chest":
-        unstable = (jit is not None and jit > JITTER_HIGH_PCT) or (shim is not None and shim > SHIMMER_HIGH_PCT * 1.4)
-        sev = "high" if unstable else "medium"
-        issues.append({"id": "pulled_chest", "jp": "高音の張り上げ（地声で押し上げ）", "severity": sev,
-                       "evidence": {"high_note_hz": round(hi_hz), "register": "地声",
-                                    "jitter_pct": jit, "shimmer_pct": shim}})
+        strain = (jit is not None and jit > JITTER_HIGH_PCT * 1.5) or \
+                 (shim is not None and shim > SHIMMER_HIGH_PCT * 1.5)
+        if strain:
+            issues.append({"id": "pulled_chest", "jp": "高音の張り上げ（力みのサイン）", "severity": "high",
+                           "evidence": {"high_note_hz": round(hi_hz), "register": "地声寄り",
+                                        "jitter_pct": jit, "shimmer_pct": shim}})
 
     # ケース2: 息漏れ・声帯閉鎖不全(Breathy / Under-adduction)
     #   H1-H2(声門開放率＝内転の直接指標)が高い=閉じがゆるい、を必須条件にする。
@@ -215,7 +217,8 @@ def build_llm_block(a: dict, c: Optional[dict] = None) -> str:
     rh = (a.get("voice") or {}).get("register_high")
     if rh and rh.get("register"):
         jp = {"chest": "地声", "mix": "ミックス", "head": "裏声"}.get(rh["register"], rh["register"])
-        lines.append(f"- 高音の声区: {jp}（{rh.get('hz')}Hz付近）")
+        note = "（倍音構成からの推定。換声点付近は曖昧なので、本人が裏声/ミックスの感覚を述べたら断定せずそれを尊重する）"
+        lines.append(f"- 高音の声区(推定): {jp}（{rh.get('hz')}Hz付近）{note}")
     vc = (c or {}).get("voice_compare") if c else None
     if vc:
         bits = []
@@ -238,10 +241,12 @@ def build_llm_block(a: dict, c: Optional[dict] = None) -> str:
         lines.append(f"- 検知された発声課題: {prim['jp']}（重要度 {prim['severity']}）{extra}")
         rx = prescriptions_for([i["id"] for i in issues])
         if rx:
-            lines.append("- 処方候補（この課題に効くエクササイズ。必ずこの中から選ぶ）:")
-            for x in rx:
+            lines.append("- 処方候補（この課題に効くエクササイズ。必ずこの中から選ぶ。"
+                         "★が第一推奨。会話では基本これを続け、ユーザーが『うまくいかない/できない』と言った時だけ次の候補へ移る）:")
+            for k, x in enumerate(rx):
+                mark = "★推奨 " if k == 0 else ""
                 an = f"（アンザッツ{x['ansatz']}）" if x.get("ansatz") else ""
-                lines.append(f"  ・{x['name']}{an}: 効く理由={x['mechanism']} / やり方={x['how']}")
+                lines.append(f"  ・{mark}{x['name']}{an}: 効く理由={x['mechanism']} / やり方={x['how']}")
     else:
         lines.append("- 発声の大きな課題は検知されていない（良い土台。響き・支えをさらに磨く方向で励ます）")
     return "\n".join(lines)
