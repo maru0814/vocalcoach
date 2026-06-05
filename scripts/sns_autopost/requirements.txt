@@ -1,0 +1,4 @@
+# SNS自動投稿スクリプトの依存（本体バックエンドとは独立）
+google-genai==2.7.0        # 文面のAI生成（任意。無くてもテンプレで動く）
+requests-oauthlib==2.0.0   # X API v2 への投稿（OAuth1.0a）
+python-dotenv==1.0.1       # .env 読み込み（任意）
