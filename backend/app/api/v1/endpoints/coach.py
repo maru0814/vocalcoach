@@ -201,6 +201,36 @@ def _pronunciation_reply(db: Session, s: ChatSession) -> dict:
     return {"type": "text", "text": reply}
 
 
+def _register_reply(db: Session, s: ChatSession) -> dict:
+    """最新の録音を Gemini に聴かせ、声区（地声/ミックス/裏声）を音色から聞き分けて答える。"""
+    last_audio = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == s.id, ChatMessage.type == "audio")
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    if not last_audio or not last_audio.audio_path or not os.path.exists(last_audio.audio_path):
+        return {"type": "text", "text": "声区（地声か裏声か）を音から聞き分けるには、まず歌った録音を送ってくださいね🎤"}
+    wav = last_audio.audio_path + ".wav"
+    if not os.path.exists(wav):
+        try:
+            wav = to_wav(last_audio.audio_path, wav)
+        except Exception:
+            return {"type": "text", "text": "録音の読み込みがうまくいきませんでした。もう一度送ってみてください。"}
+    try:
+        user_bytes = open(wav, "rb").read()
+    except Exception:
+        return {"type": "text", "text": "音声の読み込みに失敗しました。もう一度お試しください。"}
+    # 数値解析の推定（参考としてGeminiに渡す。最終判断は音色優先）
+    rh = ((s.last_analysis or {}).get("voice") or {}).get("register_high") or {}
+    jp = {"chest": "地声寄り", "mix": "ミックス", "head": "裏声寄り"}.get(rh.get("register"))
+    hint = f"高音は{jp}" if jp else None
+    reply = llm.classify_register_audio(user_bytes, dsp_hint=hint)
+    if not reply:
+        return {"type": "text", "text": "今うまく聞き取れませんでした。少し時間をおいてもう一度試してくださいね。"}
+    return {"type": "text", "text": reply}
+
+
 def _rediagnose_reply(db: Session, s: ChatSession, text: str, history: list[dict]) -> list[dict]:
     """「今の録音で、原曲の◯秒あたりから重ねて再度診断して」に応える特別経路。
 
@@ -367,6 +397,16 @@ def send_message(
         db.flush()
         msgs = _rediagnose_reply(db, s, body.text, history)
         rows = _persist_coach_messages(db, s.id, msgs)
+        db.commit()
+        for r in rows:
+            db.refresh(r)
+        return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+
+    # 「ここは地声？裏声？」「裏声なのに地声と判断されてる」→ 録音をGeminiに聴かせて音色で聞き分ける
+    if rule_engine.is_register_question(body.text):
+        db.flush()
+        reg = _register_reply(db, s)
+        rows = _persist_coach_messages(db, s.id, [reg])
         db.commit()
         for r in rows:
             db.refresh(r)

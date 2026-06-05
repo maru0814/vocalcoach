@@ -260,7 +260,7 @@ def _llm_or(text_fallback: str, facts: str, instruction: str, history: Optional[
     """
     fut = _LLM_POOL.submit(
         llm.generate_coach_comment, facts, instruction, history,
-        timeout_sec=settings.llm_coach_timeout_sec,
+        settings.llm_coach_timeout_sec, settings.llm_coach_max_tokens,
     )
     try:
         reply = fut.result(timeout=settings.llm_coach_wait_sec)
@@ -280,6 +280,29 @@ PRONUNCIATION_KW = [
 def is_pronunciation_request(text: str) -> bool:
     """「発音を見て／原曲と発音を比べて」等の依頼かどうか。"""
     return any(k in text for k in PRONUNCIATION_KW)
+
+
+_REGISTER_TERMS = ["地声", "じごえ", "裏声", "うらごえ", "ミックス", "声区", "チェスト",
+                   "ファルセット", "ヘッドボイス", "ヘッド", "ミドル", "ミックスボイス"]
+_REGISTER_Q = ["どっち", "どちら", "判断", "聞き分け", "聴き分け", "なのに", "違う", "ちがう",
+               "じゃない", "ですか", "ますか", "？", "?", "出してる", "出した", "合ってる", "正しい"]
+
+
+_REGISTER_DEFN = ["とは", "なんですか", "なんでしょう", "何ですか", "ってなに", "って何",
+                  "教えて", "違いは", "どう違う", "意味", "やり方", "出し方", "コツ", "練習"]
+
+
+def is_register_question(text: str) -> bool:
+    """「ここは地声？裏声？」「裏声なのに地声と判断されてる」等、自分の録音の声区の聞き分け依頼/異議か。
+
+    「ミックスボイスとは？」「裏声の出し方は？」のような一般的な質問は除外する（通常チャットへ）。
+    """
+    t = text or ""
+    if not any(k in t for k in _REGISTER_TERMS):
+        return False
+    if any(k in t for k in _REGISTER_DEFN):   # 一般的な定義/方法の質問は対象外
+        return False
+    return any(k in t for k in _REGISTER_Q)
 
 
 # 「直前の録音を、原曲と（指定区間で）重ねて もう一度 診断/採点して」という再診断の依頼。
@@ -631,15 +654,43 @@ def _voice_dx_block(analysis: dict, compare_data: Optional[dict]) -> str:
 
 _VOICE_INSTR = (
     "あなたは世界最高峰のボイストレーナーです。発声だけに絞って講評してください（リズム・抑揚・しゃくり/こぶし等の表現技法は扱わない）。"
-    "順序は ①声帯の閉じ・息の効率 → ②響き（芯・通り） → ③声区の運び（高音の声区・換声点） → ④音程の正確さ。"
-    "原曲との比較の事実があれば必ずそれを根拠に語る（例:『原曲はここをミックスで明るく前に当てています。あなたは地声で押し上げ気味です』）。"
-    "機構→原因→処方の順で具体的に（例:『息が漏れ気味＝声帯の閉じがゆるい→ ストロー発声で閉じを揃えると、同じ息でもっと前に鳴ります』）。専門語は必ず一言で補足する。"
-    "音程を外している箇所が事実にあれば『何秒あたりが何centひくい(フラット)/高い(シャープ)か』を具体的に言う。録音の長さを超える秒数は言わない。"
-    "良い点と『もっと良くできる発声ポイント』を最低1つずつ、数値や秒数を添えて伝える。褒めて終わらせない。"
-    "一面的にしない（声は均衡した全体として機能する）。一度の改善提案は1点に絞り、無関係な技術を混ぜない。"
-    "事実に無い数値・秒数・声区は作らない。原曲照合が無ければ音程の正確さは断定せず『手元の安定度では…』と前置きし、原曲を送れば実測できると一言案内する。"
-    "最後に、今日の最優先課題の基礎練を1つだけ前向きに勧める（基礎練カードが一緒に出る時だけ『この後のカードに手順と動画があります』と添える）。"
+    "これは録音への“詳しい”講評なので、チャットの短さ制限は外し、5〜8文でしっかり解説してよい（ただし冗長や繰り返しは避け、1文1メッセージで明快に）。"
+    "次の流れで書く: "
+    "(1)【良い点】具体的に1つ褒める（数値や音域・秒数を添えて）。"
+    "(2)【今の声の状態＝客観診断】与えられた発声指標を“噛み砕いて”説明する。例:『声の芯(CPP)が◯dBで〜』『声帯の閉じ(H1-H2)が◯dBで息が少し漏れ気味』『声のクリアさ(HNR)が◯dB』。数値は与えられたものだけを使い、各指標に必ず一言の補足を付ける。"
+    "(3)【根本原因】表面の力み/息漏れで止めず、息の支え(アッポッジョ)・喉頭懸垂機構(アンザッツ)・共鳴(フォルマント)の観点で“なぜそうなるか”を一言で。"
+    "(4)【処方＝具体的な打ち手】処方候補(★推奨)から1つ選び、『なぜ効くか(メカニズム)』と『どうやるか(身体の感覚・響かせる位置・口の形・母音)』をていねいに。"
+    "原曲比較の事実があれば必ず根拠に使う。音程を外した箇所が事実にあれば『何秒が何centひくい/高い』と具体的に（録音の長さを超える秒は言わない）。"
+    "声区は音響からの推定であり、ユーザーが裏声等の感覚を述べたら断定せず尊重する。事実に無い数値・秒数・声区・処方は作らない。"
+    "練習は一度すすめたら基本そのまま続けるよう導き、毎回別の練習名に変えない。"
+    "最後に基礎練を1つだけ前向きに勧める（基礎練カードが一緒に出る時だけ『この後のカードに手順と動画があります』と添える）。"
 )
+
+
+# 発声診断(voice_coach)の課題 → 対応する基礎練タスク（動画つき）
+_ISSUE_TASK = {
+    "pulled_chest": "mixed_voice",
+    "breathy": "breathy_closure",
+    "lack_resonance": "weak_resonance",
+    "unstable_support": "long_tone_decay",
+    "mix_incoordination": "mixed_voice",
+    "artificial_vibrato": "pitch_wobble",
+}
+
+
+def _voice_issue_task(analysis: dict, compare_data: Optional[dict], exclude: list):
+    """発声診断(資料ベース)の主課題を、対応する基礎練タスクに対応づける。"""
+    try:
+        from app.coaching import voice_coach
+        for iss in voice_coach.diagnose(analysis, compare_data):
+            tid = _ISSUE_TASK.get(iss["id"])
+            if tid and tid not in (exclude or []):
+                t = get_task(tid)
+                if t:
+                    return t
+    except Exception:
+        pass
+    return None
 
 
 def _audio_diagnose(
@@ -659,6 +710,20 @@ def _audio_diagnose(
             task = auto or task
     else:
         task = diagnose_task(analysis, compare_data, exclude=exclude)
+
+    # 録音できている限り、必ず「課題＋基礎練（動画つき）」を1つ提示する（ユーザー要望）。
+    # 弱点が検知されなくても、発声診断の主課題→次の磨きどころ→既定ドリル の順で必ず確定させる。
+    if task is None:
+        task = _voice_issue_task(analysis, compare_data, exclude)
+    if task is None:
+        _, _sid = _stretch_target(analysis, compare_data)
+        task = get_task(_sid) if _sid else None
+    if task is None:
+        for _tid in ("weak_resonance", "long_tone_decay", "mixed_voice"):
+            if _tid not in exclude:
+                task = get_task(_tid)
+                if task:
+                    break
 
     # 採点カード1枚に集約（声の特徴も payload.voice_profile に同居。別の声診断カードは出さない）
     ref_attempted = bool(state.get("song_ref_url") or state.get("song_ref_path"))

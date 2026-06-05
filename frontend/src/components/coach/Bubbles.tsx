@@ -105,10 +105,13 @@ function AxisGroup({ ax }: { ax: any }) {
       </div>
       <div className="divide-y divide-slate-50 bg-white">
         {Array.isArray(ax.items) && ax.items.map((it: any, i: number) => (
-          <div key={i} className="flex items-center gap-2 px-3 py-2 text-sm">
-            <LevelDot level={it.level} />
-            <span className="text-slate-500">{it.label}</span>
-            <span className="ml-auto text-right font-bold text-slate-700">{it.value}</span>
+          <div key={i} className="px-3 py-2">
+            <div className="flex items-center gap-2 text-sm">
+              <LevelDot level={it.level} />
+              <span className="text-slate-500">{it.label}</span>
+              <span className="ml-auto text-right font-bold text-slate-700">{it.value}</span>
+            </div>
+            {it.hint && <div className="mt-0.5 pl-6 text-[10px] leading-tight text-slate-400">{it.hint}</div>}
           </div>
         ))}
       </div>

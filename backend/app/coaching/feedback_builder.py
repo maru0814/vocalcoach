@@ -147,20 +147,26 @@ def _axis_level(s: int) -> str:
 REG_JP = {"chest": "地声", "mix": "ミックス", "head": "裏声"}
 
 
+_HINT_CLOSURE = "息と声のバランス（H1-H2）。息漏れ↔締めすぎの中庸が効率◎"
+_HINT_RING = "前に通る芯（2.8〜3.4kHzのシンガーズフォルマント）"
+_HINT_CPP = "声の芯の強さ（CPP）。高いほど倍音が立って通る"
+_HINT_REG = "高音の運び方（地声/ミックス/裏声・音響からの推定）"
+
+
 def _closure_item(a: dict, vc: dict) -> dict:
     """声帯の閉じ（内転＝息の効率）。原曲比較を優先、無ければ単体ラベル（docs/21）。"""
     clo = vc.get("closure")
     if clo:
         v = clo["verdict"]
         if v == "breathier":
-            return {"label": "声帯の閉じ（息の効率）", "value": "息漏れ寄り（原曲より閉じがゆるい）", "level": "weak"}
+            return {"label": "声帯の閉じ（息の効率）", "value": "息漏れ寄り（原曲より閉じがゆるい）", "level": "weak", "hint": _HINT_CLOSURE}
         if v == "pressed":
-            return {"label": "声帯の閉じ（息の効率）", "value": "締めすぎ寄り（原曲より力み）", "level": "weak"}
-        return {"label": "声帯の閉じ（息の効率）", "value": "原曲と同じくバランス◎", "level": "good"}
+            return {"label": "声帯の閉じ（息の効率）", "value": "締めすぎ寄り（原曲より力み）", "level": "weak", "hint": _HINT_CLOSURE}
+        return {"label": "声帯の閉じ（息の効率）", "value": "原曲と同じくバランス◎", "level": "good", "hint": _HINT_CLOSURE}
     cl = (a.get("voice") or {}).get("closure") or {}
     lab = cl.get("label")
     return {"label": "声帯の閉じ（息の効率）", "value": cl.get("jp") or "—",
-            "level": "good" if lab == "balanced" else "ok"}
+            "level": "good" if lab == "balanced" else "ok", "hint": _HINT_CLOSURE}
 
 
 def _ring_item(a: dict, vc: dict) -> dict:
@@ -168,12 +174,12 @@ def _ring_item(a: dict, vc: dict) -> dict:
     ring = vc.get("ring")
     if ring:
         if ring["verdict"] == "weaker":
-            return {"label": "響き（芯・通り）", "value": "原曲より弱め（前に集めたい）", "level": "weak"}
-        return {"label": "響き（芯・通り）", "value": "原曲と同等以上の響き", "level": "good"}
+            return {"label": "響き（芯・通り）", "value": "原曲より弱め（前に集めたい）", "level": "weak", "hint": _HINT_RING}
+        return {"label": "響き（芯・通り）", "value": "原曲と同等以上の響き", "level": "good", "hint": _HINT_RING}
     rv = (a.get("voice") or {}).get("ring") or {}
     lab = rv.get("label")
     return {"label": "響き（芯・通り）", "value": rv.get("jp") or "—",
-            "level": "good" if lab == "strong" else "ok"}
+            "level": "good" if lab == "strong" else "ok", "hint": _HINT_RING}
 
 
 def _register_item(a: dict, vc: dict) -> dict:
@@ -181,13 +187,13 @@ def _register_item(a: dict, vc: dict) -> dict:
     rh = vc.get("register_high")
     if rh:
         if rh["verdict"] == "match":
-            return {"label": "高音の声区", "value": f"原曲と同じ{REG_JP.get(rh['ref'], '—')}", "level": "good"}
+            return {"label": "高音の声区", "value": f"原曲と同じ{REG_JP.get(rh['ref'], '—')}", "level": "good", "hint": _HINT_REG}
         return {"label": "高音の声区",
-                "value": f"あなた{REG_JP.get(rh['user'], '?')}／原曲{REG_JP.get(rh['ref'], '?')}", "level": "weak"}
+                "value": f"あなた{REG_JP.get(rh['user'], '?')}／原曲{REG_JP.get(rh['ref'], '?')}", "level": "weak", "hint": _HINT_REG}
     v = (a.get("voice") or {}).get("register_high") or {}
     reg, hz = v.get("register"), v.get("hz")
     if reg:
-        return {"label": "高音の声区", "value": f"{REG_JP.get(reg, '—')}（{_note_name(hz)}）", "level": "ok"}
+        return {"label": "高音の声区", "value": f"{REG_JP.get(reg, '—')}（{_note_name(hz)}）", "level": "ok", "hint": _HINT_REG}
     return {"label": "高音の声区", "value": "—", "level": "ok"}
 
 
@@ -226,7 +232,7 @@ def build_voice_axes(a: dict, c: Optional[dict], ref_attempted: bool = False) ->
     cpp = a.get("cpp_db")
     if cpp is not None:
         phon_items.append({"label": "声の芯（CPP）", "value": f"{cpp:.0f}dB",
-                           "level": _lvl4(cpp >= 11, cpp >= 7, cpp >= 4)})
+                           "level": _lvl4(cpp >= 11, cpp >= 7, cpp >= 4), "hint": _HINT_CPP})
     reg_items = [_register_item(a, vc), _passaggio_item(a)]
     sup_items = [{"label": "伸ばしの安定（息の支え）", "value": f"{lts:.0f}cents" if lts is not None else "—",
                   "level": "ok" if lts is None else _lvl4(lts <= 20, lts <= 30, lts <= 45)}]
