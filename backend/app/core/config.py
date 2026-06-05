@@ -52,8 +52,10 @@ class Settings(BaseSettings):
     # deadline は 10 秒にしつつ、実際の待ち時間は llm_coach_wait_sec で打ち切る
     # （超過時はルールベースのコメントにフォールバック。会話は止めない）。
     llm_coach_timeout_sec: float = 10.0
-    # 録音FBのコーチコメントを待つ最大の実時間（秒）。解析＋これで合計10秒以内を狙う。
-    llm_coach_wait_sec: float = 3.5
+    # 録音FBのコーチコメントを待つ最大の実時間（秒）。詳しい発声講評のため少し長めに。
+    llm_coach_wait_sec: float = 5.0
+    # 録音FBの詳しい講評用の出力トークン上限（CPP/H1-H2等を噛み砕いた解説のため多め）。
+    llm_coach_max_tokens: int = 700
     # 直近何件の会話履歴を文脈として渡すか
     llm_history_turns: int = 12
 

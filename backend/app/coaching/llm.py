@@ -394,7 +394,8 @@ def _scrub_invented_seconds(reply: str, allowed: set[int]) -> str:
     return _SCRUB_SEC_RE.sub(repl, reply)
 
 
-def _complete(contents, timeout_sec: Optional[float] = None) -> Optional[str]:
+def _complete(contents, timeout_sec: Optional[float] = None,
+              max_tokens: Optional[int] = None) -> Optional[str]:
     """Gemini を1往復呼び出してテキストを返す。
 
     timeout_sec: 応答待ちの上限秒（既定 settings.llm_timeout_sec）。超過時は None。
@@ -419,7 +420,7 @@ def _complete(contents, timeout_sec: Optional[float] = None) -> Optional[str]:
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=settings.llm_max_tokens,
+                max_output_tokens=(max_tokens or settings.llm_max_tokens),
                 # 低めの温度で、事実から逸脱した創作（歌詞・母音の捏造）を抑える
                 temperature=0.3,
                 # 思考を無効化＝コスト/レイテンシ削減（短い返答に十分）
@@ -463,6 +464,47 @@ def generate_reply(
         # チャット返信はカードを伴わないので、カードを出す約束文を消す
         reply = scrub_card_promise(reply)
     return reply
+
+
+def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> Optional[str]:
+    """録音そのものを Gemini に聴かせ、声区（地声/ミックス/裏声）を音色から聞き分ける。
+
+    DSP（倍音バランス）だけでは閉じの効いた裏声を地声と誤りやすいため、マルチモーダルで
+    音色（倍音の豊かさ・明るさ・厚み・息の混じり）から判断させる。dsp_hint があれば
+    「解析の推定」として渡すが、最終判断は音色を優先させる。歌詞は推測させない。
+    """
+    if not settings.llm_enabled:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception:  # pragma: no cover
+        return None
+    try:
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.llm_audio_timeout_sec * 1000)),
+        )
+        prompt = (
+            "あなたは発声の専門家です。この歌声の、特に高い音の箇所について、"
+            "地声（チェスト）／ミックス／裏声（ヘッド・ファルセット）のどれで歌っているかを、"
+            "声の『音色』（倍音の豊かさ・明るさ・厚み・息の混じり方）から聞き分けてください。"
+            "1つに断定しづらければ『ミックス（地声寄り／裏声寄り）』と答えてOKです。"
+            "判断の根拠になった音色の特徴を一言添え、やわらかい敬体で2〜3文。"
+            + (f"（参考: 数値解析の推定は『{dsp_hint}』ですが、最終判断は実際の音色を優先してください）" if dsp_hint else "")
+            + " 歌詞や母音は推測しないでください。Markdown記号は使わない。"
+        )
+        parts = [types.Part.from_bytes(data=user_wav, mime_type="audio/wav"),
+                 types.Part.from_text(text=prompt)]
+        resp = client.models.generate_content(
+            model=settings.llm_audio_model,
+            contents=[types.Content(role="user", parts=parts)],
+            config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.3),
+        )
+        return (resp.text or "").strip() or None
+    except Exception as e:
+        logger.warning("声区の聞き分けに失敗: %s", e)
+        return None
 
 
 def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> Optional[str]:
@@ -523,7 +565,7 @@ def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> O
 
 def generate_coach_comment(
     facts: str, instruction: str, history: Optional[list[dict]] = None,
-    timeout_sec: Optional[float] = None,
+    timeout_sec: Optional[float] = None, max_tokens: Optional[int] = None,
 ) -> Optional[str]:
     """録音解析の結果（事実）を、ソラ先生の自然文コメントに変換する。
 
@@ -550,7 +592,7 @@ def generate_coach_comment(
         f"事実に無い数値を作らず、2〜4文・120字程度の自然な会話文で返してください。"
     )
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
-    reply = _complete(contents, timeout_sec=timeout_sec)
+    reply = _complete(contents, timeout_sec=timeout_sec, max_tokens=max_tokens)
     if reply:
         # facts に無い秒数は伏せる（捏造防止の最終ガード）
         reply = _scrub_invented_seconds(reply, _allowed_seconds(facts))
