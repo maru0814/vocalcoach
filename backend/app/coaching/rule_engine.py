@@ -728,6 +728,8 @@ def _audio_diagnose(
             ))
             updates = {"phase": LESSON, "current_task": stretch_task["id"], "baseline_analysis": analysis, "avoid_task": None}
         else:
+            # 基礎練カードを出さないので、テキストの「カードに手順があります」約束は消す
+            text_msg["text"] = llm.scrub_card_promise(text_msg.get("text"))
             text_msg["payload"] = _action_chips("recheck_song", "finish")
             out.append(text_msg)
             updates = {"phase": DONE, "baseline_analysis": analysis, "avoid_task": None}
