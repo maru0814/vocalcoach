@@ -620,6 +620,15 @@ def _voice_facts(analysis: dict, c: Optional[dict]) -> str:
     return "\n".join(lines)
 
 
+def _voice_dx_block(analysis: dict, compare_data: Optional[dict]) -> str:
+    """発声の検知課題＋処方候補(RAG)を facts に注入する（資料準拠）。失敗時は空。"""
+    try:
+        from app.coaching import voice_coach
+        return voice_coach.build_llm_block(analysis, compare_data)
+    except Exception:
+        return ""
+
+
 _VOICE_INSTR = (
     "あなたは世界最高峰のボイストレーナーです。発声だけに絞って講評してください（リズム・抑揚・しゃくり/こぶし等の表現技法は扱わない）。"
     "順序は ①声帯の閉じ・息の効率 → ②響き（芯・通り） → ③声区の運び（高音の声区・換声点） → ④音程の正確さ。"
@@ -668,6 +677,7 @@ def _audio_diagnose(
             f"発声の一言総評: {headline}\n"
             f"良かった点: {goods}\n"
             + _voice_facts(analysis, compare_data) + "\n"
+            + _voice_dx_block(analysis, compare_data) + "\n"
             + f"今日の最優先課題: 「{task['label']}」。おすすめ基礎練『{prac['name']}』（目安: {prac.get('checkpoint', '')}）。手順カードはこの後に表示される。"
         )
         instr = _VOICE_INSTR
@@ -698,6 +708,7 @@ def _audio_diagnose(
             f"発声の一言総評: {headline}\n"
             f"良かった点: {goods}\n"
             + _voice_facts(analysis, compare_data) + "\n"
+            + _voice_dx_block(analysis, compare_data) + "\n"
             + f"もっと良くできる発声の点（必ず1つ伝える）: {stretch}\n"
             + prac_line
         )
