@@ -5,7 +5,7 @@
 各テンプレは {"text": 本文(リンク無し), "link": リプに貼るURL or None} を返す。
 """
 
-APP_URL_DEFAULT = "https://160-251-177-227.sslip.io"
+APP_URL_DEFAULT = "https://sora-vocal-ai.duckdns.org"
 
 # 8つの声タイプ（診断ページと一致。Crystal/Moody に改名済み）
 VOICE_TYPES = [
