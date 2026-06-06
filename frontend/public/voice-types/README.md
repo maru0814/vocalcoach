@@ -4,18 +4,18 @@
 画像が無いタイプは、SVGマスコットに自動フォールバックします（壊れません）。
 
 ## ファイル名（必須）
-`{id}.png`。id は以下の8種:
+`{id}.jpg`（小文字）。id は以下の8種。元画像はリポジトリ配置前に 1280px / JPEG へ圧縮する:
 
 | id | 表示名 | 画像 |
 | --- | --- | --- |
-| groovy | Groovy Voice | これから設置（1枚目） |
-| crystal | Crystal Voice | これから設置（2枚目） |
-| whisper | Whisper Voice | これから設置（3枚目） |
-| moody | Moody Voice | これから設置（4枚目） |
-| dramatic | Dramatic Voice | これから設置（5枚目） |
-| rock | Rock Voice | 後日（残り3枚） |
-| pop | Pop Voice | 後日（残り3枚） |
-| mysterious | Mysterious Voice | 後日（残り3枚） |
+| rock | Rock Voice | ✅ 設置済み |
+| groovy | Groovy Voice | ✅ 設置済み |
+| pop | Pop Voice | ✅ 設置済み |
+| mysterious | Mysterious Voice | ✅ 設置済み |
+| crystal | Crystal Voice | ✅ 設置済み |
+| dramatic | Dramatic Voice | ✅ 設置済み |
+| whisper | Whisper Voice | ✅ 設置済み |
+| moody | Moody Voice | ✅ 設置済み |
 
 > 画像が未設置のタイプは、自動でSVGマスコットを表示します（壊れません）。
 
