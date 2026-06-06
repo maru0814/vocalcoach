@@ -37,7 +37,7 @@ export function VoiceTypeArt({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       ref={imgRef}
-      src={`/voice-types/${id}.png`}
+      src={`/voice-types/${id}.jpg`}
       alt=""
       onError={() => setFailed(true)}
       className={`h-full w-full object-cover ${className || ""}`}
