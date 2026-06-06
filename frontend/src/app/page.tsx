@@ -3,19 +3,8 @@ import { SiteHeader } from "@/components/site/SiteHeader";
 import { Reveal } from "@/components/site/Reveal";
 import { AnimatedDemo } from "@/components/site/AnimatedDemo";
 import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
-import { VoiceTypeMascot } from "@/components/voice/VoiceTypeMascot";
-
-// 声タイプ診断（集客フック）の8キャラ
-const LP_TYPES = [
-  { id: "rock", name: "Rock", grad: "from-rose-500 to-orange-500" },
-  { id: "groovy", name: "Groovy", grad: "from-amber-500 to-yellow-600" },
-  { id: "pop", name: "Pop", grad: "from-sky-400 to-cyan-500" },
-  { id: "mysterious", name: "Mysterious", grad: "from-violet-600 to-indigo-700" },
-  { id: "husky", name: "Husky", grad: "from-cyan-400 to-blue-500" },
-  { id: "dramatic", name: "Dramatic", grad: "from-fuchsia-600 to-purple-700" },
-  { id: "whisper", name: "Whisper", grad: "from-emerald-400 to-teal-500" },
-  { id: "sexy", name: "Sexy", grad: "from-slate-600 to-indigo-900" },
-];
+import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
+import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 
 const STATS = [
   { value: "4軸", label: "音程・リズム・表現・総合をAI解析" },
@@ -218,13 +207,12 @@ export default function HomePage() {
               診断のあとは、その声に合った発声レッスンへ。だから“いまの自分”から始められます。
             </p>
             <div className="mx-auto mt-8 grid max-w-2xl grid-cols-4 gap-2.5 sm:gap-3">
-              {LP_TYPES.map((t) => (
-                <div
-                  key={t.id}
-                  className={`flex flex-col items-center gap-1 rounded-2xl bg-gradient-to-br ${t.grad} px-1 py-2.5 text-white shadow-soft`}
-                >
-                  <VoiceTypeMascot id={t.id} size={42} />
-                  <span className="text-[10px] font-bold">{t.name}</span>
+              {VOICE_TYPE_LIST.map((t) => (
+                <div key={t.id} className="relative aspect-square overflow-hidden rounded-2xl shadow-soft">
+                  <VoiceTypeArt id={t.id} fallbackMascotSize={42} className="h-full w-full" />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-1 pb-1 pt-3 text-center">
+                    <span className="text-[10px] font-bold text-white drop-shadow">{t.name}</span>
+                  </div>
                 </div>
               ))}
             </div>
