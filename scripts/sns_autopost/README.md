@@ -26,14 +26,21 @@ cp .env.example .env      # 値を入れる（.env はGitに入らない）
 # まずは安全確認（投稿せず本文だけ表示。DRY_RUN=1 が既定）
 python generate_and_post.py
 
-# 柱を指定して確認
-python generate_and_post.py --pillar diagnosis   # 診断誘導
-python generate_and_post.py --pillar tip         # 発声Tips
-python generate_and_post.py --pillar type        # 声タイプ紹介
+# 型を指定して確認（docs/25 の「伸びる型」に対応）
+python generate_and_post.py --pillar self_type   # 自己分類フック（診断誘導）
+python generate_and_post.py --pillar empathy     # 共感あるある（リンクなし）
+python generate_and_post.py --pillar tip         # 番号付きTips
+python generate_and_post.py --pillar contrarian  # 逆張り
+python generate_and_post.py --pillar question    # 問いかけ（リプ狙い）
+python generate_and_post.py --pillar voice_type  # 声タイプ図鑑
+python generate_and_post.py --pillar visual      # ビジュアル誘導
 
 # 実投稿（.env で DRY_RUN=0 かつ Xキー設定済み）
 DRY_RUN=0 python generate_and_post.py
 ```
+
+> **リンクは本文に入れず“自己リプ”に貼ります**（docs/25 の研究：本文リンクはリーチ50–90%減）。
+> empathy / question はリンクなしの純粋な会話狙い。**自動は種まき、初速の点火は手動リプで**。
 
 ## 自動化（VPSのcronで毎日投稿）
 本番VPS（`/opt/vocalcoach`）にこのフォルダごと置き、毎朝9時に投稿する例:
@@ -41,7 +48,7 @@ DRY_RUN=0 python generate_and_post.py
 # crontab -e
 0 9 * * * cd /opt/vocalcoach/scripts/sns_autopost && /opt/vocalcoach/scripts/sns_autopost/.venv/bin/python generate_and_post.py >> /var/log/sns_autopost.log 2>&1
 ```
-曜日ごとの柱は `themes.py` の `PILLARS` で調整（既定: 月金=診断誘導 / 火木日=Tips / 水土=声タイプ紹介）。
+曜日ごとの型は `themes.py` の `PILLARS` で調整（既定: 月=自己分類 / 火=Tips / 水=声タイプ図鑑 / 木=共感 / 金=逆張り / 土=問いかけ / 日=ビジュアル。docs/25 のカレンダー準拠）。
 
 ## 安全装置
 - `DRY_RUN` 既定=1（うっかり投稿しない）。実運用で 0 にする。
