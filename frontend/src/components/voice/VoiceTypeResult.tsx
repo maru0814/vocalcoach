@@ -54,13 +54,15 @@ export function VoiceTypeBlock({ vt, score, shareRef }: { vt: any; score: number
 /** Xシェア＋画像保存。診断結果を拡散の入口にする。 */
 export function ShareButtons({ vt, score, shareRef }: { vt: any; score: number; shareRef: any }) {
   if (!vt) return null;
-  const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+  // タイプ別の共有ランディング（Xでカード画像＝OGPが出る）。クローラはこのURLのメタを読む。
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const shareUrl = `${origin}/voice-type/share/${vt.id}`;
   const near = [vt.artists?.female?.[0], vt.artists?.male?.[0]].filter(Boolean).join("・");
   const text =
     `🎤 ソラ先生の発声診断、わたしの声タイプは【${vt.name}${vt.emoji}】でした！\n` +
     (near ? `声質が近い例：${near}\n` : "") +
     `あなたの声も無料で診断👉\n#声診断 #ボイトレ #ソラ先生`;
-  const xUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(appUrl)}`;
+  const xUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
   async function saveImage() {
     try {
       const mod = await import("html2canvas");

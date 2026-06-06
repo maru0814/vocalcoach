@@ -49,6 +49,8 @@ services:
       args:
         # 同一ドメイン配信なので API もそのドメイン（Caddy が /api を backend へ）
         NEXT_PUBLIC_API_BASE_URL: "https://${DOMAIN}"
+        # OG画像の絶対URL生成に使うサイト origin（同一ドメイン）
+        NEXT_PUBLIC_SITE_URL: "https://${DOMAIN}"
     restart: unless-stopped
 
 volumes:
