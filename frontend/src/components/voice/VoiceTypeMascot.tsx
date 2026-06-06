@@ -104,8 +104,8 @@ const MASCOTS: Record<string, React.ReactNode> = {
     </>
   ),
 
-  // 💎 Husky — きらびやかで自信に満ちた子
-  husky: (
+  // 💎 Crystal — きらびやかで自信に満ちた子
+  crystal: (
     <>
       <Body />
       {/* 流れる髪 */}
@@ -170,8 +170,8 @@ const MASCOTS: Record<string, React.ReactNode> = {
     </>
   ),
 
-  // 🌙 Sexy — 大人っぽく落ち着いた子
-  sexy: (
+  // 🌙 Moody — 大人っぽく落ち着いた子
+  moody: (
     <>
       <Body />
       {/* つやのある髪 */}

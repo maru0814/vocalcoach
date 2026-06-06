@@ -3,24 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Recorder } from "@/components/coach/Recorder";
-import { VoiceTypeBlock, ShareButtons, VTYPE_STYLE } from "@/components/voice/VoiceTypeResult";
-import { VoiceTypeMascot } from "@/components/voice/VoiceTypeMascot";
+import { VoiceTypeBlock, ShareButtons } from "@/components/voice/VoiceTypeResult";
+import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
+import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 import { analyzeVoiceType, getMe, VoiceTypeResult } from "@/lib/api";
 import { BrandWordmark } from "@/components/brand/Brand";
 
 const LOGIN_URL = "/login?next=/voice-type";
-
-// 8タイプの一覧（イントロで「何が分かるか」を見せる）
-const TYPE_GALLERY: { id: string; emoji: string; name: string }[] = [
-  { id: "rock", emoji: "🔥", name: "Rock" },
-  { id: "groovy", emoji: "🎙", name: "Groovy" },
-  { id: "pop", emoji: "🌤", name: "Pop" },
-  { id: "mysterious", emoji: "🌒", name: "Mysterious" },
-  { id: "husky", emoji: "💎", name: "Husky" },
-  { id: "dramatic", emoji: "🎭", name: "Dramatic" },
-  { id: "whisper", emoji: "🍃", name: "Whisper" },
-  { id: "sexy", emoji: "🌙", name: "Sexy" },
-];
 
 const MAX_SEC = 20;
 
@@ -146,13 +135,12 @@ export default function VoiceTypePage() {
         <section className="rounded-3xl bg-white/85 p-4 shadow-card">
           <div className="px-1 text-xs font-bold text-slate-500">あなたはどれ？ — 8つの声タイプ</div>
           <div className="mt-3 grid grid-cols-4 gap-2">
-            {TYPE_GALLERY.map((t) => (
-              <div
-                key={t.id}
-                className={`flex flex-col items-center gap-1 rounded-2xl bg-gradient-to-br ${VTYPE_STYLE[t.id]} px-1 py-2.5 text-white shadow-soft`}
-              >
-                <VoiceTypeMascot id={t.id} size={40} />
-                <span className="text-[10px] font-bold">{t.name}</span>
+            {VOICE_TYPE_LIST.map((t) => (
+              <div key={t.id} className="relative aspect-square overflow-hidden rounded-2xl shadow-soft">
+                <VoiceTypeArt id={t.id} fallbackMascotSize={40} className="h-full w-full" />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-1 pb-1 pt-3 text-center">
+                  <span className="text-[10px] font-bold text-white drop-shadow">{t.name}</span>
+                </div>
               </div>
             ))}
           </div>

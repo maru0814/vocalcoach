@@ -208,35 +208,35 @@ def primary_issue(issues: list[dict]) -> Optional[dict]:
 # ============================================================================
 VOICE_TYPES: dict[tuple, dict] = {
     ("chest", "power", "clear"): {
-        "id": "rock", "name": "Rock Singer", "emoji": "🔥",
+        "id": "rock", "name": "Rock Voice", "emoji": "🔥",
         "desc": "芯のある地声成分で、明るくまっすぐ前に出るパワフルな声。",
         "artists": {"female": ["LiSA", "YUKI"], "male": ["稲葉浩志(B'z)", "優里"]}},
     ("chest", "power", "deep"): {
-        "id": "groovy", "name": "Groovy Singer", "emoji": "🎙",
+        "id": "groovy", "name": "Groovy Voice", "emoji": "🎙",
         "desc": "太く温かい地声成分。うねるような厚みとコクのある声。",
         "artists": {"female": ["Superfly", "あいみょん"], "male": ["玉置浩二", "鈴木雅之"]}},
     ("chest", "airy", "clear"): {
-        "id": "pop", "name": "Pop Singer", "emoji": "🌤",
+        "id": "pop", "name": "Pop Voice", "emoji": "🌤",
         "desc": "自然体で親しみやすい、軽やかで明るい地声成分の声。",
         "artists": {"female": ["aiko", "いきものがかり"], "male": ["北村匠海", "マカロニえんぴつ"]}},
     ("chest", "airy", "deep"): {
-        "id": "mysterious", "name": "Mysterious Singer", "emoji": "🌒",
+        "id": "mysterious", "name": "Mysterious Voice", "emoji": "🌒",
         "desc": "翳りのある深い地声成分。浮遊感と余韻をまとう声。",
         "artists": {"female": ["宇多田ヒカル", "MISIA"], "male": ["米津玄師", "藤井風"]}},
     ("head", "power", "clear"): {
-        "id": "husky", "name": "Husky Singer", "emoji": "💎",
+        "id": "crystal", "name": "Crystal Voice", "emoji": "💎",
         "desc": "高く抜ける裏声成分に芯がある、きらびやかな声。",
         "artists": {"female": ["西野カナ", "ACAね(ずとまよ)"], "male": ["藤原聡(髭男)", "Taka(ONE OK ROCK)"]}},
     ("head", "power", "deep"): {
-        "id": "dramatic", "name": "Dramatic Singer", "emoji": "🎭",
+        "id": "dramatic", "name": "Dramatic Voice", "emoji": "🎭",
         "desc": "裏声成分に情感と伸びがある、切なく響くドラマチックな声。",
         "artists": {"female": ["Aimer", "ヨルシカ(suis)"], "male": ["星野源", "菅田将暉"]}},
     ("head", "airy", "clear"): {
-        "id": "whisper", "name": "Whisper Singer", "emoji": "🍃",
+        "id": "whisper", "name": "Whisper Voice", "emoji": "🍃",
         "desc": "やわらかく透明な裏声成分。そっと寄り添う軽やかな声。",
         "artists": {"female": ["幾田りら", "miwa"], "male": ["小田和正", "三浦大知"]}},
     ("head", "airy", "deep"): {
-        "id": "sexy", "name": "Sexy Singer", "emoji": "🌙",
+        "id": "moody", "name": "Moody Voice", "emoji": "🌙",
         "desc": "息まじりの深い裏声成分。しっとり包み込む大人の声。",
         "artists": {"female": ["Uru", "中島美嘉"], "male": ["平井堅", "秦基博"]}},
 }
