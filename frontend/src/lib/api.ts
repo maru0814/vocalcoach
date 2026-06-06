@@ -36,6 +36,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** ログイン状態の確認。未ログインなら例外（401）。 */
+export async function getMe() {
+  return request<{ user_id: number; email: string }>("/api/v1/auth/me");
+}
+
 export async function register(email: string, password: string) {
   return request<{ user_id: number }>("/api/v1/auth/register", {
     method: "POST",

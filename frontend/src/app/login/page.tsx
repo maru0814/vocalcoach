@@ -27,7 +27,13 @@ export default function LoginPage() {
     try {
       if (mode === "register") await register(email, password);
       await login(email, password);
-      router.push("/coach");
+      // ?next= があればそこへ戻す（例: 声タイプ診断からの登録）。安全のため内部パスのみ許可。
+      let next = "/coach";
+      if (typeof window !== "undefined") {
+        const n = new URLSearchParams(window.location.search).get("next");
+        if (n && n.startsWith("/") && !n.startsWith("//")) next = n;
+      }
+      router.push(next);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       setError(

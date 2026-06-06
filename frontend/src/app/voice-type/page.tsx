@@ -1,12 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Recorder } from "@/components/coach/Recorder";
 import { VoiceTypeBlock, ShareButtons, VTYPE_STYLE } from "@/components/voice/VoiceTypeResult";
 import { VoiceTypeMascot } from "@/components/voice/VoiceTypeMascot";
-import { analyzeVoiceType, VoiceTypeResult } from "@/lib/api";
+import { analyzeVoiceType, getMe, VoiceTypeResult } from "@/lib/api";
 import { BrandWordmark } from "@/components/brand/Brand";
+
+const LOGIN_URL = "/login?next=/voice-type";
 
 // 8タイプの一覧（イントロで「何が分かるか」を見せる）
 const TYPE_GALLERY: { id: string; emoji: string; name: string }[] = [
@@ -29,11 +31,19 @@ export default function VoiceTypePage() {
   const [result, setResult] = useState<VoiceTypeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needLogin, setNeedLogin] = useState(false);
+  // 認証ゲート: 未ログインなら録音させず、登録に誘導する
+  const [auth, setAuth] = useState<"checking" | "in" | "out">("checking");
 
   const recorderRef = useRef<Recorder | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const shareRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    getMe()
+      .then(() => setAuth("in"))
+      .catch(() => setAuth("out"));
+  }, []);
 
   async function runAnalyze(blob: Blob, filename: string) {
     setError(null);
@@ -110,9 +120,9 @@ export default function VoiceTypePage() {
   return (
     <div className="bg-studio min-h-[100dvh] pb-16">
       <header className="mx-auto flex max-w-2xl items-center justify-between p-5">
-        <Link href="/coach"><BrandWordmark size={40} /></Link>
-        <Link href="/coach" className="text-sm font-medium text-slate-500 hover:text-brand-600">
-          ← レッスンへ
+        <Link href={auth === "in" ? "/coach" : "/"}><BrandWordmark size={40} /></Link>
+        <Link href={auth === "in" ? "/coach" : "/"} className="text-sm font-medium text-slate-500 hover:text-brand-600">
+          {auth === "in" ? "← レッスンへ" : "← トップへ"}
         </Link>
       </header>
 
@@ -151,16 +161,26 @@ export default function VoiceTypePage() {
         {/* 診断アクション or 結果 */}
         {!result && (
           <section className="rounded-3xl bg-white/90 p-5 shadow-card">
-            {needLogin ? (
+            {auth === "checking" ? (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-500" />
+                <p className="text-sm font-bold text-slate-600">準備しています…</p>
+              </div>
+            ) : auth === "out" || needLogin ? (
               <div className="space-y-3 text-center">
-                <p className="text-sm font-bold text-slate-700">診断にはログインが必要です</p>
-                <p className="text-xs text-slate-500">無料登録30秒。録音はあなた専用に安全に扱われます。</p>
+                <p className="text-sm font-bold text-slate-700">まずは無料登録（30秒）から🎤</p>
+                <p className="text-xs leading-relaxed text-slate-500">
+                  声タイプ診断は、AIボイストレーナー「ソラ先生」の入口です。
+                  登録すると、診断も・声に合わせた発声レッスンも、ぜんぶ無料。
+                  録音はあなた専用に安全に扱われます。
+                </p>
                 <Link
-                  href="/login"
+                  href={LOGIN_URL}
                   className="inline-flex items-center justify-center rounded-full bg-brand-gradient px-6 py-3 font-bold text-white shadow-soft transition active:scale-95"
                 >
-                  無料で始める →
+                  無料登録して診断する →
                 </Link>
+                <p className="text-[11px] text-slate-400">登録済みの方は、そのまま診断に進めます</p>
               </div>
             ) : loading ? (
               <div className="flex flex-col items-center gap-3 py-6">

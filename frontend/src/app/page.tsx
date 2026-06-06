@@ -200,18 +200,22 @@ export default function HomePage() {
           </div>
         </Reveal>
 
-        {/* 声タイプ診断（集客フック・シェアの入口） */}
+        {/* 声タイプ診断 = AIボイトレの入口（まずはここから） */}
         <Reveal className="mt-20">
           <div className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-fuchsia-50 to-cyan-50 p-8 text-center shadow-card sm:p-12">
-            <span className="inline-flex rounded-full bg-white/85 px-3 py-1 text-xs font-bold text-brand-600">
-              🎤 無料・登録だけ・何度でも
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-3 py-1 text-xs font-bold text-brand-600">
+              <span className="inline-flex"><CoachAvatar size={16} /></span>
+              STEP 1 ・ まずはここから
             </span>
             <h2 className="mt-3 text-2xl font-black text-slate-800 sm:text-4xl">
-              あなたの声は、<span className="text-brand-gradient">どのタイプ？</span>
+              まずは、<span className="text-brand-gradient">声タイプ診断</span>から。
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-slate-600">
-              15秒ほど歌うだけ。AIが発声を解析して、8つの声タイプから診断します。
-              似た声質のアーティストつきで、結果はそのままシェアできます。
+              AIボーカルトレーナー{COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。
+              15秒ほど歌うだけ。似た声質のアーティストつきで、結果はそのままシェアできます。
+            </p>
+            <p className="mx-auto mt-2 max-w-xl text-sm font-bold text-brand-600">
+              診断のあとは、その声に合った発声レッスンへ。だから“いまの自分”から始められます。
             </p>
             <div className="mx-auto mt-8 grid max-w-2xl grid-cols-4 gap-2.5 sm:gap-3">
               {LP_TYPES.map((t) => (
@@ -228,9 +232,9 @@ export default function HomePage() {
               href="/voice-type"
               className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-gradient px-7 py-3.5 font-bold text-white shadow-soft transition hover:scale-[1.02] active:scale-95"
             >
-              声タイプを診断する → <span className="text-sm font-normal text-white/80">無料</span>
+              無料登録して、声タイプ診断 →
             </Link>
-            <p className="mt-3 text-xs text-slate-400">※ 診断には無料登録（30秒）が必要です</p>
+            <p className="mt-3 text-xs text-slate-400">※ 診断・発声レッスンとも、無料登録（30秒）で使えます</p>
           </div>
         </Reveal>
 

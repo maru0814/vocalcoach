@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.deps import get_current_user
 from app.models.user import User
 from app.schemas.auth import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
 from app.security.passwords import hash_password, verify_password
@@ -10,6 +11,12 @@ from app.security.token import create_access_token
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+
+@router.get("/me")
+def me(user: User = Depends(get_current_user)) -> dict:
+    """ログイン状態の確認用。未ログインなら 401。"""
+    return {"user_id": user.id, "email": user.email}
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
