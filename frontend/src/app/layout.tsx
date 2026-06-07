@@ -43,6 +43,9 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+// Cloudflare Web Analytics のビーコントークン（公開値。env未設定なら計測タグを出さない）
+const CF_BEACON_TOKEN = process.env.NEXT_PUBLIC_CF_BEACON_TOKEN;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ja">
@@ -53,6 +56,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&display=swap"
           rel="stylesheet"
         />
+        {CF_BEACON_TOKEN && (
+          // eslint-disable-next-line @next/next/no-sync-scripts
+          <script
+            defer
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={`{"token": "${CF_BEACON_TOKEN}"}`}
+          />
+        )}
       </head>
       <body>{children}</body>
     </html>

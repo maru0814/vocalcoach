@@ -51,6 +51,8 @@ services:
         NEXT_PUBLIC_API_BASE_URL: "https://${DOMAIN}"
         # OG画像の絶対URL生成に使うサイト origin（同一ドメイン）
         NEXT_PUBLIC_SITE_URL: "https://${DOMAIN}"
+        # Cloudflare Web Analytics のビーコントークン（未設定なら計測タグは出ない）
+        NEXT_PUBLIC_CF_BEACON_TOKEN: "${CF_BEACON_TOKEN:-}"
     restart: unless-stopped
 
 volumes:
