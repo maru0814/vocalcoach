@@ -54,14 +54,14 @@ export function VoiceTypeBlock({ vt, score, shareRef }: { vt: any; score: number
 /** Xシェア＋画像保存。診断結果を拡散の入口にする。 */
 export function ShareButtons({ vt, score, shareRef }: { vt: any; score: number; shareRef: any }) {
   if (!vt) return null;
-  // タイプ別の共有ランディング（Xでカード画像＝OGPが出る）。クローラはこのURLのメタを読む。
+  // タイプ別の共有ランディング（Xでカード画像＝OGPが出る）。スコアを ?s= で渡しOGタイトルに反映。
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const shareUrl = `${origin}/voice-type/share/${vt.id}`;
+  const shareUrl = `${origin}/voice-type/share/${vt.id}?s=${score}`;
   const near = [vt.artists?.female?.[0], vt.artists?.male?.[0]].filter(Boolean).join("・");
   const text =
-    `🎤 ソラ先生の発声診断、わたしの声タイプは【${vt.name}${vt.emoji}】でした！\n` +
+    `🎤 わたしの声タイプは【${vt.name}${vt.emoji}】総合${score}点でした！\n` +
     (near ? `声質が近い例：${near}\n` : "") +
-    `あなたの声も無料で診断👉\n#声診断 #ボイトレ #ソラ先生`;
+    `あなたは何タイプ？15秒で診断して、結果を見せ合おう👇\n#声診断 #ボイトレ #ソラ先生`;
   const xUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
   async function saveImage() {
     try {
@@ -78,19 +78,24 @@ export function ShareButtons({ vt, score, shareRef }: { vt: any; score: number; 
     }
   }
   return (
-    <div className="flex gap-2">
-      <a
-        href={xUrl} target="_blank" rel="noreferrer"
-        className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-slate-900 px-3 py-2 text-sm font-bold text-white transition active:scale-95"
-      >
-        𝕏 で結果をシェア
-      </a>
-      <button
-        type="button" onClick={saveImage}
-        className="flex items-center justify-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 transition active:scale-95"
-      >
-        🖼 画像で保存
-      </button>
+    <div className="space-y-1.5">
+      <p className="px-1 text-center text-[11px] font-bold text-slate-500">
+        友達と結果を見せ合うと盛り上がります🎶 シェアして「君は何タイプ？」
+      </p>
+      <div className="flex gap-2">
+        <a
+          href={xUrl} target="_blank" rel="noreferrer"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-slate-900 px-3 py-2 text-sm font-bold text-white transition active:scale-95"
+        >
+          𝕏 で結果をシェア
+        </a>
+        <button
+          type="button" onClick={saveImage}
+          className="flex items-center justify-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 transition active:scale-95"
+        >
+          🖼 画像で保存
+        </button>
+      </div>
     </div>
   );
 }

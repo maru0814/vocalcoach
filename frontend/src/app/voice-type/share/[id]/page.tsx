@@ -2,17 +2,29 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
+import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
 import { VOICE_TYPE_LIST, VOICE_TYPE_META, SITE_URL, VTYPE_STYLE } from "@/components/voice/voiceTypes";
+
+type SP = { [k: string]: string | string[] | undefined };
+function parseScore(searchParams?: SP): number | null {
+  const raw = searchParams?.s;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  return s && /^\d{1,3}$/.test(s) ? Number(s) : null;
+}
 
 // 8タイプ分を静的生成（Xクローラが読む og/twitter メタを各タイプで出す）
 export function generateStaticParams() {
   return VOICE_TYPE_LIST.map((t) => ({ id: t.id }));
 }
 
-export function generateMetadata({ params }: { params: { id: string } }): Metadata {
+export function generateMetadata(
+  { params, searchParams }: { params: { id: string }; searchParams?: SP },
+): Metadata {
   const m = VOICE_TYPE_META[params.id];
   if (!m) return {};
-  const title = `あなたの声タイプは【${m.name}${m.emoji}】`;
+  const score = parseScore(searchParams);
+  const scoreSuffix = score != null ? ` 総合${score}点` : "";
+  const title = `あなたの声タイプは【${m.name}${m.emoji}】${scoreSuffix}`;
   const description = `${m.desc} あなたの声も15秒歌うだけで無料診断🎤`;
   const path = `/voice-type/share/${params.id}`;
   const ogImage = `/voice-types/og/${params.id}.jpg`;
@@ -39,10 +51,13 @@ export function generateMetadata({ params }: { params: { id: string } }): Metada
   };
 }
 
-export default function VoiceTypeShareLanding({ params }: { params: { id: string } }) {
+export default function VoiceTypeShareLanding(
+  { params, searchParams }: { params: { id: string }; searchParams?: SP },
+) {
   const m = VOICE_TYPE_META[params.id];
   if (!m) notFound();
   const grad = VTYPE_STYLE[params.id] || "from-brand-500 to-pink-500";
+  const score = parseScore(searchParams);
 
   return (
     <div className="bg-studio min-h-[100dvh] pb-16">
@@ -55,7 +70,12 @@ export default function VoiceTypeShareLanding({ params }: { params: { id: string
             </div>
           </div>
           <div className="p-5">
-            <div className="text-2xl font-black">{m.name} {m.emoji}</div>
+            <div className="flex items-center gap-2">
+              <div className="text-2xl font-black">{m.name} {m.emoji}</div>
+              {score != null && (
+                <span className="ml-auto text-right text-xs text-white/85">総合<br /><b className="text-lg">{score}</b></span>
+              )}
+            </div>
             <p className="mt-1.5 text-sm font-medium leading-relaxed text-white/95">{m.desc}</p>
           </div>
         </div>
@@ -80,6 +100,7 @@ export default function VoiceTypeShareLanding({ params }: { params: { id: string
             無料で自分の声タイプを診断する →
           </Link>
           <p className="mt-3 text-xs text-slate-400">※ 診断・発声レッスンとも、無料登録（30秒）で使えます</p>
+          <VoiceTypeStats className="mt-3" />
         </div>
       </main>
     </div>

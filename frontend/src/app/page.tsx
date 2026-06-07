@@ -5,6 +5,7 @@ import { AnimatedDemo } from "@/components/site/AnimatedDemo";
 import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
+import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
 
 const STATS = [
   { value: "4軸", label: "音程・リズム・表現・総合をAI解析" },
@@ -223,6 +224,7 @@ export default function HomePage() {
               無料登録して、声タイプ診断 →
             </Link>
             <p className="mt-3 text-xs text-slate-400">※ 診断・発声レッスンとも、無料登録（30秒）で使えます</p>
+            <VoiceTypeStats className="mt-3" />
           </div>
         </Reveal>
 
