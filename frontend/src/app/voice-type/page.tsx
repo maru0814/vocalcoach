@@ -6,6 +6,7 @@ import { Recorder } from "@/components/coach/Recorder";
 import { VoiceTypeBlock, ShareButtons } from "@/components/voice/VoiceTypeResult";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
+import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
 import { analyzeVoiceType, getMe, VoiceTypeResult } from "@/lib/api";
 import { BrandWordmark } from "@/components/brand/Brand";
 
@@ -132,6 +133,8 @@ export default function VoiceTypePage() {
         </section>
 
         {/* 8タイプギャラリー */}
+        <VoiceTypeStats />
+
         <section className="rounded-3xl bg-white/85 p-4 shadow-card">
           <div className="px-1 text-xs font-bold text-slate-500">あなたはどれ？ — 8つの声タイプ</div>
           <div className="mt-3 grid grid-cols-4 gap-2">

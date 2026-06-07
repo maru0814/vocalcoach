@@ -8,6 +8,7 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints.coach import ALLOWED_EXT, _looks_like_singing
@@ -18,9 +19,14 @@ from app.core.config import settings
 from app.core.ratelimit import check_rate_limit
 from app.db.session import get_db
 from app.deps import get_current_user
+from app.models.voice_type import VoiceTypeDiagnosis
 from app.storage.files import ensure_dir
 
 router = APIRouter(prefix="/api/v1/voice-type", tags=["voice-type"])
+
+# id→表示名 と 表示順（VOICE_TYPES と一致）
+_TYPE_NAMES = {v["id"]: v["name"] for v in voice_coach.VOICE_TYPES.values()}
+_TYPE_ORDER = [v["id"] for v in voice_coach.VOICE_TYPES.values()]
 
 
 @router.post("/analyze")
@@ -104,9 +110,16 @@ def analyze_voice_type(
             )
 
         scores = scoring.voice_scores(analysis, None)
+        total = scores.get("total_score")
+        # 社会的証明（累計・分布）用に診断イベントを記録。best-effort（失敗しても診断は返す）。
+        try:
+            db.add(VoiceTypeDiagnosis(type_id=vt.get("id", ""), score=total))
+            db.commit()
+        except Exception:
+            db.rollback()
         return {
             "voice_type": vt,
-            "score": scores.get("total_score"),
+            "score": total,
             "scores": scores,
             "duration_sec": round(float(analysis.get("duration_sec") or 0.0), 1),
         }
@@ -117,3 +130,30 @@ def analyze_voice_type(
                     os.remove(p)
             except OSError:
                 pass
+
+
+@router.get("/stats")
+def voice_type_stats(db: Session = Depends(get_db)) -> dict:
+    """社会的証明用の集計（公開・認証不要）。累計件数とタイプ別分布を返す。"""
+    counts = dict(
+        db.query(VoiceTypeDiagnosis.type_id, func.count())
+        .group_by(VoiceTypeDiagnosis.type_id)
+        .all()
+    )
+    total = sum(int(c) for c in counts.values())
+    distribution = []
+    for tid in _TYPE_ORDER:
+        c = int(counts.get(tid, 0))
+        distribution.append({
+            "id": tid,
+            "name": _TYPE_NAMES.get(tid, tid),
+            "count": c,
+            "pct": round(c * 100 / total, 1) if total else 0.0,
+        })
+    top = max(distribution, key=lambda d: d["count"]) if total else None
+    return {
+        "total": total,
+        "distribution": distribution,
+        "top": {"id": top["id"], "name": top["name"], "count": top["count"]}
+        if top and top["count"] > 0 else None,
+    }
