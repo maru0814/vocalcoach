@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 .venv/
+# 実行時データ（投稿ID・メトリクスのログ）
+*.jsonl

@@ -11,8 +11,12 @@
   APP_URL=https://...       … 誘導先（未設定なら本番URL）
   GEMINI_API_KEY=...        … あれば文面をAI生成（無くてもテンプレで動く）
   X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_SECRET … X投稿用（OAuth1.0a）
+  POST_LINK=0               … 1で自己リプにURLを付与。URL投稿は$0.20と高い＆reach減のため既定OFF
+  MAX_POSTS_PER_DAY=1       … 1日の投稿上限（予算ガード）
+  MONTHLY_COST_CAP_USD=12   … 月間概算コスト上限（超えたら投稿停止）
 
-本文に外部リンクは入れず、リンクは“自己リプ”に貼る（docs/25 の研究に基づく）。
+コスト方針(docs/29): 本文/リプにURLを入れない（$0.20回避＆reach優先）。リンクはプロフィール固定で誘導。
+投稿IDは posts_log.jsonl に記録し、fetch_metrics.py でインプレを取得して改善に回す。
 
 使い方:
   python generate_and_post.py                    # 今日の型で1件
@@ -21,6 +25,7 @@
 """
 import argparse
 import datetime
+import json
 import os
 import sys
 
@@ -32,9 +37,55 @@ try:
 except Exception:
     pass
 
+_DIR = os.path.dirname(os.path.abspath(__file__))
+POSTS_LOG = os.path.join(_DIR, "posts_log.jsonl")  # 投稿ID・型の記録（計測/予算用）
+
+# X API 概算単価（2026。URL投稿は高い→既定で避ける）
+COST_POST = 0.015      # URLなし投稿 $/件
+COST_POST_URL = 0.20   # URLあり投稿 $/件（自己リプにリンクを貼る場合も該当）
+
 
 def _truthy(v: str | None) -> bool:
     return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _read_jsonl(path: str) -> list:
+    rows = []
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        rows.append(json.loads(line))
+                    except Exception:
+                        pass
+    return rows
+
+
+def _log_post(tweet_id: str, pillar: str, had_link: bool) -> None:
+    rec = {"tweet_id": tweet_id, "pillar": pillar, "link": bool(had_link),
+           "ts": datetime.datetime.now().isoformat(timespec="seconds")}
+    with open(POSTS_LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def _budget_check(post_has_link: bool) -> tuple[bool, str]:
+    """1日の投稿上限・月間概算コスト上限を超えていないか。超過なら投稿しない。"""
+    posts = _read_jsonl(POSTS_LOG)
+    today = datetime.date.today().isoformat()
+    month = today[:7]
+    todays = [p for p in posts if str(p.get("ts", "")).startswith(today)]
+    months = [p for p in posts if str(p.get("ts", "")).startswith(month)]
+    max_per_day = int(os.getenv("MAX_POSTS_PER_DAY", "1"))
+    if len(todays) >= max_per_day:
+        return False, f"本日の投稿上限({max_per_day}件)に到達"
+    spent = sum(COST_POST_URL if p.get("link") else COST_POST for p in months)
+    after = spent + (COST_POST_URL if post_has_link else COST_POST)
+    cap = float(os.getenv("MONTHLY_COST_CAP_USD", "12"))
+    if after > cap:
+        return False, f"月間概算コスト上限(${cap})に到達（今月概算${spent:.2f}）"
+    return True, f"今月{len(months)}件/概算${spent:.2f}→投稿後${after:.2f}（上限${cap}）"
 
 
 def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
@@ -74,26 +125,26 @@ def _x_session():
     )
 
 
-def post_to_x(text: str, link: str | None) -> tuple[bool, str]:
-    """本文を投稿し、link があれば“自己リプ”として貼る（本文リンクのリーチ減を回避）。"""
+def post_to_x(text: str, link: str | None, post_link: bool) -> tuple[bool, str, str]:
+    """本文を投稿。post_link=True かつ link がある時だけ自己リプにURLを貼る（$0.20課金なので既定OFF）。
+    returns (ok, tweet_id, info)。"""
     oauth = _x_session()
     if oauth is None:
-        return False, "X_KEYS_MISSING"
+        return False, "", "X_KEYS_MISSING"
     try:
         r = oauth.post("https://api.twitter.com/2/tweets", json={"text": text}, timeout=20)
         if r.status_code not in (200, 201):
-            return False, f"HTTP {r.status_code}: {r.text[:200]}"
+            return False, "", f"HTTP {r.status_code}: {r.text[:200]}"
         tweet_id = str(r.json().get("data", {}).get("id", ""))
-        # 自己リプにリンク（研究: 本文リンクはリーチ50-90%減 → リプに置く）
-        if link and tweet_id:
+        info = "ok"
+        if post_link and link and tweet_id:
             reply = {"text": f"▼ ここから無料で診断できます🎤\n{link}",
                      "reply": {"in_reply_to_tweet_id": tweet_id}}
             rr = oauth.post("https://api.twitter.com/2/tweets", json=reply, timeout=20)
-            if rr.status_code not in (200, 201):
-                return True, f"{tweet_id} (本文OK / リプ失敗 HTTP {rr.status_code})"
-        return True, tweet_id or "ok"
+            info = "link付" if rr.status_code in (200, 201) else f"本文OK/リプ失敗 {rr.status_code}"
+        return True, tweet_id or "ok", info
     except Exception as e:
-        return False, f"EXC: {e}"
+        return False, "", f"EXC: {e}"
 
 
 def main() -> int:
@@ -111,12 +162,14 @@ def main() -> int:
 
     post = generate_post(pillar, day_index, app_url)
     text, link = post["text"], post.get("link")
+    # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
+    post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
 
     print("─" * 48)
     print(f"[{today}] pillar={pillar}")
     print(text)
     if link:
-        print(f"\n[自己リプに貼るリンク] {link}")
+        print(f"\n[リンク] {link}  (POST_LINK={'ON→リプに付与' if post_link else 'OFF→プロフィール固定で誘導'})")
     print("─" * 48)
 
     dry = args.dry_run or _truthy(os.getenv("DRY_RUN", "1"))  # 既定は安全側でドライラン
@@ -124,9 +177,15 @@ def main() -> int:
         print("DRY_RUN: 投稿はしていません（DRY_RUN=0 とXキー設定で実投稿）。")
         return 0
 
-    ok, info = post_to_x(text, link)
+    ok_budget, why = _budget_check(post_has_link=post_link)
+    if not ok_budget:
+        print(f"⏸ 予算/上限ガードで停止: {why}")
+        return 0
+
+    ok, tweet_id, info = post_to_x(text, link, post_link)
     if ok:
-        print(f"✅ 投稿しました: {info}")
+        _log_post(tweet_id, pillar, post_link)
+        print(f"✅ 投稿しました: id={tweet_id} ({info})  [{why}]")
         return 0
     print(f"❌ 投稿に失敗: {info}", file=sys.stderr)
     return 1

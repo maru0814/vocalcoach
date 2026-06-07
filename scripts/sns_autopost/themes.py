@@ -69,16 +69,16 @@ def template_post(pillar: str, day_index: int, app_url: str) -> dict:
     if pillar == "self_type":
         types = " / ".join(f"{e}{n}" for n, e, _ in VOICE_TYPES)
         return {"text": ("あなたの歌声、実はこの8タイプのどれかです。\n\n"
-                         f"{types}\n\n直感でどれっぽい？（答え合わせは下のリプに🔽）"),
+                         f"{types}\n\n直感でどれっぽい？（プロフィールから無料で診断できます🎤）"),
                 "link": _diagnose_link(app_url)}
     if pillar == "voice_type":
         n, e, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
         return {"text": (f"【声タイプ図鑑】{n} {e}\n{d}。\n\n"
-                         "あなたはどのタイプ？答えは下のリプから🔽"),
+                         "あなたは何タイプ？プロフィールのリンクから診断できます🎤"),
                 "link": _diagnose_link(app_url)}
     if pillar == "tip":
         tip = TIPS[day_index % len(TIPS)]
-        return {"text": f"🎵 今日の発声メモ\n\n{tip}\n\n（録音を送るとAIが直す所を教えてくれます・下に🔽）",
+        return {"text": f"🎵 今日の発声メモ\n\n{tip}\n\n（録音を送るとAIが弱点を解析＆添削。プロフィールから🎤）",
                 "link": app_url}
     if pillar == "contrarian":
         hook, body = CONTRARIAN[day_index % len(CONTRARIAN)]
@@ -91,7 +91,7 @@ def template_post(pillar: str, day_index: int, app_url: str) -> dict:
     if pillar == "visual":
         return {"text": ("あなたの声は、どのタイプ？🎤\n\n"
                          "15秒歌うだけで、AIが8タイプ＋似た声質の歌手まで診断。\n"
-                         "結果はそのままシェアできます。\n\n（やってみる→リプから🔽）"),
+                         "結果はそのままシェアできます。\n\n（プロフィールのリンクから無料で🎤）"),
                 "link": _diagnose_link(app_url)}
     # empathy（既定）: リンクなしの共感ポスト
     return {"text": EMPATHY[day_index % len(EMPATHY)], "link": None}
@@ -107,7 +107,7 @@ def gemini_prompt(pillar: str, day_index: int, app_url: str) -> str:
         "- 1行目で必ず読み手を止めるフック（断定/数字/共感/呼びかけ）。\n"
         "- 改行を使って読みやすく。1投稿1メッセージ。\n"
         "- 効果を誇張しない（『プロになれる』等NG）。\n"
-        "- **本文にURLやリンクを絶対に入れない**（リンクは別途リプで貼るため）。\n"
+        "- **本文にURLやリンクを絶対に入れない**（リンクはプロフィール固定で誘導／reach減＆課金回避のため）。\n"
         "- ハッシュタグは付けても2個まで。絵文字は1〜3個。\n"
         "下敷き（この主旨・トーンを保ち、より自然で人を惹きつける文に）:\n"
         f"{base}\n"

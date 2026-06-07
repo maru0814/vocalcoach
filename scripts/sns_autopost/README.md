@@ -2,11 +2,13 @@
 
 毎日1回、自動でXに投稿する最小ツール。**Geminiが無くてもテンプレで動く**／**キーが無ければ本文表示だけ（安全）**。
 
-## できること / できないこと（正直に）
-- ✅ **X（旧Twitter）への自動投稿**: 公式API v2を使う。**※2026年2月より新規は無料枠が廃止＝従量課金（約$0.01/投稿）。** 1日1〜2投稿なら月¥100前後だが、課金設定が必要（[console.x.com](https://console.x.com)）。低コストだが“ゼロ円”ではない点に注意。
-- ✅ **文面の自動生成**: 既存の `GEMINI_API_KEY` で、診断誘導/発声Tips/声タイプ紹介を日替わり生成。失敗時はテンプレに自動フォールバック。
-- ⚠️ **Instagram / TikTok の完全自動投稿**: 個人運用ではAPI制限が厳しく非推奨。Buffer等のスケジューラ、または「下書き生成→手動投稿」の半自動が現実的。
-- ⚠️ note: 公式投稿APIなし。記事の下書き生成までが自動化の限界。
+## できること / 料金（正直に。詳細 docs/29）
+- ✅ **Xへの自動投稿**（従量課金）。**2026年の単価: URLなし投稿 $0.015／URLあり投稿 $0.20／自分の投稿の読取 $0.001**。月額下限なし。
+- ✅ **インプレ計測**: `fetch_metrics.py` が投稿のインプレ/エンゲージを取得→型別に集計→**勝ち型に寄せる**。
+- ✅ 文面の自動生成（Gemini。無くてもテンプレ）。
+- 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日1投稿（`MAX_POSTS_PER_DAY=1`）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥300前後。
+- 🚀 **X Premium（Web版が安い）** に入るとインプレ約6倍。これが最大の費用対効果（docs/29）。
+- ⚠️ Instagram/TikTok の完全自動投稿は制限が厳しく非推奨（半自動）。
 
 ## セットアップ（5分）
 ```bash
@@ -39,16 +41,31 @@ python generate_and_post.py --pillar visual      # ビジュアル誘導
 DRY_RUN=0 python generate_and_post.py
 ```
 
-> **リンクは本文に入れず“自己リプ”に貼ります**（docs/25 の研究：本文リンクはリーチ50–90%減）。
+> **本文にもリプにもURLを入れない**のが既定（`POST_LINK=0`）。リンクは**プロフィール固定**で誘導（reach減＆$0.20課金を回避）。
 > empathy / question はリンクなしの純粋な会話狙い。**自動は種まき、初速の点火は手動リプで**。
 
-## 自動化（VPSのcronで毎日投稿）
-本番VPS（`/opt/vocalcoach`）にこのフォルダごと置き、毎朝9時に投稿する例:
+## インプレ計測（改善ループ）
 ```bash
-# crontab -e
-0 9 * * * cd /opt/vocalcoach/scripts/sns_autopost && /opt/vocalcoach/scripts/sns_autopost/.venv/bin/python generate_and_post.py >> /var/log/sns_autopost.log 2>&1
+python fetch_metrics.py            # 直近投稿のインプレ/エンゲージ取得＋型別サマリ
 ```
-曜日ごとの型は `themes.py` の `PILLARS` で調整（既定: 月=自己分類 / 火=Tips / 水=声タイプ図鑑 / 木=共感 / 金=逆張り / 土=問いかけ / 日=ビジュアル。docs/25 のカレンダー準拠）。
+- 投稿IDは `posts_log.jsonl`、メトリクスは `metrics_log.jsonl` に記録（Git除外）。
+- 出力の「平均imp / eng率」が高い型を `themes.py` の `PILLARS` で増やす。
+
+## 自動化（VPSのcron。夜20–22時が最良）
+```bash
+# crontab -e（JST）
+# 毎晩21時に1投稿（質>量）
+0 21 * * * cd /opt/vocalcoach/scripts/sns_autopost && ./.venv/bin/python generate_and_post.py >> /var/log/sns_autopost.log 2>&1
+# 毎日23時にインプレ計測
+0 23 * * * cd /opt/vocalcoach/scripts/sns_autopost && ./.venv/bin/python fetch_metrics.py >> /var/log/sns_metrics.log 2>&1
+```
+曜日ごとの型は `themes.py` の `PILLARS`（月=自己分類/火=Tips/水=声タイプ図鑑/木=共感/金=逆張り/土=問いかけ/日=ビジュアル）。
+
+## 安全装置 / 予算ガード
+- `DRY_RUN` 既定=1（うっかり投稿しない）。
+- `POST_LINK=0`（URL投稿しない＝$0.20回避）／`MAX_POSTS_PER_DAY`／`MONTHLY_COST_CAP_USD` で**月額を物理的に制限**。
+- 本文にURLが混入した生成文はテンプレに自動差し替え。
+- キーは `.env`（Git除外）。**チャットやコミットに貼らない**。
 
 ## 安全装置
 - `DRY_RUN` 既定=1（うっかり投稿しない）。実運用で 0 にする。
