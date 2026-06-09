@@ -25,7 +25,16 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      if (mode === "register") await register(email, password);
+      if (mode === "register") {
+        try {
+          await register(email, password);
+        } catch (regErr) {
+          // 新規フォームで既存メールが入力されたら、そのままログインを試す
+          // （既存ユーザーが「ログインしようとして登録済みエラー」になる問題を解消）。
+          const m = regErr instanceof Error ? regErr.message : "";
+          if (!/registered|already/i.test(m)) throw regErr;
+        }
+      }
       await login(email, password);
       // ?next= があればそこへ戻す（例: 声タイプ診断からの登録）。安全のため内部パスのみ許可。
       let next = "/coach";
@@ -37,9 +46,8 @@ export default function LoginPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       setError(
-        mode === "register"
-          ? "登録できませんでした。すでに登録済みのメールかもしれません。"
-          : "ログインに失敗しました。メール・パスワードをご確認ください。",
+        "メールアドレスとパスワードをご確認ください。" +
+          "（このメールが登録済みの場合は、そのまま正しいパスワードでログインできます）",
       );
       void msg;
     } finally {
