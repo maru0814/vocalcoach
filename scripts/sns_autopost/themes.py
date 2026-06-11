@@ -49,6 +49,7 @@ EMPATHY = [
 ]
 
 # 投稿の柱（曜日 → 型）。docs/25 §5 のカレンダーに準拠。
+# slot1（昼枠）＝診断導線・情報提供を中心に。
 PILLARS = [
     "self_type",   # 月: 自己分類フック（診断誘導）
     "tip",         # 火: 番号付きTips
@@ -58,6 +59,25 @@ PILLARS = [
     "question",    # 土: 問いかけ
     "visual",      # 日: ビジュアル（結果カード誘導）
 ]
+
+# slot2（夜枠＝20–22時のゴールデン）の柱。docs/29 §3「リプ至上主義」に沿い、
+# 会話・共感型（question / empathy / contrarian）を厚めに配置してリプを最大化する。
+# 各曜日とも slot1 と必ず別の型にして、同日2本が同内容にならないようにする。
+PILLARS_2ND = [
+    "empathy",     # 月夜: 共感（self_typeの後にリプを取りにいく）
+    "question",    # 火夜: 問いかけ
+    "empathy",     # 水夜: 共感
+    "question",    # 木夜: 問いかけ（昼の共感と対）
+    "empathy",     # 金夜: 共感（逆張りのあとに和らげる）
+    "contrarian",  # 土夜: 逆張り（昼の問いかけと対）
+    "question",    # 日夜: 問いかけ
+]
+
+
+def pillar_for(weekday: int, slot: int) -> str:
+    """曜日(0=月)とスロット(1=昼/2=夜)から投稿の型を返す。"""
+    table = PILLARS_2ND if slot == 2 else PILLARS
+    return table[weekday % 7]
 
 
 def _diagnose_link(app_url: str) -> str:
