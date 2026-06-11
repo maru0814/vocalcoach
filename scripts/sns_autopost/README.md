@@ -39,6 +39,9 @@ python generate_and_post.py --pillar visual      # ビジュアル誘導
 
 # 実投稿（.env で DRY_RUN=0 かつ Xキー設定済み）
 DRY_RUN=0 python generate_and_post.py
+
+# 手動で追加投稿（自動の1日2本に加えてもう1本。日次上限を無視＝月間コスト上限は維持）
+DRY_RUN=0 python generate_and_post.py --pillar tip --force
 ```
 
 > **本文にもリプにもURLを入れない**のが既定（`POST_LINK=0`）。リンクは**プロフィール固定**で誘導（reach減＆$0.20課金を回避）。
@@ -68,6 +71,7 @@ python fetch_metrics.py            # 直近投稿のインプレ/エンゲージ
 ## 安全装置 / 予算ガード
 - `DRY_RUN` 既定=1（うっかり投稿しない）。
 - `POST_LINK=0`（URL投稿しない＝$0.20回避）／`MAX_POSTS_PER_DAY`／`MONTHLY_COST_CAP_USD` で**月額を物理的に制限**。
+- `--force` は手動投稿用に**日次上限のみ**を無視する（cronの自動投稿には付けない）。`MONTHLY_COST_CAP_USD` の月間上限は `--force` でも常に有効＝本当の安全弁は維持。
 - 本文にURLが混入した生成文はテンプレに自動差し替え。
 - キーは `.env`（Git除外）。**チャットやコミットに貼らない**。
 

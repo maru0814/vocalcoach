@@ -23,6 +23,7 @@
   python generate_and_post.py                    # 今日の昼枠(slot1)の型で1件
   python generate_and_post.py --slot 2           # 今日の夜枠(slot2)の型で1件
   python generate_and_post.py --pillar self_type # 型を指定（self_type/tip/voice_type/empathy/contrarian/question/visual）
+  python generate_and_post.py --pillar tip --force # 手動で追加投稿（日次上限を無視。月間コスト上限は維持）
   python generate_and_post.py --dry-run          # 強制ドライラン
 """
 import argparse
@@ -72,15 +73,16 @@ def _log_post(tweet_id: str, pillar: str, had_link: bool) -> None:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def _budget_check(post_has_link: bool) -> tuple[bool, str]:
-    """1日の投稿上限・月間概算コスト上限を超えていないか。超過なら投稿しない。"""
+def _budget_check(post_has_link: bool, force: bool = False) -> tuple[bool, str]:
+    """1日の投稿上限・月間概算コスト上限を超えていないか。超過なら投稿しない。
+    force=True（手動 --force）のときは日次上限のみ無視する。月間コスト上限は安全弁として常に有効。"""
     posts = _read_jsonl(POSTS_LOG)
     today = datetime.date.today().isoformat()
     month = today[:7]
     todays = [p for p in posts if str(p.get("ts", "")).startswith(today)]
     months = [p for p in posts if str(p.get("ts", "")).startswith(month)]
     max_per_day = int(os.getenv("MAX_POSTS_PER_DAY", "1"))
-    if len(todays) >= max_per_day:
+    if not force and len(todays) >= max_per_day:
         return False, f"本日の投稿上限({max_per_day}件)に到達"
     spent = sum(COST_POST_URL if p.get("link") else COST_POST for p in months)
     after = spent + (COST_POST_URL if post_has_link else COST_POST)
@@ -156,6 +158,8 @@ def main() -> int:
                     help="投稿の型を指定")
     ap.add_argument("--slot", type=int, choices=[1, 2], default=None,
                     help="1=昼枠（既定）/2=夜枠。1日2投稿時に別の型を出すために使う")
+    ap.add_argument("--force", action="store_true",
+                    help="手動投稿用。1日の投稿上限を無視して追加投稿する（月間コスト上限は維持）")
     ap.add_argument("--dry-run", action="store_true", help="投稿せず本文だけ表示")
     args = ap.parse_args()
 
@@ -182,7 +186,9 @@ def main() -> int:
         print("DRY_RUN: 投稿はしていません（DRY_RUN=0 とXキー設定で実投稿）。")
         return 0
 
-    ok_budget, why = _budget_check(post_has_link=post_link)
+    ok_budget, why = _budget_check(post_has_link=post_link, force=args.force)
+    if args.force:
+        print("⚠ --force: 本日の投稿上限を無視して投稿します（月間コスト上限は維持）。")
     if not ok_budget:
         print(f"⏸ 予算/上限ガードで停止: {why}")
         return 0
