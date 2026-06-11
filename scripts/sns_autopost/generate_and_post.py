@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """ソラ先生 SNS自動投稿（X / 旧Twitter）。
 
-毎日1回 cron で実行する想定。
-  1) 曜日に応じて投稿の柱（診断誘導 / Tips / 声タイプ紹介）を選ぶ
+1日2回（昼=slot1 / 夜=slot2）cron で実行する想定。
+  1) 曜日とスロットに応じて投稿の柱（診断誘導 / Tips / 声タイプ紹介 / 会話）を選ぶ
   2) Gemini で投稿文を生成（失敗・未設定ならテンプレートを使用）
   3) X API v2 に投稿（キー未設定 or DRY_RUN=1 なら本文を表示して終了）
 
@@ -12,14 +12,16 @@
   GEMINI_API_KEY=...        … あれば文面をAI生成（無くてもテンプレで動く）
   X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_SECRET … X投稿用（OAuth1.0a）
   POST_LINK=0               … 1で自己リプにURLを付与。URL投稿は$0.20と高い＆reach減のため既定OFF
-  MAX_POSTS_PER_DAY=1       … 1日の投稿上限（予算ガード）
+  POST_SLOT=1               … 1=昼枠/2=夜枠。1日2投稿で別の型を出すため（--slot でも指定可）
+  MAX_POSTS_PER_DAY=2       … 1日の投稿上限（予算ガード）
   MONTHLY_COST_CAP_USD=12   … 月間概算コスト上限（超えたら投稿停止）
 
 コスト方針(docs/29): 本文/リプにURLを入れない（$0.20回避＆reach優先）。リンクはプロフィール固定で誘導。
 投稿IDは posts_log.jsonl に記録し、fetch_metrics.py でインプレを取得して改善に回す。
 
 使い方:
-  python generate_and_post.py                    # 今日の型で1件
+  python generate_and_post.py                    # 今日の昼枠(slot1)の型で1件
+  python generate_and_post.py --slot 2           # 今日の夜枠(slot2)の型で1件
   python generate_and_post.py --pillar self_type # 型を指定（self_type/tip/voice_type/empathy/contrarian/question/visual）
   python generate_and_post.py --dry-run          # 強制ドライラン
 """
@@ -152,13 +154,16 @@ def main() -> int:
     ap.add_argument("--pillar",
                     choices=["self_type", "tip", "voice_type", "empathy", "contrarian", "question", "visual"],
                     help="投稿の型を指定")
+    ap.add_argument("--slot", type=int, choices=[1, 2], default=None,
+                    help="1=昼枠（既定）/2=夜枠。1日2投稿時に別の型を出すために使う")
     ap.add_argument("--dry-run", action="store_true", help="投稿せず本文だけ表示")
     args = ap.parse_args()
 
     app_url = os.getenv("APP_URL", themes.APP_URL_DEFAULT).rstrip("/")
     today = datetime.date.today()
     day_index = today.toordinal()
-    pillar = args.pillar or themes.PILLARS[today.weekday()]
+    slot = args.slot or int(os.getenv("POST_SLOT", "1"))
+    pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
 
     post = generate_post(pillar, day_index, app_url)
     text, link = post["text"], post.get("link")
@@ -166,7 +171,7 @@ def main() -> int:
     post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
 
     print("─" * 48)
-    print(f"[{today}] pillar={pillar}")
+    print(f"[{today}] slot={slot} pillar={pillar}")
     print(text)
     if link:
         print(f"\n[リンク] {link}  (POST_LINK={'ON→リプに付与' if post_link else 'OFF→プロフィール固定で誘導'})")

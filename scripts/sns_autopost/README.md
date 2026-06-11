@@ -1,12 +1,12 @@
 # ソラ先生 SNS自動投稿（X / 旧Twitter）
 
-毎日1回、自動でXに投稿する最小ツール。**Geminiが無くてもテンプレで動く**／**キーが無ければ本文表示だけ（安全）**。
+1日2回（昼・夜）、自動でXに投稿する最小ツール。**Geminiが無くてもテンプレで動く**／**キーが無ければ本文表示だけ（安全）**。
 
 ## できること / 料金（正直に。詳細 docs/29）
 - ✅ **Xへの自動投稿**（従量課金）。**2026年の単価: URLなし投稿 $0.015／URLあり投稿 $0.20／自分の投稿の読取 $0.001**。月額下限なし。
 - ✅ **インプレ計測**: `fetch_metrics.py` が投稿のインプレ/エンゲージを取得→型別に集計→**勝ち型に寄せる**。
 - ✅ 文面の自動生成（Gemini。無くてもテンプレ）。
-- 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日1投稿（`MAX_POSTS_PER_DAY=1`）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥300前後。
+- 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日2投稿（`MAX_POSTS_PER_DAY=2`）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥450前後（投稿60件＋計測）。
 - 🚀 **X Premium（Web版が安い）** に入るとインプレ約6倍。これが最大の費用対効果（docs/29）。
 - ⚠️ Instagram/TikTok の完全自動投稿は制限が厳しく非推奨（半自動）。
 
@@ -54,12 +54,16 @@ python fetch_metrics.py            # 直近投稿のインプレ/エンゲージ
 ## 自動化（VPSのcron。夜20–22時が最良）
 ```bash
 # crontab -e（JST）
-# 毎晩21時に1投稿（質>量）
-0 21 * * * cd /opt/vocalcoach/scripts/sns_autopost && ./.venv/bin/python generate_and_post.py >> /var/log/sns_autopost.log 2>&1
+# 昼12時に1本目（slot1=情報/診断導線）
+0 12 * * * cd /opt/vocalcoach/scripts/sns_autopost && ./.venv/bin/python generate_and_post.py --slot 1 >> /var/log/sns_autopost.log 2>&1
+# 夜21時に2本目（slot2=会話/リプ型。ゴールデンタイム）
+0 21 * * * cd /opt/vocalcoach/scripts/sns_autopost && ./.venv/bin/python generate_and_post.py --slot 2 >> /var/log/sns_autopost.log 2>&1
 # 毎日23時にインプレ計測
 0 23 * * * cd /opt/vocalcoach/scripts/sns_autopost && ./.venv/bin/python fetch_metrics.py >> /var/log/sns_metrics.log 2>&1
 ```
-曜日ごとの型は `themes.py` の `PILLARS`（月=自己分類/火=Tips/水=声タイプ図鑑/木=共感/金=逆張り/土=問いかけ/日=ビジュアル）。
+- 昼枠(slot1)の型は `themes.py` の `PILLARS`（月=自己分類/火=Tips/水=声タイプ図鑑/木=共感/金=逆張り/土=問いかけ/日=ビジュアル）。
+- 夜枠(slot2)は `PILLARS_2ND`（会話・共感型を厚め＝docs/29 §3 リプ至上主義）。同日の昼とは必ず別の型になる。
+- 1日2投稿なので `.env` の `MAX_POSTS_PER_DAY=2` を忘れず設定する。
 
 ## 安全装置 / 予算ガード
 - `DRY_RUN` 既定=1（うっかり投稿しない）。
