@@ -80,10 +80,20 @@ def create_portal_session(db: Session, user: User) -> str:
 
 _HANDLED = {
     "checkout.session.completed",
+    "customer.subscription.created",
     "customer.subscription.updated",
     "customer.subscription.deleted",
     "invoice.payment_failed",
 }
+
+
+def _extract_period_end(sub_obj: dict) -> int | None:
+    """current_period_end を取得。新API版(2026-04-22 dahlia〜)は items 配下に移動したため両対応。"""
+    if sub_obj.get("current_period_end"):
+        return sub_obj["current_period_end"]
+    items = (sub_obj.get("items") or {}).get("data") or []
+    ends = [it["current_period_end"] for it in items if it.get("current_period_end")]
+    return max(ends) if ends else None
 
 
 def parse_event(payload: bytes, sig_header: str | None) -> stripe.Event:
@@ -128,7 +138,7 @@ def _sync_from_subscription(db: Session, sub_obj: dict) -> None:
         row.stripe_customer_id = customer_id
     row.stripe_subscription_id = sub_obj.get("id")
     row.status = sub_obj.get("status", row.status)
-    period_end = sub_obj.get("current_period_end")
+    period_end = _extract_period_end(sub_obj)
     if period_end:
         row.current_period_end = datetime.utcfromtimestamp(period_end)
     db.add(row)
@@ -150,7 +160,11 @@ def handle_event(db: Session, event: stripe.Event) -> None:
             if not sub_obj.get("metadata") and obj.get("client_reference_id"):
                 sub_obj["metadata"] = {"user_id": obj["client_reference_id"]}
             _sync_from_subscription(db, sub_obj)
-    elif etype in ("customer.subscription.updated", "customer.subscription.deleted"):
+    elif etype in (
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+    ):
         _sync_from_subscription(db, obj)
     elif etype == "invoice.payment_failed":
         # status変更は subscription.updated(past_due) で届く。ここはログのみ。
