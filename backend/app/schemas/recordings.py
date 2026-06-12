@@ -15,6 +15,12 @@ class RecordingListItem(BaseModel):
     created_at: datetime
 
 
+class RecordingListResponse(BaseModel):
+    items: list[RecordingListItem]
+    # 無料プランで非表示になっている件数（S-04 履歴ロック行用。0なら全件表示中）
+    locked_count: int = 0
+
+
 class RecordingDetailEvaluation(BaseModel):
     pitch_score: int
     rhythm_score: int

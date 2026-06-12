@@ -64,8 +64,43 @@ export async function uploadRecording(formData: FormData) {
   });
 }
 
+export type RecordingListResponse = {
+  items: RecordingListItem[];
+  locked_count: number;
+};
+
 export async function listRecordings() {
-  return request<RecordingListItem[]>("/api/v1/recordings");
+  return request<RecordingListResponse>("/api/v1/recordings");
+}
+
+/** アップロード時の402(上限到達)を判定するためのエラー型 */
+export class LimitReachedError extends Error {}
+
+export async function uploadRecordingChecked(formData: FormData) {
+  try {
+    return await uploadRecording(formData);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("LIMIT_REACHED")) throw new LimitReachedError("LIMIT_REACHED");
+    throw err;
+  }
+}
+
+export type PaywallSource = "limit" | "report" | "history";
+
+export async function logPaywallEvent(
+  event: "paywall_view" | "paywall_click" | "checkout_start",
+  source: PaywallSource,
+) {
+  try {
+    await request("/api/v1/billing/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event, source }),
+    });
+  } catch {
+    /* 計測失敗はUXに影響させない */
+  }
 }
 
 export async function getRecording(id: string | number) {

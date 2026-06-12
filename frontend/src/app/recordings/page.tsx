@@ -3,16 +3,20 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { listRecordings, RecordingListItem } from "@/lib/api";
+import UpgradeModal from "@/components/UpgradeModal";
 
 export default function RecordingsPage() {
   const [items, setItems] = useState<RecordingListItem[]>([]);
+  const [lockedCount, setLockedCount] = useState(0);
   const [error, setError] = useState("");
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         const data = await listRecordings();
-        setItems(data);
+        setItems(data.items);
+        setLockedCount(data.locked_count);
       } catch (err) {
         setError(err instanceof Error ? err.message : "一覧取得に失敗しました");
       }
@@ -47,7 +51,17 @@ export default function RecordingsPage() {
             </div>
           </li>
         ))}
+        {lockedCount > 0 ? (
+          <li className="rounded border border-dashed bg-gray-50 p-4 text-center text-sm">
+            🔒 ほか {lockedCount} 件の録音は
+            <button className="mx-1 text-blue-700 underline" onClick={() => setShowUpgrade(true)}>
+              プレミアム
+            </button>
+            で見られます
+          </li>
+        ) : null}
       </ul>
+      {showUpgrade ? <UpgradeModal source="history" onClose={() => setShowUpgrade(false)} /> : null}
     </div>
   );
 }

@@ -31,6 +31,26 @@ def get_billing_me(
     return BillingMeResponse(**billing_me(db, user.id))
 
 
+class PaywallEvent(BaseModel):
+    event: str  # paywall_view | paywall_click | checkout_start
+    source: str  # limit | report | history
+
+
+_PAYWALL_EVENTS = {"paywall_view", "paywall_click", "checkout_start"}
+_PAYWALL_SOURCES = {"limit", "report", "history"}
+
+
+@router.post("/event")
+def log_paywall_event(
+    body: PaywallEvent,
+    user=Depends(get_current_user),
+) -> dict:
+    """導線の表示/クリック計測（FR-06）。構造化ログに残しgrepで集計可能にする。"""
+    if body.event in _PAYWALL_EVENTS and body.source in _PAYWALL_SOURCES:
+        logger.info("paywall event=%s source=%s user_id=%s", body.event, body.source, user.id)
+    return {"ok": True}
+
+
 class CheckoutResponse(BaseModel):
     url: str
 
