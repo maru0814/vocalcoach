@@ -1,0 +1,95 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { BillingMe, getBillingMe, openPortal, startCheckout } from "@/lib/api";
+
+export default function SettingsPage() {
+  const [me, setMe] = useState<BillingMe | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setMe(await getBillingMe());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "取得に失敗しました");
+      }
+    })();
+  }, []);
+
+  const goCheckout = async () => {
+    setBusy(true);
+    try {
+      const { url } = await startCheckout();
+      window.location.href = url;
+    } catch {
+      setError("お申し込みページを開けませんでした。時間をおいてお試しください。");
+      setBusy(false);
+    }
+  };
+
+  const goPortal = async () => {
+    setBusy(true);
+    try {
+      const { url } = await openPortal();
+      window.location.href = url;
+    } catch {
+      setError("お支払い管理ページを開けませんでした。");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">設定</h1>
+        <Link className="text-blue-700 underline" href="/coach">
+          ホームへ
+        </Link>
+      </div>
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+      <section className="space-y-3 rounded bg-white p-5 shadow">
+        <h2 className="font-semibold">プラン管理</h2>
+        {!me ? (
+          <p className="text-sm text-gray-500">読み込み中…</p>
+        ) : me.plan === "premium" ? (
+          <>
+            <p className="text-sm text-gray-700">
+              現在のプラン: <span className="font-medium">プレミアム</span>
+              {me.period_end
+                ? `（次回更新: ${new Date(me.period_end).toLocaleDateString("ja-JP")}）`
+                : null}
+            </p>
+            <button
+              className="rounded border px-4 py-2 text-sm disabled:opacity-50"
+              onClick={goPortal}
+              disabled={busy}
+            >
+              お支払い・解約の管理
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-700">現在のプラン: 無料プラン</p>
+            <p className="text-xs text-gray-500">
+              プレミアム ¥500/月 で録音解析が無制限・詳細添削レポートが使えます（いつでも解約OK）。
+            </p>
+            <button
+              className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+              onClick={goCheckout}
+              disabled={busy || !me.billing_enabled}
+            >
+              プレミアムをはじめる
+            </button>
+            {!me.billing_enabled ? (
+              <p className="text-xs text-gray-400">（現在この環境では申し込みを受け付けていません）</p>
+            ) : null}
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
