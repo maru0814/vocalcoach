@@ -54,7 +54,62 @@ stripe trigger checkout.session.completed
 - [ ] `BILLING_ENABLED=1` に切替（= 課金UI・上限ゲートを有効化）
 - [ ] 緊急時は `BILLING_ENABLED=0` に戻せば全機能無料に即ロールバック（コード変更不要）
 
-## 5. 関連
+## 5. 本番セットアップ手順（ダッシュボード操作）
+
+> 本番モードでの作業。所要30〜60分＋審査（最短即日〜数営業日）。
+> ⚠️ テストモードのキー・Price ID・Webhookは本番では使えない。すべて本番モードで作り直す。
+
+### 5.1 本番モードに切替
+- [dashboard.stripe.com](https://dashboard.stripe.com) 右上トグルを「テスト環境」→**本番**に。
+
+### 5.2 事業者情報・本人確認・銀行口座（審査）
+「ビジネスを有効化」から順に入力:
+- **事業形態**: 個人 / 個人事業主（Individual）
+- **本人情報**: 氏名（丸山ゆう）・生年月日・住所・電話（Stripe登録用。特商法の「請求時開示」とは別）
+- **本人確認書類**: 運転免許証（表裏）/ マイナンバーカード（表面のみ）/ パスポート のいずれか
+- **事業内容**: 業種=ソフトウェア/SaaS or 教育。説明=「歌唱録音をAIが解析しFBを提供する月額サブスク」。URL=`https://sora-vocal-ai.duckdns.org`（特商法ページ公開済みだと審査が通りやすい）
+- **銀行口座**: 名義（カナ）はStripe登録氏名と一致させる（屋号口座は弾かれやすい→個人名義が無難）
+- 送信 → 審査。最短即日、書類確認が入ると数営業日。
+
+### 5.3 本番の商品（¥500/月）を作成
+- 商品カタログ → 商品 → 「+ 商品を追加」
+- 名前=`ソラ先生 プレミアム`、料金=**500 JPY**、**継続（月次）**
+- 発行された `price_...`（本番）を控える。
+
+### 5.4 本番Webhookエンドポイント登録
+- 開発者 → Webhook → 「+ エンドポイントを追加」
+- URL: `https://sora-vocal-ai.duckdns.org/api/v1/billing/webhook`
+- イベント: `checkout.session.completed` / `customer.subscription.created` / `customer.subscription.updated` / `customer.subscription.deleted`（任意で `invoice.payment_failed`）
+- 作成後の「署名シークレット」`whsec_...`（本番）を控える。
+
+### 5.5 VPSに反映して公開
+- VPSの `.env` に `STRIPE_SECRET_KEY=sk_live_...` / `STRIPE_PRICE_ID_PREMIUM=price_...`（本番）/ `STRIPE_WEBHOOK_SECRET=whsec_...`（本番）/ `FRONTEND_BASE_URL=https://sora-vocal-ai.duckdns.org` / `BILLING_ENABLED=1`
+- `requirements.txt` に `stripe` 入り（PR-Bで追加済み）→ `pip install -r`
+- `alembic upgrade head` → アプリ再起動。
+
+### よくあるつまずき
+- **キー取り違え**: 本番モードで `sk_live_`（`sk_test_` ではない）。モードトグルを再確認。
+- **口座名義不一致**: Stripe登録氏名と銀行名義（カナ）を揃える。
+- **審査保留**: サイトに料金・解約方法・特商法が無いと保留されやすい（→対応済み）。
+- **審査前でも開発可**: キーは先に取れるのでVPS設定だけ先行できる（`BILLING_ENABLED=1`は審査通過後に）。
+
+## 6. アカウントを作り直す場合（事業転換・審査落ち等）
+
+**コード変更は不要**（Stripe識別子は全て `.env`。ハードコード無し）。やることは:
+
+1. 新アカウントで **5.3 商品** と **5.4 Webhook** を作成。
+2. `.env` の3鍵（`STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID_PREMIUM` / `STRIPE_WEBHOOK_SECRET`）を新アカウントの値に差し替え。
+3. **DBの旧IDを掃除**: `subscriptions` の `stripe_customer_id` / `stripe_subscription_id` は旧アカウントのもので新アカウントには存在しない。実課金ユーザーがいなければ全削除でよい:
+   ```sql
+   DELETE FROM subscriptions;
+   ```
+   （実課金者がいる移行では、顧客の作り直し・案内が必要。本番公開前なら不要）
+4. アプリ再起動。
+
+> 審査落ち対策（事業情報の更新）は Stripeダッシュボード側の作業で、コード/DBとは独立。
+
+## 7. 関連
 
 - 要件: [docs/31](31_機能要件書_有料プラン_サブスク.md) / デザイン: [docs/32](32_デザイン仕様_有料プラン.md) / 設計: [docs/33](33_設計書_有料プラン_サブスク.md)
-- 実装PR: PR-A（DB＋上限ゲート・済）/ PR-C（詳細レポート・済）/ PR-B（決済・これから）/ PR-D（導線UI＋公開・これから）
+- 特商法ページ: `frontend/src/app/legal/tokushoho/page.tsx`（`SELLER` に実値設定済み）
+- 実装PR: PR-A #74（DB＋上限ゲート）/ PR-C #75（詳細レポート）/ PR-B #77（決済・ライブ確認済）/ PR-D #79（導線UI＋計測） いずれも済
