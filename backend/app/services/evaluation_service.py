@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.evaluation import Evaluation
 from app.models.recording import Recording
+from app.services.billing_service import increment_analysis_count
 
 
 def compute_scores_deterministically(recording_id: int) -> dict[str, int]:
@@ -75,6 +76,8 @@ def evaluate_recording(db: Session, recording_id: int) -> None:
             recording.status = "completed"
             db.add(recording)
             db.commit()
+            # 解析が完了した時だけカウント（失敗は数えない＝docs/31 FR-01）
+            increment_analysis_count(db, recording.user_id)
             return
         except Exception:
             db.rollback()
