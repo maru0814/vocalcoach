@@ -65,7 +65,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           />
         )}
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <footer className="mt-10 border-t py-6 text-center text-xs text-gray-500">
+          <a className="underline hover:text-gray-700" href="/legal/tokushoho">
+            特定商取引法に基づく表記
+          </a>
+        </footer>
+      </body>
     </html>
   );
 }
