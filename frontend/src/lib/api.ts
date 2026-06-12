@@ -280,3 +280,13 @@ export type BillingMe = {
 export async function getBillingMe() {
   return request<BillingMe>("/api/v1/billing/me");
 }
+
+// --- Stripe決済（docs/31 FR-02/03） ---
+
+export async function startCheckout() {
+  return request<{ url: string }>("/api/v1/billing/checkout", { method: "POST" });
+}
+
+export async function openPortal() {
+  return request<{ url: string }>("/api/v1/billing/portal", { method: "POST" });
+}

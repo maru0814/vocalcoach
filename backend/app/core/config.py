@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
     stripe_price_id_premium: str | None = None
+    # Checkout/Portal の戻り先（フロント）。本番は同一ドメイン。
+    frontend_base_url: str = "http://localhost:3000"
+
+    @property
+    def stripe_enabled(self) -> bool:
+        return bool(self.stripe_secret_key and self.stripe_price_id_premium)
 
     @property
     def cors_origin_list(self) -> list[str]:
