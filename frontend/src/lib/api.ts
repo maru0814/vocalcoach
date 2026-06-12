@@ -243,3 +243,40 @@ export async function analyzeVoiceType(blob: Blob, filename = "voice.webm") {
   }
   return (await response.json()) as VoiceTypeResult;
 }
+
+// --- 詳細添削レポート（有料・docs/31 FR-04） ---
+
+export type ReportIssue = { time: string | null; observation: string; cause: string };
+export type PracticeDay = { day: number; title: string; steps: string };
+export type DetailedReport = {
+  issues: ReportIssue[];
+  priority: string;
+  practice_menu: PracticeDay[];
+  next_checks: string[];
+};
+export type ReportResponse = {
+  status: "none" | "generating" | "failed" | "ready";
+  report: DetailedReport | null;
+};
+
+export async function startReport(recordingId: string | number) {
+  return request<{ status: string }>(`/api/v1/recordings/${recordingId}/report`, {
+    method: "POST",
+  });
+}
+
+export async function getReport(recordingId: string | number) {
+  return request<ReportResponse>(`/api/v1/recordings/${recordingId}/report`);
+}
+
+export type BillingMe = {
+  billing_enabled: boolean;
+  plan: "free" | "premium";
+  period_end: string | null;
+  analysis_used: number;
+  analysis_limit: number | null;
+};
+
+export async function getBillingMe() {
+  return request<BillingMe>("/api/v1/billing/me");
+}

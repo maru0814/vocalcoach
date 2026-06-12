@@ -42,6 +42,12 @@ export default function RecordingDetailPage({ params }: Props) {
               <p>表現: {data.evaluation.expression_score}</p>
               <p>総合: {data.evaluation.total_score}</p>
               <p className="rounded bg-gray-100 p-3 text-sm">{data.evaluation.feedback_text}</p>
+              <Link
+                className="inline-block rounded bg-blue-600 px-4 py-2 text-sm text-white"
+                href={`/recordings/${params.id}/report`}
+              >
+                詳細添削を見る
+              </Link>
             </div>
           ) : (
             <p>まだ評価が完了していません。</p>
