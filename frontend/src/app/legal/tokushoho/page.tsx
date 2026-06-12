@@ -13,11 +13,11 @@ export const metadata: Metadata = {
  */
 const SELLER = {
   // 事業者名（個人の場合は氏名、または「氏名＋屋号」）
-  name: "（運営者氏名 または 屋号）",
+  name: "丸山ゆう",
   // 運営統括責任者
-  manager: "（運営責任者氏名）",
+  manager: "丸山ゆう",
   // 連絡先メール（必須・公開）
-  email: "（連絡先メールアドレス）",
+  email: "benfan164@gmail.com",
   // 住所・電話は請求時開示にする場合 true（個人事業主向け）。実記載するなら false にして下記を埋める。
   discloseOnRequest: true,
   address: "（所在地）",
