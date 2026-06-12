@@ -15,6 +15,7 @@ from app.schemas.recordings import (
 )
 from app.services.billing_service import analysis_allowed, is_premium
 from app.services.evaluation_service import evaluate_recording
+from app.services.report_service import GENERATING, generate_report, report_status
 from app.storage.files import save_upload_file
 
 
@@ -147,3 +148,67 @@ def get_recording(
         evaluation=evaluation_schema,
     )
 
+
+# --- 詳細添削レポート（有料・docs/31 FR-04） ---
+
+def _get_owned_recording(db: Session, recording_id: int, user_id: int) -> Recording:
+    recording = (
+        db.query(Recording)
+        .filter(Recording.id == recording_id, Recording.user_id == user_id)
+        .first()
+    )
+    if not recording:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="recording not found")
+    return recording
+
+
+def _require_report_access(db: Session, user_id: int) -> None:
+    # billing無効＝全機能無料（緊急停止スイッチ）。有効時はpremiumのみ（AC-08）。
+    if settings.billing_enabled and not is_premium(db, user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="PREMIUM_REQUIRED")
+
+
+def _report_job(evaluation_id: int, title: str, note: str | None) -> None:
+    db = SessionLocal()
+    try:
+        generate_report(db, evaluation_id, title, note)
+    finally:
+        db.close()
+
+
+@router.post("/{recording_id}/report")
+def start_report(
+    recording_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict:
+    recording = _get_owned_recording(db, recording_id, user.id)
+    _require_report_access(db, user.id)
+    evaluation = getattr(recording, "evaluation", None)
+    if evaluation is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="evaluation not ready")
+
+    st = report_status(evaluation)
+    if st in ("ready", "generating"):
+        return {"status": st}
+    # 二重生成防止のフラグを先に立ててから非同期生成（docs/33 §5）
+    evaluation.detailed_report = dict(GENERATING)
+    db.add(evaluation)
+    db.commit()
+    background_tasks.add_task(_report_job, evaluation.id, recording.title, recording.note)
+    return {"status": "generating"}
+
+
+@router.get("/{recording_id}/report")
+def get_report(
+    recording_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict:
+    recording = _get_owned_recording(db, recording_id, user.id)
+    _require_report_access(db, user.id)
+    evaluation = getattr(recording, "evaluation", None)
+    st = report_status(evaluation)
+    report = evaluation.detailed_report if (evaluation and st == "ready") else None
+    return {"status": st, "report": report}
