@@ -67,6 +67,16 @@ class Settings(BaseSettings):
     rate_limit_window_sec: int = 60
     rate_limit_max_audio: int = 8
 
+    # --- 有料プラン（docs/31〜33）---
+    # billing_enabled=False の間は全ゲート無効（従来どおり全機能無料）。緊急停止スイッチ兼用。
+    billing_enabled: bool = False
+    free_analysis_limit: int = 10   # 無料プランの解析回数/暦月（JST）
+    free_history_limit: int = 10    # 無料プランの履歴表示件数
+    # Stripe（PR-Bで使用。未設定でも起動可）
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    stripe_price_id_premium: str | None = None
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

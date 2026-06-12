@@ -13,6 +13,7 @@ from app.schemas.recordings import (
     RecordingListItem,
     StatusResponse,
 )
+from app.services.billing_service import analysis_allowed, is_premium
 from app.services.evaluation_service import evaluate_recording
 from app.storage.files import save_upload_file
 
@@ -40,6 +41,13 @@ def upload_recording(
 ) -> StatusResponse:
     if not title.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title is required")
+
+    # 無料プランの月次上限ゲート（docs/31 FR-01）。402はフロントでアップグレード導線を開く合図。
+    if not analysis_allowed(db, user.id):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="LIMIT_REACHED",
+        )
 
     # MVP制約: 10MB以内
     audio_file.file.seek(0, os.SEEK_END)
@@ -77,12 +85,15 @@ def list_recordings(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ) -> list[RecordingListItem]:
-    recordings = (
+    query = (
         db.query(Recording)
         .filter(Recording.user_id == user.id)
         .order_by(Recording.created_at.desc())
-        .all()
     )
+    # 無料プランは直近N件のみ表示（削除はしない。加入で全件復活＝docs/31 FR-01）。
+    if settings.billing_enabled and not is_premium(db, user.id):
+        query = query.limit(settings.free_history_limit)
+    recordings = query.all()
 
     items: list[RecordingListItem] = []
     for r in recordings:

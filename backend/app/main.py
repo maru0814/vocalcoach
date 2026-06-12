@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.endpoints.auth import router as auth_router
+from app.api.v1.endpoints.billing import router as billing_router
 from app.api.v1.endpoints.coach import router as coach_router
 from app.api.v1.endpoints.recordings import router as recordings_router
 from app.api.v1.endpoints.voice_type import router as voice_type_router
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(auth_router)
+    app.include_router(billing_router)
     app.include_router(recordings_router)
     app.include_router(coach_router)
     app.include_router(voice_type_router)
