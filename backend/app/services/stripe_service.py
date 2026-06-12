@@ -136,8 +136,16 @@ def _sync_from_subscription(db: Session, sub_obj: dict) -> None:
             return
         row = _get_or_create_row(db, int(user_id))
         row.stripe_customer_id = customer_id
+    prev_status = row.status
     row.stripe_subscription_id = sub_obj.get("id")
     row.status = sub_obj.get("status", row.status)
+    # 加入/解約の計測（FR-06）。構造化ログでgrep集計可能に。
+    new_active = row.status in ("active", "trialing")
+    was_active = prev_status in ("active", "trialing")
+    if new_active and not was_active:
+        logger.info("billing event=subscribed user_id=%s", row.user_id)
+    elif was_active and not new_active:
+        logger.info("billing event=canceled user_id=%s", row.user_id)
     period_end = _extract_period_end(sub_obj)
     if period_end:
         row.current_period_end = datetime.utcfromtimestamp(period_end)

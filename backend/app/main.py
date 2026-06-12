@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -28,6 +29,12 @@ def _status_to_error_code(status_code: int) -> str:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="claude-md-recording-feedback-api")
+
+    # アプリ側 logger.info（課金/計測の構造化ログ等）をuvicornのstdoutに流す。
+    # 既存のuvicornハンドラに乗せるため、app配下loggerのレベルだけINFOに揃える。
+    logging.getLogger("app").setLevel(logging.INFO)
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO)
 
     from app.core.config import settings as _settings
 

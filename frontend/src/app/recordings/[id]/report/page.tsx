@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailedReport, getReport, startReport } from "@/lib/api";
+import UpgradeModal from "@/components/UpgradeModal";
 
 type Props = { params: { id: string } };
 
@@ -33,6 +34,7 @@ export default function ReportPage({ params }: Props) {
   const [report, setReport] = useState<DetailedReport | null>(null);
   const [error, setError] = useState("");
   const { checks, toggle } = useDayChecks(params.id);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -125,12 +127,32 @@ export default function ReportPage({ params }: Props) {
       ) : null}
 
       {status === "forbidden" ? (
-        <div className="space-y-3 rounded bg-white p-5 shadow">
+        <div className="space-y-4 rounded bg-white p-5 shadow">
+          {/* S-03 ロックカード: レポートの見出しだけ薄く見せる */}
+          <div className="relative">
+            <ul className="space-y-2 text-sm text-gray-300">
+              <li>🎯 まずはここから（最優先ポイント）</li>
+              <li>📍 箇所別の指摘</li>
+              <li>🗓 7日間練習メニュー（1日10分）</li>
+              <li>✅ 次の録音でチェックすること</li>
+            </ul>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-2xl">🔒</span>
+            </div>
+          </div>
           <p className="text-sm text-gray-700">
-            詳細添削レポートはプレミアムプランの機能です。
+            詳細添削レポートはプレミアムの機能です。録音ごとに「どこで・何を・どう直すか」を確認できます。
           </p>
+          <button
+            className="rounded bg-blue-600 px-4 py-2 text-sm text-white"
+            onClick={() => setShowUpgrade(true)}
+          >
+            プレミアムで添削を見る
+          </button>
         </div>
       ) : null}
+
+      {showUpgrade ? <UpgradeModal source="report" onClose={() => setShowUpgrade(false)} /> : null}
 
       {status === "ready" && report ? (
         <div className="space-y-4">

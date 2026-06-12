@@ -11,6 +11,7 @@ from app.schemas.recordings import (
     RecordingDetail,
     RecordingDetailEvaluation,
     RecordingListItem,
+    RecordingListResponse,
     StatusResponse,
 )
 from app.services.billing_service import analysis_allowed, is_premium
@@ -81,18 +82,18 @@ def upload_recording(
     return StatusResponse(recording_id=recording.id, status=recording.status)
 
 
-@router.get("", response_model=list[RecordingListItem])
+@router.get("", response_model=RecordingListResponse)
 def list_recordings(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
-) -> list[RecordingListItem]:
-    query = (
-        db.query(Recording)
-        .filter(Recording.user_id == user.id)
-        .order_by(Recording.created_at.desc())
-    )
+) -> RecordingListResponse:
+    base = db.query(Recording).filter(Recording.user_id == user.id)
+    query = base.order_by(Recording.created_at.desc())
     # 無料プランは直近N件のみ表示（削除はしない。加入で全件復活＝docs/31 FR-01）。
+    locked_count = 0
     if settings.billing_enabled and not is_premium(db, user.id):
+        total = base.count()
+        locked_count = max(0, total - settings.free_history_limit)
         query = query.limit(settings.free_history_limit)
     recordings = query.all()
 
@@ -110,7 +111,7 @@ def list_recordings(
                 created_at=r.created_at,
             )
         )
-    return items
+    return RecordingListResponse(items=items, locked_count=locked_count)
 
 
 @router.get("/{recording_id}", response_model=RecordingDetail)
