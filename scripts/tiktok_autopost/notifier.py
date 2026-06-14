@@ -131,3 +131,14 @@ def notify(storyboard: dict, video_path: str | None, pillar: str) -> bool:
     if thumb:
         os.remove(thumb)
     return False
+
+
+def send_report(text: str) -> bool:
+    """週次分析レポートをLINE → Discord の順で送信する。returns True if sent."""
+    if _send_line(text, None):
+        print("📱 週次レポートをLINEに送信しました。")
+        return True
+    if _send_discord(text, None):
+        print("💬 週次レポートをDiscordに送信しました。")
+        return True
+    return False

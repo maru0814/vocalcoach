@@ -69,8 +69,9 @@ def _read_jsonl(path: str) -> list:
     return rows
 
 
-def _log_post(publish_id: str, pillar: str, video: str, info: str) -> None:
-    rec = {"publish_id": publish_id, "pillar": pillar, "video": os.path.basename(video or ""),
+def _log_post(publish_id: str, pillar: str, video: str, info: str, hook: str = "") -> None:
+    rec = {"publish_id": publish_id, "pillar": pillar, "hook": hook,
+           "video": os.path.basename(video or ""),
            "info": info, "ts": datetime.datetime.now().isoformat(timespec="seconds")}
     with open(POSTS_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -184,7 +185,8 @@ def main() -> int:
 
     ok, publish_id, info = tiktok_poster.post_video(video_path, sb["caption"], sb["hashtags"])
     if ok:
-        _log_post(publish_id, pillar, video_path, info)
+        hook = next((sc["text"] for sc in sb.get("scenes", []) if sc.get("kind") == "hook"), "")
+        _log_post(publish_id, pillar, video_path, info, hook=hook)
         print(f"✅ 投稿しました: publish_id={publish_id} ({info})  [{why}]")
         print("※ 投稿後はプロフィール固定コメントで『診断はプロフィールから』を忘れずに（docs/34 §5）。")
         return 0

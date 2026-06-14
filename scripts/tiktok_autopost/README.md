@@ -9,7 +9,9 @@
 - ✅ 縦9:16のMP4組立（背景＋テロップ＋検証型は画面録画クリップを合成）。
 - ✅ TikTok Content Posting APIへ投稿（未承認/キー無なら生成のみ）。
 - ✅ トレンドに寄せる（Research APIで伸びてる尺・音源を取得 → テンプレに反映）。
+- ✅ 投稿前チェック通知（LINE/Discordでサムネ付き → `python approve.py` で承認）。
 - ✅ 投稿後の指標集計（`fetch_metrics.py`）→ 勝ち型に `themes.PILLARS` を寄せる。
+- ✅ 週次パフォーマンスレポート（フック別ランキング＋週次トレンドをLINE/Discordで自動通知）。
 
 ## 2つの型（docs/34 §2）
 | 型 | 中身 | 素材 |
@@ -54,21 +56,34 @@ DRY_RUN=0 python generate_and_render.py
 
 ## 自動化（cron。19–23時が良い）
 ```bash
-# crontab -e（JST）。1日1本、夜21時。
-0 21 * * * cd /opt/vocalcoach/scripts/tiktok_autopost && ./.venv/bin/python generate_and_render.py >> /var/log/tiktok_autopost.log 2>&1
-# 毎週月曜にトレンド更新（Research API枠を節約）
-0 9 * * 1 cd /opt/vocalcoach/scripts/tiktok_autopost && ./.venv/bin/python trends.py --refresh >> /var/log/tiktok_trends.log 2>&1
-# 毎日23時に指標集計（video_id紐付け or 手動）
-0 23 * * * cd /opt/vocalcoach/scripts/tiktok_autopost && ./.venv/bin/python fetch_metrics.py >> /var/log/tiktok_metrics.log 2>&1
+# crontab -e（JST）。パスは環境に合わせて変更。
+VENV=/opt/vocalcoach/scripts/tiktok_autopost/.venv/bin/python
+DIR=/opt/vocalcoach/scripts/tiktok_autopost
+
+# 毎日21時: 動画生成＆投稿（NOTIFY_BEFORE_POST=1 なら通知で止まる）
+0 21 * * * cd $DIR && $VENV generate_and_render.py >> /var/log/tiktok_autopost.log 2>&1
+
+# 毎日23時: 指標を取得してメトリクスに記録（完了率は手動 --manual 推奨）
+0 23 * * * cd $DIR && $VENV fetch_metrics.py >> /var/log/tiktok_metrics.log 2>&1
+
+# 毎週月曜9時: Research APIでトレンド更新（API枠節約のため週1回）
+0 9 * * 1 cd $DIR && $VENV trends.py --refresh >> /var/log/tiktok_trends.log 2>&1
+
+# 毎週日曜22時: フック別ランキング＋週次トレンドをLINE/Discordに送信
+0 22 * * 0 cd $DIR && $VENV weekly_report.py >> /var/log/tiktok_weekly_report.log 2>&1
 ```
 
 ## 改善ループ
 ```bash
 python fetch_metrics.py            # API取得（要トークン）
 python fetch_metrics.py --manual   # アプリのインサイト値を手入力（完了率はこちらが確実）
+python analytics.py                # フック別ランキング＋週次トレンドをターミナルに表示
+python analytics.py --notify       # 上記をLINE/Discordに送信
+python weekly_report.py --dry-run  # 週次レポートのプレビュー（送信しない）
 ```
 - `posts_log.jsonl`（投稿記録）, `metrics_log.jsonl`（指標）はGit除外。
 - 平均再生・**視聴完了率**が高い型を `themes.PILLARS` で増やす（docs/34 §3 週次レビュー）。
+- 週次レポートには「フック別ランキング」「週次再生トレンド（前週比）」「改善ヒント」が含まれる。
 
 ## コスト（docs/34）
 | 項目 | 目安 |
@@ -94,7 +109,11 @@ tiktok_autopost/
 ├── tts_producer.py         ← ナレーション（ElevenLabs / 無音）
 ├── video_assembler.py      ← MP4組立（moviepy / 絵コンテ縮退）
 ├── tiktok_poster.py        ← Content Posting API
-├── fetch_metrics.py        ← 指標集計
+├── notifier.py             ← LINE/Discord通知（投稿前チェック + 週次レポート）
+├── approve.py              ← 投稿承認（NOTIFY_BEFORE_POST=1 時に使用）
+├── fetch_metrics.py        ← 指標集計（API / --manual 手入力）
+├── analytics.py            ← フック別ランキング＋週次トレンド分析
+├── weekly_report.py        ← 週次レポート送信（cron: 毎週日曜22時）
 ├── trends_seed.json        ← トレンドのフォールバック値（手動更新可）
 └── assets/
     ├── demo_clips/         ← 検証型の画面録画プール（要収録・Git管理外）
