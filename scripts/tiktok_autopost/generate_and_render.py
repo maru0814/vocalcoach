@@ -37,6 +37,7 @@ import trends
 import tts_producer
 import video_assembler
 import tiktok_poster
+import notifier
 
 try:
     from dotenv import load_dotenv
@@ -46,6 +47,7 @@ except Exception:
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(_DIR, "out")
+PENDING_DIR = os.path.join(_DIR, "out", "pending")
 POSTS_LOG = os.path.join(_DIR, "posts_log.jsonl")
 
 
@@ -163,6 +165,21 @@ def main() -> int:
     ok_guard, why = _daily_guard()
     if not ok_guard:
         print(f"⏸ ガードで停止: {why}")
+        return 0
+
+    # NOTIFY_BEFORE_POST=1 の時は pending に置いて通知だけ送る（承認は approve.py）
+    if _truthy(os.getenv("NOTIFY_BEFORE_POST", "0")):
+        os.makedirs(PENDING_DIR, exist_ok=True)
+        pending_video = os.path.join(PENDING_DIR, os.path.basename(video_path))
+        pending_sb = os.path.splitext(pending_video)[0] + ".storyboard.json"
+        import shutil
+        shutil.copy2(video_path, pending_video)
+        with open(pending_sb, "w", encoding="utf-8") as f:
+            import json as _json
+            _json.dump({"storyboard": sb}, f, ensure_ascii=False, indent=2)
+        print(f"📥 pending に保存: {os.path.basename(pending_video)}")
+        notifier.notify(sb, pending_video, pillar)
+        print("確認後: python approve.py  /  スキップ: python approve.py --skip")
         return 0
 
     ok, publish_id, info = tiktok_poster.post_video(video_path, sb["caption"], sb["hashtags"])

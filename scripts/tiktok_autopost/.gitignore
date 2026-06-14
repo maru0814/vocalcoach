@@ -10,5 +10,10 @@ trends_cache.json
 narration_test.mp3
 # 素材プール本体はGitに入れない（容量。README/プレースホルダのみ管理）
 assets/demo_clips/*.mp4
+assets/demo_clips/*.webm
 assets/bgm/*.mp3
 assets/bgm/*.wav
+assets/audio_samples/*.wav
+assets/audio_samples/*.mp3
+# Playwright 認証セッション（個人情報含む）
+assets/auth_state.json
