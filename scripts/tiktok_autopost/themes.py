@@ -131,6 +131,34 @@ def pillar_for(weekday: int) -> str:
     return PILLARS[weekday % 7]
 
 
+def hook_pattern(hook: str) -> str:
+    """フックを文体パターンに分類する（analytics/autotune と共有する唯一の定義）。"""
+    h = hook or ""
+    if any(c in h for c in ("?", "？")):
+        return "疑問形"
+    if any(w in h for w in ("は嘘", "じゃない", "間違", "ではない", "変わらない", "NG", "必要ない")):
+        return "常識否定"
+    if any(w in h for w in ("人だけ", "てる人", "人、", "だけ見て")):
+        return "限定ターゲット"
+    if any(c.isdigit() for c in h):
+        return "数字入り"
+    if any(w in h for w in ("して", "しよう", "やって", "試して")):
+        return "行動促し"
+    return "断定"
+
+
+def _select_tip_index(day_index: int) -> int:
+    """実績があれば autotune が勝ちパターンのネタを選ぶ。無ければ曜日ローテに自動フォールバック。"""
+    try:
+        import autotune
+        idx = autotune.pick_tip_index(day_index)
+        if idx is not None:
+            return idx % len(TIPS)
+    except Exception:
+        pass
+    return day_index % len(TIPS)
+
+
 def hashtags_for(tip_index: int) -> list[str]:
     """日替わりで HASHTAGS_TIPS から1〜2個足す（マンネリ防止）。計5個以内。"""
     extra = [HASHTAGS_TIPS[tip_index % len(HASHTAGS_TIPS)]]
@@ -153,7 +181,8 @@ def storyboard(pillar: str, day_index: int, trend: dict) -> dict:
 
 
 def _tip_storyboard(day_index: int, target_sec: int, bgm) -> dict:
-    tip = TIPS[day_index % len(TIPS)]
+    idx = _select_tip_index(day_index)
+    tip = TIPS[idx]
     body = tip["body"]
     # フック1.5秒（煽りは速攻で刺す）+ 本文均等割り + CTA2.5秒
     hook_sec, cta_sec = 1.5, 2.5
@@ -172,7 +201,7 @@ def _tip_storyboard(day_index: int, target_sec: int, bgm) -> dict:
         "duration": round(t + cta_sec, 2),
         "bg": {"type": "gradient", "colors": ["#1a0a2e", "#0d0d1a"]},
         "bgm": bgm, "scenes": scenes, "narration": narration,
-        "hashtags": hashtags_for(day_index),
+        "hashtags": hashtags_for(idx),
         "caption": tip["hook"],
     }
 

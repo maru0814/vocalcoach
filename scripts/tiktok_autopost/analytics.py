@@ -12,6 +12,8 @@ import json
 import os
 import sys
 
+import themes
+
 _DIR = os.path.dirname(os.path.abspath(__file__))
 POSTS_LOG = os.path.join(_DIR, "posts_log.jsonl")
 METRICS_LOG = os.path.join(_DIR, "metrics_log.jsonl")
@@ -176,24 +178,9 @@ def build_report(weeks: int = 2) -> str:
     lines.append("")
 
     # ─── フックパターン分析 ────────────────────────────────
-    def _hook_pattern(hook: str) -> str:
-        """フックを文体パターンに分類する。"""
-        h = hook
-        if any(c in h for c in ("?", "？")):
-            return "疑問形"
-        if any(w in h for w in ("は嘘", "じゃない", "間違い", "ではない", "変わらない", "NG", "必要ない")):
-            return "常識否定"
-        if any(w in h for w in ("人だけ", "人だけ見て", "てる人", "人、", "だけ見て")):
-            return "限定ターゲット"
-        if any(c.isdigit() for c in h):
-            return "数字入り"
-        if any(w in h for w in ("して", "しよう", "やって", "試して")):
-            return "行動促し"
-        return "断定"
-
     pattern_stats: dict[str, dict] = {}
     for hook, s in hook_stats.items():
-        ptn = _hook_pattern(hook)
+        ptn = themes.hook_pattern(hook)
         ps = pattern_stats.setdefault(ptn, {"views": [], "completion": [], "n": 0})
         ps["n"] += s["n"]
         ps["views"].extend(s["views"])

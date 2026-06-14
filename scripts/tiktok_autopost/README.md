@@ -3,6 +3,9 @@
 歌デモなしで全自動化できる2型に絞った、TikTok用の動画生成→投稿ツール。docs/34 準拠。
 **キーが無ければ「絵コンテ＋台本」だけ作って止まる（安全）**／ffmpeg+moviepyがあればMP4まで描画。
 
+> **⚠️ あなたが手でやる必要があること / 課金まわり → [運用チェックリスト](#運用チェックリストあなたがやること) を必ず読む。**
+> コードは全自動だが、**アカウント開設・API申請・課金登録・声クローン**だけは人間（あなた）にしかできない。
+
 ## できること
 - ✅ 台本の自動生成（曜日で `tip`/`demo` をローテ。Claudeがあれば口語リライト、無くてもテンプレ）。
 - ✅ ナレーション（ElevenLabsで声クローン。無ければ無音で尺だけ確保＝字幕動画として成立）。
@@ -10,8 +13,10 @@
 - ✅ TikTok Content Posting APIへ投稿（未承認/キー無なら生成のみ）。
 - ✅ トレンドに寄せる（Research APIで伸びてる尺・音源を取得 → テンプレに反映）。
 - ✅ 投稿前チェック通知（LINE/Discordでサムネ付き → `python approve.py` で承認）。
-- ✅ 投稿後の指標集計（`fetch_metrics.py`）→ 勝ち型に `themes.PILLARS` を寄せる。
-- ✅ 週次パフォーマンスレポート（フック別ランキング＋週次トレンドをLINE/Discordで自動通知）。
+- ✅ 投稿後の指標集計（`fetch_metrics.py`）。
+- ✅ 週次パフォーマンスレポート（フック別ランキング＋傾向考察をLINE/Discordで自動通知）。
+- ✅ **実績フィードバックの自動チューニング**（`autotune.py`）。伸びたフックパターンのネタを次回から自動で優先。
+- ✅ **cron一括登録**（`install_cron.sh`）。生成・指標・トレンド更新・週次レポートを1コマンドで仕込む。
 
 ## 2つの型（docs/34 §2）
 | 型 | 中身 | 素材 |
@@ -54,44 +59,71 @@ DRY_RUN=0 python generate_and_render.py
 2. TikTok Business Account 開設＋ Content Posting API 申請（承認に数日〜2週間）。承認待ちは手動投稿で並行。
 3. （任意）ElevenLabsで自分の声をクローン → `ELEVENLABS_VOICE_ID` を `.env` に。
 
-## 自動化（cron。19–23時が良い）
+## 自動化（cron。1コマンドで登録）
 ```bash
-# crontab -e（JST）。パスは環境に合わせて変更。
-VENV=/opt/vocalcoach/scripts/tiktok_autopost/.venv/bin/python
-DIR=/opt/vocalcoach/scripts/tiktok_autopost
-
-# 毎日21時: 動画生成＆投稿（NOTIFY_BEFORE_POST=1 なら通知で止まる）
-0 21 * * * cd $DIR && $VENV generate_and_render.py >> /var/log/tiktok_autopost.log 2>&1
-
-# 毎日23時: 指標を取得してメトリクスに記録（完了率は手動 --manual 推奨）
-0 23 * * * cd $DIR && $VENV fetch_metrics.py >> /var/log/tiktok_metrics.log 2>&1
-
-# 毎週月曜9時: Research APIでトレンド更新（API枠節約のため週1回）
-0 9 * * 1 cd $DIR && $VENV trends.py --refresh >> /var/log/tiktok_trends.log 2>&1
-
-# 毎週日曜22時: フック別ランキング＋週次トレンドをLINE/Discordに送信
-0 22 * * 0 cd $DIR && $VENV weekly_report.py >> /var/log/tiktok_weekly_report.log 2>&1
+# venvのpythonを自動検出して4本のcronを冪等登録（JSTで動かすならサーバTZをAsia/Tokyoに）
+./install_cron.sh
+# 解除:
+./install_cron.sh --remove
 ```
+登録される内容:
 
-## 改善ループ
+| 時刻 | スクリプト | 役割 |
+| --- | --- | --- |
+| 毎日 21:00 | `generate_and_render.py` | 動画生成→(承認通知 or 投稿) |
+| 毎日 23:00 | `fetch_metrics.py` | 指標を取得して記録 |
+| 毎週月 09:00 | `trends.py --refresh` | トレンド(尺/音源)を更新 |
+| 毎週日 22:00 | `weekly_report.py` | 週次レポートをLINE/Discordへ |
+
+ログは `out/cron_*.log` に出る。手で書くなら `crontab -e` で同じ4行を追加してもよい。
+
+## 改善ループ（自動）
+投稿→指標→**自動チューニング**→次の生成、が人手なしで回る:
+```
+generate_and_render.py で投稿（hookを posts_log に記録）
+        ↓
+fetch_metrics.py で再生数・完了率を metrics_log に記録
+        ↓
+autotune.py が「伸びたフックパターン」を学習（次の generate が自動で寄せる）
+        ↓
+weekly_report.py が日曜にランキング＋傾向考察をLINEへ
+```
+手動で覗くコマンド:
 ```bash
-python fetch_metrics.py            # API取得（要トークン）
-python fetch_metrics.py --manual   # アプリのインサイト値を手入力（完了率はこちらが確実）
-python analytics.py                # フック別ランキング＋週次トレンドをターミナルに表示
+python autotune.py                 # 今どのパターンを優先しているか（学習状況）
+python analytics.py                # フック別ランキング＋傾向考察をターミナル表示
 python analytics.py --notify       # 上記をLINE/Discordに送信
 python weekly_report.py --dry-run  # 週次レポートのプレビュー（送信しない）
+python fetch_metrics.py --manual   # アプリのインサイト値を手入力（完了率はこれが確実）
 ```
-- `posts_log.jsonl`（投稿記録）, `metrics_log.jsonl`（指標）はGit除外。
-- 平均再生・**視聴完了率**が高い型を `themes.PILLARS` で増やす（docs/34 §3 週次レビュー）。
-- 週次レポートには「フック別ランキング」「週次再生トレンド（前週比）」「改善ヒント」が含まれる。
+- `posts_log.jsonl`（投稿記録/hook付き）, `metrics_log.jsonl`（指標）はGit除外。
+- 週次レポート内容: フック別ランキング / 週次トレンド(前週比) / **パターン別傾向考察** / 今週のアクション。
+- **完了率(視聴完了率)はアルゴリズム最重要シグナル**だが Display API では取れない。`fetch_metrics.py --manual`
+  でアプリのインサイト値を入れると、autotune と考察の精度が上がる（無くても再生数だけで動く）。
 
-## コスト（docs/34）
-| 項目 | 目安 |
-| --- | --- |
-| ElevenLabs（声クローン） | $11/月 |
-| Claude API（台本60本） | ~$5/月 |
-| VPS（cron実行） | ¥1,000/月（既存サーバなら0） |
-| **合計** | **約¥2,500/月** |
+## 運用チェックリスト（あなたがやること）
+コードは全自動だが、以下は**人間にしかできない**（アカウント/契約/課金/本人性）。上から順に。
+
+| # | やること | 必須? | 課金 | 備考 |
+| --- | --- | --- | --- | --- |
+| 1 | サーバ(VPS等)に clone して `pip install -r requirements.txt`、`./install_cron.sh` | 必須 | VPS ¥0〜1,000/月 | 既存サーバがあれば¥0 |
+| 2 | `.env.example` を `.env` にコピーして値を入れる | 必須 | ¥0 | キーはチャット/Gitに貼らない |
+| 3 | TikTokアカウント作成 →（投稿API使うなら）Business化＋Content Posting API申請 | 投稿自動化に必須 | ¥0 | 承認に数日〜2週間。待つ間は `NOTIFY_BEFORE_POST=1`＋手動投稿で並行 |
+| 4 | LINE Notify or Discord Webhook を発行して `.env` に | 推奨 | ¥0 | 承認通知・週次レポートの受け取り先 |
+| 5 | ElevenLabsに登録→自分の声をクローン→`ELEVENLABS_VOICE_ID` を `.env` に | 任意 | **約$11/月** | 無ければ無音(字幕のみ動画)で成立 |
+| 6 | AnthropicでAPIキー発行→`ANTHROPIC_API_KEY` を `.env` に | 任意 | **約$5/月** | 無ければテンプレ台本で動く |
+| 7 | TikTok Research API申請→`TIKTOK_RESEARCH_TOKEN` を `.env` に | 任意 | ¥0(審査) | 無ければ `trends_seed.json` にフォールバック |
+| 8 | （検証型を使うなら）`assets/demo_clips/` に画面録画を20〜30本 | 任意 | ¥0 | 今はTips型のみ運用なら不要 |
+| 9 | 初回は `DRY_RUN=1` のまま `python generate_and_render.py` で出力を目視確認 | 必須 | ¥0 | 問題なければ `DRY_RUN=0` に |
+| 10 | 毎日: LINE通知が来たら `python approve.py` で承認（NOTIFY_BEFORE_POST=1時） | 運用 | ¥0 | 全自動投稿にしたいなら `NOTIFY_BEFORE_POST=0` |
+
+### 課金まとめ（最小→フル）
+- **¥0運用**: ElevenLabs/Claudeなし。無音＋字幕動画＋テンプレ台本。既存サーバ利用。→ **月¥0**
+- **推奨運用**: ElevenLabs($11) + Claude($5) + VPS(¥1,000)。声入り＋口語台本。→ **月 約¥2,500**
+- いずれもキー未設定の部分は自動で縮退するので、**一部だけ課金**もできる（例: 声だけ入れてClaudeは無し）。
+
+> 💳 **課金が発生するのは ElevenLabs と Claude API の2つだけ**（どちらも任意）。
+> TikTok/LINE/Discord/Research API は無料。VPSは既存サーバがあれば¥0。
 
 ## 安全装置
 - `DRY_RUN` 既定=1（うっかり投稿しない）。実運用で 0 に。
@@ -103,8 +135,10 @@ python weekly_report.py --dry-run  # 週次レポートのプレビュー（送�
 ## 構成
 ```
 tiktok_autopost/
+├── install_cron.sh         ← cron4本を一括登録（冪等。--remove で解除）
 ├── generate_and_render.py  ← オーケストレータ（cronで叩く）
-├── themes.py               ← 型・ネタ・絵コンテ生成（Claudeプロンプト）
+├── themes.py               ← 型・ネタ・絵コンテ生成 + hook_pattern分類（Claudeプロンプト）
+├── autotune.py             ← 実績フィードバック（勝ちパターンのネタを自動優先）
 ├── trends.py               ← トレンド検出（Research API / seed）
 ├── tts_producer.py         ← ナレーション（ElevenLabs / 無音）
 ├── video_assembler.py      ← MP4組立（moviepy / 絵コンテ縮退）
@@ -112,7 +146,7 @@ tiktok_autopost/
 ├── notifier.py             ← LINE/Discord通知（投稿前チェック + 週次レポート）
 ├── approve.py              ← 投稿承認（NOTIFY_BEFORE_POST=1 時に使用）
 ├── fetch_metrics.py        ← 指標集計（API / --manual 手入力）
-├── analytics.py            ← フック別ランキング＋週次トレンド分析
+├── analytics.py            ← フック別ランキング＋パターン別傾向考察
 ├── weekly_report.py        ← 週次レポート送信（cron: 毎週日曜22時）
 ├── trends_seed.json        ← トレンドのフォールバック値（手動更新可）
 └── assets/

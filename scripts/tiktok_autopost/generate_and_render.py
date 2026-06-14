@@ -129,6 +129,11 @@ def main() -> int:
     pillar = args.pillar or themes.pillar_for(today.weekday())
 
     profile = trends.current_profile(refresh=args.refresh_trends)
+    try:
+        import autotune
+        print(autotune.explain())
+    except Exception:
+        pass
     sb = themes.storyboard(pillar, day_index, profile)
     sb = _rewrite_with_claude(sb)
 

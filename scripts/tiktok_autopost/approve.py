@@ -49,8 +49,9 @@ def _storyboard_for(video_path: str) -> dict:
     return {}
 
 
-def _log_post(publish_id: str, pillar: str, video: str, info: str) -> None:
-    rec = {"publish_id": publish_id, "pillar": pillar, "video": os.path.basename(video),
+def _log_post(publish_id: str, pillar: str, video: str, info: str, hook: str = "") -> None:
+    rec = {"publish_id": publish_id, "pillar": pillar, "hook": hook,
+           "video": os.path.basename(video),
            "info": info, "ts": datetime.datetime.now().isoformat(timespec="seconds")}
     with open(POSTS_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -107,7 +108,8 @@ def main() -> int:
     import tiktok_poster
     ok, publish_id, info = tiktok_poster.post_video(video, caption, hashtags)
     if ok:
-        _log_post(publish_id, pillar, video, info)
+        hook = next((sc["text"] for sc in sb.get("scenes", []) if sc.get("kind") == "hook"), caption)
+        _log_post(publish_id, pillar, video, info, hook=hook)
         os.makedirs(POSTED_DIR, exist_ok=True)
         shutil.move(video, os.path.join(POSTED_DIR, os.path.basename(video)))
         sb_path = os.path.splitext(video)[0] + ".storyboard.json"
