@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+# 実行時データ（投稿ID・メトリクスのログ）
+*.jsonl
+# 生成物・キャッシュ
+out/
+trends_cache.json
+narration_test.mp3
+# 素材プール本体はGitに入れない（容量。README/プレースホルダのみ管理）
+assets/demo_clips/*.mp4
+assets/bgm/*.mp3
+assets/bgm/*.wav

@@ -1,0 +1,8 @@
+{
+  "_comment": "Research API未設定時のフォールバック。週次レビュー(docs/34 §3)で手動更新してよい。trending_sound は Commercial Sounds Library の使える音源ID、またはローカルBGMパス(assets/bgm/xxx.mp3)、または null。",
+  "profile": {
+    "target_duration_sec": 22,
+    "caption_density": "high",
+    "trending_sound": null
+  }
+}

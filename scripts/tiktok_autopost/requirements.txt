@@ -1,0 +1,9 @@
+# TikTok自動生成スクリプトの依存（本体バックエンドとは独立）。
+# 最小構成: requests + python-dotenv だけでも絵コンテ出力までは動く。
+# MP4描画には moviepy（と ffmpeg バイナリ・日本語フォント）が必要。
+requests==2.32.3           # TikTok / ElevenLabs / Research API 呼び出し
+python-dotenv==1.0.1       # .env 読み込み（任意）
+anthropic==0.39.0          # 台本の口語リライト（任意。無くてもテンプレで動く）
+moviepy==1.0.3             # 動画組立（任意。無ければ絵コンテJSONを出力して縮退）
+# 補足: moviepy は ffmpeg バイナリに依存。OSに ffmpeg を入れること（apt install ffmpeg 等）。
+#       日本語テロップ用に Noto Sans CJK 等のフォントも入れる（fonts-noto-cjk）。
