@@ -11,6 +11,13 @@
 		reverse_proxy backend:8000
 	}
 
+	# SNS投稿のLINE承認Webhook（独立サービス）。
+	# LINE Developers の Webhook URL に https://{$DOMAIN}/sns/line/webhook を設定。
+	@sns path /sns/*
+	handle @sns {
+		reverse_proxy sns:8088
+	}
+
 	# フロントエンド（Next.js standalone）
 	handle {
 		reverse_proxy frontend:3000
