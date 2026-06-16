@@ -111,6 +111,14 @@ cronは**生成して承認待ちに送るだけ**になる（投稿はLINE承�
 Caddyが `https://<DOMAIN>/sns/*` を `sns:8088` に流す。投稿の生成はこのコンテナ内で叩く
 （承認キュー・投稿ログをコンテナの永続volume `sns_data`(/data) で共有するため）。
 
+> **かんたんセットアップ**: `.env` を埋めたら以下を1回叩くだけ（起動＋疎通確認＋Webhook URL表示）。
+> ```bash
+> bash scripts/sns_autopost/setup_approval.sh          # 起動＋疎通確認
+> # LINEコンソールでWebhook URL設定＆友だち追加 → userId を .env に入れたら:
+> bash scripts/sns_autopost/setup_approval.sh --test --cron   # テスト送信＋cron登録
+> ```
+
+手動でやる場合は以下。
 ```bash
 # .env を用意（scripts/sns_autopost/.env。LINE/X/Geminiキー等。compose が読み込む）
 cd docker && docker compose -f docker-compose.prod.yml --env-file .env up -d --build sns caddy
