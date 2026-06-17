@@ -47,3 +47,18 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 ## 注意
 - キー類（X / LINE / Gemini）は `.env`（Git除外）にのみ置く。**チャットやスクショに出さない**。
 - 漏れたら必ず再生成（X: 開発者ポータルで再生成 / Gemini: AI Studioで再発行）。
+
+## トラブルシュート
+- **`/sns/healthz` がfrontendの404になる / Caddyfileを変えても反映されない**:
+  Caddyは単一ファイルbind mountを「起動時の実体」で握り続けるため、`git checkout` 等で
+  Caddyfileを差し替えても古い内容を見続ける。`reload` でも直らない。**Caddyを作り直す**:
+  ```bash
+  cd /opt/vocalcoach/docker
+  docker compose -f docker-compose.prod.yml --env-file .env up -d --force-recreate caddy
+  curl -s https://sora-vocal-ai.duckdns.org/sns/healthz   # {"status":"ok","line":true}
+  ```
+- **承認/却下の確認**: キューの状態は sns コンテナ内の `/data/pending_queue.jsonl`。
+  ```bash
+  docker compose -f docker-compose.prod.yml --env-file .env exec -T sns sh -c "tail -3 /data/pending_queue.jsonl"
+  ```
+
