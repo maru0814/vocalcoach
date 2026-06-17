@@ -163,7 +163,7 @@ def post_to_x(text: str, link: str | None, post_link: bool) -> tuple[bool, str, 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pillar",
-                    choices=["self_type", "tip", "voice_type", "empathy", "contrarian", "question", "visual"],
+                    choices=["self_type", "tip", "voice_type", "contrarian", "visual"],
                     help="投稿の型を指定")
     ap.add_argument("--slot", type=int, choices=[1, 2], default=None,
                     help="1=昼枠（既定）/2=夜枠。1日2投稿時に別の型を出すために使う")
