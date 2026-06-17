@@ -1,12 +1,12 @@
-"""動画生成後の確認通知を送る。LINE Notify（主）→ Discord Webhook（副）の順で試みる。
+"""動画生成後の確認通知を送る。LINE Messaging API（主）→ Discord Webhook（副）の順で試みる。
 
 通知の内容:
   - 動画の絵コンテ（台本テキスト）
-  - サムネイル画像（ffmpeg で動画から切り出し。ffmpeg無ければ省略）
   - 承認コマンド（SSH してから python approve.py）
 
-LINE Notify: https://notify-bot.line.me/ でトークンを発行（無料）。
-  TIKTOK_LINE_TOKEN=<your_token> を .env に追加するだけで動く。
+LINE Messaging API（公式LINEアカウント経由。無料枠200通/月）:
+  TIKTOK_LINE_CHANNEL_TOKEN=<チャンネルアクセストークン>
+  TIKTOK_LINE_USER_ID=<あなたのLINEユーザーID（Uで始まる文字列）>
 
 Discord: TIKTOK_DISCORD_WEBHOOK_URL を .env に追加。
 """
@@ -23,8 +23,6 @@ def _thumbnail(video_path: str) -> str | None:
     if not (video_path and os.path.exists(video_path) and shutil.which("ffmpeg")):
         return None
     try:
-        import subprocess, tempfile
-        # 動画の長さを取得
         r = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", video_path],
             capture_output=True, text=True, timeout=10)
@@ -34,7 +32,7 @@ def _thumbnail(video_path: str) -> str | None:
                 if s.get("codec_type") == "video":
                     dur = float(s.get("duration", 5.0))
                     break
-        ts = dur * 0.3  # 動画の30%地点（フックテロップが大きく出ている）
+        ts = dur * 0.3
         tmp = tempfile.mktemp(suffix=".jpg")
         subprocess.run(
             ["ffmpeg", "-y", "-ss", str(ts), "-i", video_path, "-vframes", "1",
@@ -46,15 +44,14 @@ def _thumbnail(video_path: str) -> str | None:
 
 
 def _script_text(storyboard: dict, pillar: str) -> str:
-    """通知に貼るテキストを組み立てる。"""
     lines = [
-        f"🎬 TikTok動画 生成完了",
+        "🎬 TikTok動画 生成完了",
         f"型: {pillar}  / {storyboard.get('duration', '?')}秒",
         "",
-        f"▼ キャプション",
+        "▼ キャプション",
         storyboard.get("caption", ""),
         "",
-        f"▼ 台本",
+        "▼ 台本",
     ]
     for sc in storyboard.get("scenes", []):
         t = sc.get("text", "").replace("\n", " ")
@@ -68,20 +65,29 @@ def _script_text(storyboard: dict, pillar: str) -> str:
 
 
 def _send_line(text: str, image_path: str | None) -> bool:
-    token = os.getenv("TIKTOK_LINE_TOKEN")
-    if not token:
+    """LINE Messaging API（公式LINEアカウント）でプッシュ通知を送る。"""
+    token = os.getenv("TIKTOK_LINE_CHANNEL_TOKEN")
+    user_id = os.getenv("TIKTOK_LINE_USER_ID")
+    if not token or not user_id:
         return False
     try:
         import requests
-        data = {"message": text[:1000]}  # LINE Notify は1000文字上限
-        files = {}
-        if image_path and os.path.exists(image_path):
-            files = {"imageFile": open(image_path, "rb")}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        # テキストメッセージ（最大5000文字）
+        messages = [{"type": "text", "text": text[:5000]}]
         r = requests.post(
-            "https://notify-api.line.me/api/notify",
-            headers={"Authorization": f"Bearer {token}"},
-            data=data, files=files if files else None, timeout=20)
-        return r.status_code == 200
+            "https://api.line.me/v2/bot/message/push",
+            headers=headers,
+            json={"to": user_id, "messages": messages},
+            timeout=20,
+        )
+        if r.status_code == 200:
+            return True
+        print(f"[warn] LINE送信失敗 HTTP {r.status_code}: {r.text[:200]}", file=sys.stderr)
+        return False
     except Exception as e:
         print(f"[warn] LINE通知失敗: {e}", file=sys.stderr)
         return False
@@ -108,7 +114,7 @@ def _send_discord(text: str, image_path: str | None) -> bool:
 
 
 def notify(storyboard: dict, video_path: str | None, pillar: str) -> bool:
-    """通知を送る。LINE → Discord の順。どちらもキー未設定なら標準出力に出す。returns True if sent."""
+    """通知を送る。LINE → Discord の順。どちらもキー未設定なら標準出力に出す。"""
     text = _script_text(storyboard, pillar)
     thumb = _thumbnail(video_path) if video_path else None
 
@@ -123,7 +129,6 @@ def notify(storyboard: dict, video_path: str | None, pillar: str) -> bool:
             os.remove(thumb)
         return True
 
-    # どちらのキーもない → 標準出力に出してスキップ
     print("=" * 52)
     print("【通知キー未設定】以下の内容を確認して承認してください:")
     print(text)
@@ -134,7 +139,7 @@ def notify(storyboard: dict, video_path: str | None, pillar: str) -> bool:
 
 
 def send_report(text: str) -> bool:
-    """週次分析レポートをLINE → Discord の順で送信する。returns True if sent."""
+    """週次分析レポートをLINE → Discord の順で送信する。"""
     if _send_line(text, None):
         print("📱 週次レポートをLINEに送信しました。")
         return True
