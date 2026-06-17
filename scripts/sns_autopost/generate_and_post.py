@@ -8,6 +8,7 @@
 
 環境変数（.env または環境に設定。.env.example 参照）:
   DRY_RUN=1                 … 投稿せず本文だけ表示（既定の安全側）
+  APPROVAL_MODE=1           … 1=生成後LINEで承認を取る（既定）/0=従来どおり即投稿
   APP_URL=https://...       … 誘導先（未設定なら本番URL）
   GEMINI_API_KEY=...        … あれば文面をAI生成（無くてもテンプレで動く）
   X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_SECRET … X投稿用（OAuth1.0a）
@@ -20,11 +21,16 @@
 投稿IDは posts_log.jsonl に記録し、fetch_metrics.py でインプレを取得して改善に回す。
 
 使い方:
-  python generate_and_post.py                    # 今日の昼枠(slot1)の型で1件
+  python generate_and_post.py                    # 今日の昼枠(slot1)の型を生成→LINEで承認待ちに送る
   python generate_and_post.py --slot 2           # 今日の夜枠(slot2)の型で1件
   python generate_and_post.py --pillar self_type # 型を指定（self_type/tip/voice_type/empathy/contrarian/question/visual）
-  python generate_and_post.py --pillar tip --force # 手動で追加投稿（日次上限を無視。月間コスト上限は維持）
-  python generate_and_post.py --dry-run          # 強制ドライラン
+  python generate_and_post.py --dry-run          # 生成して本文を表示するだけ（キューにもLINEにも送らない）
+  python generate_and_post.py --post-now --force # 承認を挟まず即投稿（手動・緊急用。日次上限は無視）
+
+承認フロー（既定）:
+  生成 → pending_queue.jsonl に保存 → LINEに本文＋[承認][却下]ボタンをpush。
+  あなたがLINEで承認したものだけ webhook.py が X に投稿する。
+  APPROVAL_MODE=0 にすると従来どおり生成して即投稿する。
 """
 import argparse
 import datetime
@@ -41,7 +47,10 @@ except Exception:
     pass
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
-POSTS_LOG = os.path.join(_DIR, "posts_log.jsonl")  # 投稿ID・型の記録（計測/予算用）
+# 実行時データの保存先。本番は永続volume（/data等）を SNS_DATA_DIR で指定する。
+_DATA_DIR = os.getenv("SNS_DATA_DIR", _DIR)
+os.makedirs(_DATA_DIR, exist_ok=True)
+POSTS_LOG = os.path.join(_DATA_DIR, "posts_log.jsonl")  # 投稿ID・型の記録（計測/予算用）
 
 # X API 概算単価（2026。URL投稿は高い→既定で避ける）
 COST_POST = 0.015      # URLなし投稿 $/件
@@ -160,7 +169,10 @@ def main() -> int:
                     help="1=昼枠（既定）/2=夜枠。1日2投稿時に別の型を出すために使う")
     ap.add_argument("--force", action="store_true",
                     help="手動投稿用。1日の投稿上限を無視して追加投稿する（月間コスト上限は維持）")
-    ap.add_argument("--dry-run", action="store_true", help="投稿せず本文だけ表示")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="生成して本文を表示するだけ（キューにもLINEにも送らない）")
+    ap.add_argument("--post-now", action="store_true",
+                    help="承認を挟まず即投稿する（APPROVAL_MODEを無視。手動・緊急用）")
     args = ap.parse_args()
 
     app_url = os.getenv("APP_URL", themes.APP_URL_DEFAULT).rstrip("/")
@@ -183,9 +195,25 @@ def main() -> int:
 
     dry = args.dry_run or _truthy(os.getenv("DRY_RUN", "1"))  # 既定は安全側でドライラン
     if dry:
-        print("DRY_RUN: 投稿はしていません（DRY_RUN=0 とXキー設定で実投稿）。")
+        print("DRY_RUN: 生成のみ。承認キュー・LINE・投稿はいずれもしていません。")
         return 0
 
+    # 既定は承認フロー: 投稿せずキューに積み、LINEで承認を仰ぐ。
+    approval = _truthy(os.getenv("APPROVAL_MODE", "1")) and not args.post_now
+    if approval:
+        import approval_queue as q
+        import line_client
+        draft = q.enqueue(pillar, slot, text, link, post_link)
+        ok_line, info = line_client.push_approval(draft)
+        if ok_line:
+            print(f"📨 承認待ちに送信しました（id={draft['id']}）。LINEで承認/却下してください。")
+            return 0
+        print(f"⚠ キューには保存しましたが、LINE送信に失敗: {info}", file=sys.stderr)
+        print(f"   id={draft['id']} pillar={pillar}（承認できる経路を確認してください）",
+              file=sys.stderr)
+        return 1
+
+    # --post-now / APPROVAL_MODE=0: 従来どおり生成して即投稿。
     ok_budget, why = _budget_check(post_has_link=post_link, force=args.force)
     if args.force:
         print("⚠ --force: 本日の投稿上限を無視して投稿します（月間コスト上限は維持）。")

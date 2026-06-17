@@ -18,6 +18,7 @@ services:
     depends_on:
       - frontend
       - backend
+      - sns
 
   backend:
     build:
@@ -55,7 +56,29 @@ services:
         NEXT_PUBLIC_CF_BEACON_TOKEN: "${CF_BEACON_TOKEN:-}"
     restart: unless-stopped
 
+  # SNS投稿のLINE承認Webhook（本体バックエンドとは独立）。
+  # Caddy が /sns/* をここへ流す。投稿の生成cronは
+  #   docker compose -f docker-compose.prod.yml exec sns python generate_and_post.py --slot 1
+  # のように叩く（承認キュー・投稿ログをこのコンテナ内で共有するため）。
+  sns:
+    build:
+      context: ../scripts/sns_autopost
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # LINE/X/Geminiのキーや APPROVAL_MODE 等は scripts/sns_autopost/.env から読む
+    # （未作成でも他サービスを止めないよう required:false。snsを使う前に必ず作成する）
+    env_file:
+      - path: ../scripts/sns_autopost/.env
+        required: false
+    environment:
+      WEBHOOK_PORT: "8088"
+      # 承認キュー・投稿ログ・メトリクスを永続volumeに書く
+      SNS_DATA_DIR: "/data"
+    volumes:
+      - sns_data:/data
+
 volumes:
   caddy_data:
   caddy_config:
   app_data:
+  sns_data:

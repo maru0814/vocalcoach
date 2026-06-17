@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""LINE Messaging API クライアント（承認フロー用）。
+
+- push_approval(): 生成した下書きを「本文＋[承認][却下]ボタン」で運用者にpush
+- reply(): Webhookの replyToken に対する返信（押下後の結果通知など）
+- verify_signature(): Webhook受信時の X-Line-Signature 検証
+
+必要な環境変数（scripts/sns_autopost/.env）:
+  LINE_CHANNEL_ACCESS_TOKEN … Messaging APIのチャネルアクセストークン（長期）
+  LINE_CHANNEL_SECRET       … 署名検証用のチャネルシークレット
+  LINE_OPERATOR_USER_ID     … push先（あなた）のuserId。follow時にWebhookが教える
+"""
+import base64
+import hashlib
+import hmac
+import os
+
+import requests
+
+_API = "https://api.line.me/v2/bot"
+_TIMEOUT = 15
+
+
+def _token() -> str | None:
+    return os.getenv("LINE_CHANNEL_ACCESS_TOKEN") or None
+
+
+def _secret() -> str:
+    return os.getenv("LINE_CHANNEL_SECRET", "")
+
+
+def enabled() -> bool:
+    return bool(_token() and _secret())
+
+
+def verify_signature(body: bytes, signature: str | None) -> bool:
+    """X-Line-Signature を検証。secret未設定や不一致は False。"""
+    secret = _secret()
+    if not secret or not signature:
+        return False
+    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
+    expected = base64.b64encode(mac).decode("utf-8")
+    return hmac.compare_digest(expected, signature)
+
+
+def _headers() -> dict:
+    return {
+        "Authorization": f"Bearer {_token()}",
+        "Content-Type": "application/json",
+    }
+
+
+def _approval_messages(draft: dict) -> list[dict]:
+    """下書き本文 ＋ 承認/却下ボタンのメッセージ配列を組み立てる。"""
+    text = draft.get("text", "")
+    slot = draft.get("slot", "")
+    pillar = draft.get("pillar", "")
+    did = draft.get("id", "")
+    header = f"📝 投稿の承認待ち（slot{slot} / {pillar}）\n投稿前に確認してください👇"
+    # 本文は1通目（コピペ・全文確認用）、ボタンは2通目。
+    buttons = {
+        "type": "template",
+        "altText": "ツイートの承認（承認 / 却下）",
+        "template": {
+            "type": "confirm",
+            "text": "この内容で投稿しますか？",
+            "actions": [
+                {"type": "postback", "label": "✅ 承認して投稿",
+                 "data": f"act=approve&id={did}",
+                 "displayText": "✅ 承認して投稿"},
+                {"type": "postback", "label": "🗑 却下",
+                 "data": f"act=reject&id={did}",
+                 "displayText": "🗑 却下"},
+            ],
+        },
+    }
+    return [
+        {"type": "text", "text": f"{header}\n\n{'─' * 12}\n{text}"},
+        buttons,
+    ]
+
+
+def push_approval(draft: dict) -> tuple[bool, str]:
+    """承認待ちの下書きを運用者にpush。returns (ok, info)。"""
+    if not enabled():
+        return False, "LINE_KEYS_MISSING"
+    to = os.getenv("LINE_OPERATOR_USER_ID")
+    if not to:
+        return False, "LINE_OPERATOR_USER_ID_MISSING"
+    payload = {"to": to, "messages": _approval_messages(draft)}
+    try:
+        r = requests.post(f"{_API}/message/push", headers=_headers(),
+                          json=payload, timeout=_TIMEOUT)
+        if r.status_code == 200:
+            return True, "ok"
+        return False, f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        return False, f"EXC: {e}"
+
+
+def reply(reply_token: str, text: str) -> tuple[bool, str]:
+    """Webhookイベントへの返信（押下結果の通知など）。"""
+    if not enabled() or not reply_token:
+        return False, "skip"
+    payload = {"replyToken": reply_token,
+               "messages": [{"type": "text", "text": text}]}
+    try:
+        r = requests.post(f"{_API}/message/reply", headers=_headers(),
+                          json=payload, timeout=_TIMEOUT)
+        return (r.status_code == 200), (f"HTTP {r.status_code}" if r.status_code != 200 else "ok")
+    except Exception as e:
+        return False, f"EXC: {e}"

@@ -17,8 +17,10 @@ import os
 import sys
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
-POSTS_LOG = os.path.join(_DIR, "posts_log.jsonl")
-METRICS_LOG = os.path.join(_DIR, "metrics_log.jsonl")
+# 実行時データの保存先。本番は永続volume（/data等）を SNS_DATA_DIR で指定する。
+_DATA_DIR = os.getenv("SNS_DATA_DIR", _DIR)
+POSTS_LOG = os.path.join(_DATA_DIR, "posts_log.jsonl")
+METRICS_LOG = os.path.join(_DATA_DIR, "metrics_log.jsonl")
 
 try:
     from dotenv import load_dotenv
