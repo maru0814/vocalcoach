@@ -84,10 +84,14 @@ def _script_text(storyboard: dict, pillar: str) -> str:
 
 
 def _send_line(text: str, video_path: str | None, thumb_path: str | None) -> bool:
-    """LINE Messaging APIで通知を送る。動画があれば0x0.stにアップロードして動画メッセージで送る。"""
+    """LINE Messaging APIで通知を送る。動画があれば0x0.stにアップロードして動画メッセージで送る。
+
+    TIKTOK_LINE_USER_ID があれば push（指定ユーザー宛）、無ければ broadcast（友だち全員宛）。
+    自分1人だけが友だちなら broadcast でユーザーID不要。
+    """
     token = os.getenv("TIKTOK_LINE_CHANNEL_TOKEN")
-    user_id = os.getenv("TIKTOK_LINE_USER_ID")
-    if not token or not user_id:
+    user_id = os.getenv("TIKTOK_LINE_USER_ID")  # 任意。無ければ broadcast を使う
+    if not token:
         return False
     try:
         import requests
@@ -113,12 +117,14 @@ def _send_line(text: str, video_path: str | None, thumb_path: str | None) -> boo
 
         messages.append({"type": "text", "text": text[:5000]})
 
-        r = requests.post(
-            "https://api.line.me/v2/bot/message/push",
-            headers=headers,
-            json={"to": user_id, "messages": messages},
-            timeout=20,
-        )
+        if user_id:
+            endpoint = "https://api.line.me/v2/bot/message/push"
+            body = {"to": user_id, "messages": messages}
+        else:
+            endpoint = "https://api.line.me/v2/bot/message/broadcast"
+            body = {"messages": messages}
+
+        r = requests.post(endpoint, headers=headers, json=body, timeout=20)
         if r.status_code == 200:
             return True
         print(f"[warn] LINE送信失敗 HTTP {r.status_code}: {r.text[:200]}", file=sys.stderr)
