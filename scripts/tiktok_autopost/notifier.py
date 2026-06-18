@@ -1,11 +1,11 @@
 """動画生成後の確認通知を送る。LINE Messaging API（主）→ Discord Webhook（副）の順で試みる。
 
 通知の内容:
-  - 動画の絵コンテ（台本テキスト）
-  - 承認コマンド（SSH してから python approve.py）
+  - 動画ファイル（LINE: 0x0.st経由の一時URL / Discord: 直接添付）
+  - 台本テキスト
 
 LINE Messaging API（公式LINEアカウント経由。無料枠200通/月）:
-  TIKTOK_LINE_CHANNEL_TOKEN=<チャンネルアクセストークン>
+  TIKTOK_LINE_CHANNEL_TOKEN=<チャンネルアクセストークン（長期）>
   TIKTOK_LINE_USER_ID=<あなたのLINEユーザーID（Uで始まる文字列）>
 
 Discord: TIKTOK_DISCORD_WEBHOOK_URL を .env に追加。
@@ -43,6 +43,25 @@ def _thumbnail(video_path: str) -> str | None:
         return None
 
 
+def _upload_temp(path: str) -> str | None:
+    """ファイルを 0x0.st にアップロードして公開HTTPS URLを返す。失敗時 None。
+    動画・サムネイルを一時公開してLINEのビデオメッセージに使う。"""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        import requests
+        with open(path, "rb") as f:
+            r = requests.post("https://0x0.st", files={"file": f}, timeout=120)
+        if r.status_code == 200:
+            url = r.text.strip()
+            if url.startswith("https://"):
+                return url
+        print(f"[warn] 0x0.st アップロード失敗 HTTP {r.status_code}", file=sys.stderr)
+    except Exception as e:
+        print(f"[warn] 一時アップロード失敗: {e}", file=sys.stderr)
+    return None
+
+
 def _script_text(storyboard: dict, pillar: str) -> str:
     lines = [
         "🎬 TikTok動画 生成完了",
@@ -64,8 +83,8 @@ def _script_text(storyboard: dict, pillar: str) -> str:
     return "\n".join(lines)
 
 
-def _send_line(text: str, image_path: str | None) -> bool:
-    """LINE Messaging API（公式LINEアカウント）でプッシュ通知を送る。"""
+def _send_line(text: str, video_path: str | None, thumb_path: str | None) -> bool:
+    """LINE Messaging APIで通知を送る。動画があれば0x0.stにアップロードして動画メッセージで送る。"""
     token = os.getenv("TIKTOK_LINE_CHANNEL_TOKEN")
     user_id = os.getenv("TIKTOK_LINE_USER_ID")
     if not token or not user_id:
@@ -76,8 +95,24 @@ def _send_line(text: str, image_path: str | None) -> bool:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
-        # テキストメッセージ（最大5000文字）
-        messages = [{"type": "text", "text": text[:5000]}]
+        messages = []
+
+        if video_path and os.path.exists(video_path):
+            print("動画をアップロード中...", end=" ", flush=True)
+            video_url = _upload_temp(video_path)
+            thumb_url = _upload_temp(thumb_path) if thumb_path else None
+            if video_url:
+                print("完了")
+                messages.append({
+                    "type": "video",
+                    "originalContentUrl": video_url,
+                    "previewImageUrl": thumb_url if thumb_url else video_url,
+                })
+            else:
+                print("失敗（テキストのみ送信）")
+
+        messages.append({"type": "text", "text": text[:5000]})
+
         r = requests.post(
             "https://api.line.me/v2/bot/message/push",
             headers=headers,
@@ -93,18 +128,21 @@ def _send_line(text: str, image_path: str | None) -> bool:
         return False
 
 
-def _send_discord(text: str, image_path: str | None) -> bool:
+def _send_discord(text: str, video_path: str | None, thumb_path: str | None) -> bool:
+    """Discord Webhookで通知を送る。動画ファイルを直接添付する。"""
     url = os.getenv("TIKTOK_DISCORD_WEBHOOK_URL")
     if not url:
         return False
     try:
         import requests
         payload = {"content": text[:2000]}
-        files = {}
-        if image_path and os.path.exists(image_path):
-            files = {"file": ("thumbnail.jpg", open(image_path, "rb"), "image/jpeg")}
-            r = requests.post(url, data={"payload_json": json.dumps(payload)},
-                              files=files, timeout=20)
+
+        # 動画ファイルを直接添付（Discordは25MBまでファイル添付可）
+        if video_path and os.path.exists(video_path):
+            with open(video_path, "rb") as vf:
+                files = {"file": (os.path.basename(video_path), vf, "video/mp4")}
+                r = requests.post(url, data={"payload_json": json.dumps(payload)},
+                                  files=files, timeout=60)
         else:
             r = requests.post(url, json=payload, timeout=20)
         return r.status_code in (200, 204)
@@ -118,32 +156,30 @@ def notify(storyboard: dict, video_path: str | None, pillar: str) -> bool:
     text = _script_text(storyboard, pillar)
     thumb = _thumbnail(video_path) if video_path else None
 
-    if _send_line(text, thumb):
-        print("📱 LINE通知を送信しました。")
-        if thumb:
-            os.remove(thumb)
-        return True
-    if _send_discord(text, thumb):
-        print("💬 Discord通知を送信しました。")
-        if thumb:
-            os.remove(thumb)
-        return True
+    try:
+        if _send_line(text, video_path, thumb):
+            print("📱 LINE通知を送信しました。")
+            return True
+        if _send_discord(text, video_path, thumb):
+            print("💬 Discord通知を送信しました。")
+            return True
 
-    print("=" * 52)
-    print("【通知キー未設定】以下の内容を確認して承認してください:")
-    print(text)
-    print("=" * 52)
-    if thumb:
-        os.remove(thumb)
-    return False
+        print("=" * 52)
+        print("【通知キー未設定】以下の内容を確認して承認してください:")
+        print(text)
+        print("=" * 52)
+        return False
+    finally:
+        if thumb and os.path.exists(thumb):
+            os.remove(thumb)
 
 
 def send_report(text: str) -> bool:
-    """週次分析レポートをLINE → Discord の順で送信する。"""
-    if _send_line(text, None):
+    """週次分析レポートをLINE → Discord の順で送信する（動画なし）。"""
+    if _send_line(text, None, None):
         print("📱 週次レポートをLINEに送信しました。")
         return True
-    if _send_discord(text, None):
+    if _send_discord(text, None, None):
         print("💬 週次レポートをDiscordに送信しました。")
         return True
     return False
