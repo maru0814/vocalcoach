@@ -51,13 +51,17 @@ def _headers() -> dict:
 
 
 def _approval_messages(draft: dict) -> list[dict]:
-    """下書き本文 ＋ 承認/却下ボタンのメッセージ配列を組み立てる。"""
+    """下書き本文（＋2部構成ならリプ本体）＋ 承認/却下ボタンのメッセージ配列を組み立てる。"""
     text = draft.get("text", "")
+    reply = draft.get("reply") or ""
     slot = draft.get("slot", "")
     pillar = draft.get("pillar", "")
     did = draft.get("id", "")
     header = f"📝 投稿の承認待ち（slot{slot} / {pillar}）\n投稿前に確認してください👇"
-    # 本文は1通目（コピペ・全文確認用）、ボタンは2通目。
+    # 本投稿は1通目。2部構成ならリプ本体を2通目に分けて見せ、ボタンは最後。
+    main_msg = {"type": "text", "text": f"{header}\n\n【本投稿】\n{'─' * 12}\n{text}"}
+    reply_msg = ({"type": "text", "text": f"【リプ＝大事な中身】\n{'─' * 12}\n{reply}"}
+                 if reply else None)
     buttons = {
         "type": "template",
         "altText": "ツイートの承認（承認 / 却下）",
@@ -74,10 +78,7 @@ def _approval_messages(draft: dict) -> list[dict]:
             ],
         },
     }
-    return [
-        {"type": "text", "text": f"{header}\n\n{'─' * 12}\n{text}"},
-        buttons,
-    ]
+    return [m for m in (main_msg, reply_msg, buttons) if m]
 
 
 def push_approval(draft: dict) -> tuple[bool, str]:

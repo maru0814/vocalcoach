@@ -66,14 +66,12 @@ curl -s http://localhost:8088/sns/healthz   # {"status":"ok","line":true}
 # まずは安全確認（生成して本文だけ表示。キューにもLINEにも送らない。DRY_RUN=1 が既定）
 python generate_and_post.py
 
-# 型を指定して確認（docs/25 の「伸びる型」に対応）
-python generate_and_post.py --pillar self_type   # 自己分類フック（診断誘導）
-python generate_and_post.py --pillar empathy     # 共感あるある（リンクなし）
-python generate_and_post.py --pillar tip         # 番号付きTips
-python generate_and_post.py --pillar contrarian  # 逆張り
-python generate_and_post.py --pillar question    # 問いかけ（リプ狙い）
-python generate_and_post.py --pillar voice_type  # 声タイプ図鑑
-python generate_and_post.py --pillar visual      # ビジュアル誘導
+# 型を指定して確認
+python generate_and_post.py --pillar tip         # 実践Tips（2部構成: フック→手順はリプ）
+python generate_and_post.py --pillar contrarian  # 逆張り（2部構成: 誤解→根拠はリプ）
+python generate_and_post.py --pillar self_type   # 自己分類フック（診断導線・単発）
+python generate_and_post.py --pillar voice_type  # 声タイプ図鑑（診断導線・単発）
+python generate_and_post.py --pillar visual      # ビジュアル誘導（診断導線・単発）
 
 # 承認フローに乗せる（DRY_RUN=0。生成→キュー→LINE通知。投稿は承認後）
 DRY_RUN=0 python generate_and_post.py
@@ -82,8 +80,11 @@ DRY_RUN=0 python generate_and_post.py
 DRY_RUN=0 python generate_and_post.py --pillar tip --post-now --force
 ```
 
-> **本文にもリプにもURLを入れない**のが既定（`POST_LINK=0`）。リンクは**プロフィール固定**で誘導（reach減＆$0.20課金を回避）。
-> empathy / question はリンクなしの純粋な会話狙い。**自動は種まき、初速の点火は手動リプで**。
+### 投稿は2部構成（リプに本体を置く）
+`tip` / `contrarian` は **本投稿＝好奇心フックで寸止め／リプ（自己返信）＝手順・根拠の本体** の2部構成で投稿する。読者にリプを促す“リプ乞い”ではなく、**自分の自己返信に続きを置いて「リプを開きたくなる」導線**にする設計。診断導線型（self_type/voice_type/visual）は単発。
+`generate_post()` が `{text, reply, link}` を返し、承認キュー（`enqueue`）→ LINEプレビュー（本投稿＋リプ本体を表示）→ `webhook.py` が承認時に **本投稿→リプ本体→(任意)URL** の順でスレッド投稿する。
+
+> **本文にもリプにもURLを入れない**のが既定（`POST_LINK=0`）。リンクは**プロフィール固定**で誘導（reach減＆$0.20課金を回避）。リプ本体はURLなしの中身なので $0.015。
 
 ## インプレ計測（改善ループ）
 ```bash
@@ -128,8 +129,8 @@ cd docker && docker compose -f docker-compose.prod.yml --env-file .env up -d --b
 0 21 * * * cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --slot 2 >> /var/log/sns_autopost.log 2>&1
 0 23 * * * cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml exec -T sns python fetch_metrics.py >> /var/log/sns_metrics.log 2>&1
 ```
-- 昼枠(slot1)の型は `themes.py` の `PILLARS`（月=自己分類/火=Tips/水=声タイプ図鑑/木=共感/金=逆張り/土=問いかけ/日=ビジュアル）。
-- 夜枠(slot2)は `PILLARS_2ND`（会話・共感型を厚め＝docs/29 §3 リプ至上主義）。同日の昼とは必ず別の型になる。
+- 昼枠(slot1)の型は `themes.py` の `PILLARS`（Tips中心＋診断導線・逆張り）。
+- 夜枠(slot2)は `PILLARS_2ND`。同日の昼とは必ず別の型になる。
 - 1日2投稿なので `.env` の `MAX_POSTS_PER_DAY=2` を忘れず設定する。
 
 ## 安全装置 / 予算ガード
