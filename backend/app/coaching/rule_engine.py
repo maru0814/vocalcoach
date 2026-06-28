@@ -113,85 +113,16 @@ def parse_phase_a(text: str, state: dict) -> dict:
     return updates
 
 
-def _safe_reason(task: Optional[dict], analysis: Optional[dict]) -> Optional[str]:
-    if not task or not analysis:
-        return None
-    try:
-        return task["reason"](analysis, None)
-    except Exception:
-        return None
+def _chat_reply(state: dict, text: str, history: Optional[list[dict]]) -> str:
+    """自由テキストへの返答は、必ず LLM（ソラ先生）の自然言語で生成する。
 
-
-def answer_question(state: dict, text: str) -> Optional[str]:
-    """今の課題・解析結果を踏まえて、ユーザーの質問にその場で答える（対話型）。
-
-    ルールベースなので、よくある質問パターンを文脈で埋めて返す。
-    該当しなければ None（呼び出し側で一般応答にフォールバック）。
-    """
-    t = text.strip()
-    task = get_task(state.get("current_task")) if state.get("current_task") else None
-    baseline = state.get("baseline_analysis")
-    reason = _safe_reason(task, baseline)
-
-    def q(*kws: str) -> bool:
-        return any(k in t for k in kws)
-
-    # どこ／どの部分（場所を聞いている）
-    if q("どこ", "どの部分", "どのへん", "どこら", "場所", "何秒", "どの音", "どこが"):
-        if reason:
-            return f"はい、{reason} そこを意識して、もう一度歌ってみましょう🎤"
-        if task:
-            return f"今は「{task['label']}」を見ています。録音をもう一度送ってもらえたら、具体的に何秒のどこか、はっきりお伝えしますね🎤"
-        return "まず歌った録音を送ってもらえたら、どこを直すか秒数で具体的にお伝えします🎤"
-
-    # どうやって／やり方／コツ
-    if q("どうやって", "どうすれ", "やり方", "方法", "コツ", "どう練習", "練習方法"):
-        if task:
-            p = task["practices"][0]
-            steps = "／".join(p["steps"][:2])
-            cp = f"目安は『{p.get('checkpoint','')}』です。" if p.get("checkpoint") else ""
-            return f"『{p['name']}』から始めましょう。{steps}…という流れです。{cp}まずはここだけでOK、やってみたら録音を送ってくださいね😊"
-        return "録音を送ってもらえたら、あなたに合った練習法を具体的にお伝えします🎯"
-
-    # なぜ／理由
-    if q("なぜ", "どうして", "理由", "なんで", "なぜか"):
-        if task:
-            base = reason or f"「{task['label']}」が今いちばん伸ばせるポイントだからです。"
-            return f"{base} だからこの基礎練が効くんですよ😊"
-        return "気になるところを録音で送ってもらえたら、理由から説明しますね。"
-
-    # わからない／難しい／できない
-    if q("わからない", "分からない", "わかんない", "むずかし", "難し", "できない", "苦手"):
-        if task:
-            p = task["practices"][0]
-            return f"大丈夫、ゆっくりいきましょう💪 まずは『{p['name']}』だけでOKです。{p.get('checkpoint','')} を目安にしてみてください。録音を送ってくれたら、できているか一緒に確かめますね🎤"
-        return "焦らなくて大丈夫です😊 まずは1フレーズだけ歌って録ってみましょう🎤"
-
-    # スコア／点数（点数制は廃止。数字で採点しない方針を伝える）
-    if q("スコア", "点数", "何点", "評価"):
-        return "わたしは点数はつけていないんです😊 数字で採点するより、今の声の良いところと、次に試すと良いことを会話でお伝えしますね。気になる箇所があれば教えてください🎤"
-
-    # 励まし・お礼への返し
-    if q("ありがとう", "わかった", "了解", "やってみる", "がんばる", "頑張る"):
-        return "その意気です😊 練習できたら録音を送ってくださいね。いつでも待っています🎤"
-
-    return None
-
-
-def _chat_reply(state: dict, text: str, history: Optional[list[dict]], generic: str) -> str:
-    """自由テキストへの返答を決める。
-
-    1) LLM（ソラ先生）で自然言語応答を試みる
-    2) ダメなら（APIキー未設定・エラー）ルールベースのテンプレ応答
-    3) それも該当しなければ汎用メッセージ
+    ルールベースの定型Q&A・はぐらかし定型は使わない。LLMが使えない/失敗したときは、
+    それっぽい偽の回答で取り繕わず、正直に短く返す（録音を促す的外れ定型にも落とさない）。
     """
     reply = llm.generate_reply(state, text, history)
     if reply:
         return reply
-    reply = answer_question(state, text)
-    if reply:
-        return reply
-    return generic
+    return "ごめんなさい、いまうまく言葉が出せませんでした🙏 もう一度、聞きたいことを送ってもらえますか？"
 
 
 def handle_text(
@@ -226,12 +157,8 @@ def handle_text(
                     "原曲を確認しました😊 録音を送ってもらえたら、原曲と照らし合わせてアドバイスしますね🎤",
                 ))
         else:
-            # 質問・つぶやきには自然言語で答える。録音前なら自然に録音をうながす。
-            generic = (
-                "了解です🎤 まずは練習したいところを歌って、録音を送ってください"
-                "（🎙録音 または 📎アップロード）。聴いて、直すところをお伝えしますね😊"
-            )
-            out.append(coach_msg("text", _chat_reply(merged, text, history, generic)))
+            # 質問・つぶやきには、LLM(ソラ先生)が文脈をふまえて自然言語で答える（定型ではぐらかさない）。
+            out.append(coach_msg("text", _chat_reply(merged, text, history)))
         return out, updates
 
     # Phase B 以降：原曲が新たに付いたら知らせる。質問には答える。
@@ -239,11 +166,7 @@ def handle_text(
         out.append(coach_msg("text", "原曲を受け取りました😊 次の録音から、照らし合わせてアドバイスしますね🎤"))
         return out, updates
 
-    generic = (
-        "なるほど😊 気になることがあれば、なんでも聞いてくださいね。"
-        "準備ができたら、下のボタンから録音を送ってください🎤"
-    )
-    out.append(coach_msg("text", _chat_reply(merged, text, history, generic)))
+    out.append(coach_msg("text", _chat_reply(merged, text, history)))
     return out, updates
 
 
