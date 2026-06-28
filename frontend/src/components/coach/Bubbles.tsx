@@ -361,6 +361,32 @@ function DiagnosisCard({ p }: { p: Record<string, any> }) {
   );
 }
 
+/** 過去ログに残る旧カード（feedback/practice/judge/progress/diagnosis）の互換表示。
+ *  点数・◎○△×・表は出さず、課題/練習名だけを淡色テキストで控えめに見せる。
+ *  新しいFBは type=text の会話文なので、これは過去ログ専用のフォールバック。 */
+function LegacyNote({ type, payload }: { type: string; payload: Record<string, any> }) {
+  const p = payload || {};
+  let text = "（以前の診断結果）";
+  if (type === "feedback") {
+    const issue = p.today_task?.label || p.headline;
+    text = issue ? `（以前の診断メモ）${issue}` : "（以前の診断メモ）";
+  } else if (type === "practice") {
+    const name = p.task_label || p.practices?.[0]?.name;
+    text = name ? `（以前すすめた練習）${name}` : "（以前すすめた練習）";
+  } else if (type === "judge") {
+    text = p.result === "pass" ? "（以前の判定）クリアしていました" : "（以前の判定）あと少しでした";
+  } else if (type === "progress") {
+    text = p.praise || "（以前の比較メモ）前回と比べました";
+  } else if (type === "diagnosis") {
+    text = "（以前の声のメモ）";
+  }
+  return (
+    <div className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-400 shadow-card ring-1 ring-slate-100">
+      {text}
+    </div>
+  );
+}
+
 function ActionChips({
   actions,
   onAction,
@@ -490,7 +516,8 @@ export function MessageBubble({
   actionsDisabled?: boolean;
 }) {
   const isUser = m.role === "user";
-  const isCard = ["feedback", "practice", "judge", "progress", "diagnosis"].includes(m.type);
+  // 旧カード型（過去ログにのみ存在）。新規FBは type=text の会話文で返る。
+  const isLegacyCard = ["feedback", "practice", "judge", "progress", "diagnosis"].includes(m.type);
   const actions = (m.payload as any)?.actions as { id: string; icon?: string; label: string }[] | undefined;
 
   if (isUser) {
@@ -509,7 +536,7 @@ export function MessageBubble({
   return (
     <div className="flex items-end gap-2">
       <CoachAvatar size={32} />
-      <div className={isCard ? "min-w-0 max-w-[88%] flex-1" : "max-w-[82%]"}>
+      <div className="max-w-[82%]">
         {m.type === "text" && (
           <>
             <div className="whitespace-pre-wrap rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-700 shadow-card ring-1 ring-slate-100">
@@ -523,11 +550,7 @@ export function MessageBubble({
             <audio controls src={`${COACH_API_BASE}${m.audio_url}`} className="w-60" />
           </div>
         )}
-        {m.type === "feedback" && m.payload && <FeedbackCard p={m.payload as any} />}
-        {m.type === "practice" && m.payload && <PracticeCard p={m.payload as any} />}
-        {m.type === "judge" && m.payload && <JudgeCard p={m.payload as any} />}
-        {m.type === "progress" && m.payload && <ProgressCard p={m.payload as any} />}
-        {m.type === "diagnosis" && m.payload && <DiagnosisCard p={m.payload as any} />}
+        {isLegacyCard && m.payload && <LegacyNote type={m.type} payload={m.payload as any} />}
         {actions && <ActionChips actions={actions} onAction={onAction} disabled={actionsDisabled} />}
       </div>
     </div>
