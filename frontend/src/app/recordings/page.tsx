@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { listRecordings, RecordingListItem } from "@/lib/api";
 import UpgradeModal from "@/components/UpgradeModal";
+import { AppHeader } from "@/components/AppHeader";
 
 export default function RecordingsPage() {
   const [items, setItems] = useState<RecordingListItem[]>([]);
@@ -24,7 +25,9 @@ export default function RecordingsPage() {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <>
+    <AppHeader />
+    <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">評価履歴一覧</h1>
         <Link className="rounded bg-blue-600 px-4 py-2 text-white" href="/recordings/new">
@@ -63,5 +66,6 @@ export default function RecordingsPage() {
       </ul>
       {showUpgrade ? <UpgradeModal source="history" onClose={() => setShowUpgrade(false)} /> : null}
     </div>
+    </>
   );
 }
