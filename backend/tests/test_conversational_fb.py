@@ -99,12 +99,16 @@ class ConversationalFBContract(unittest.TestCase):
         self._assert_text_only_no_score(msgs)
         self.assertTrue(1 <= len(msgs) <= 2)
 
-    # FR-04: 点数を聞かれたら「つけていない」方針を返す（数字で採点しない）
+    # FR-04: 点数質問もチャット経路(LLM)に統一。点数(数字)を返さない。
+    # （実LLMでの「点数はつけていない」方針は HTTP e2e TC-12 で確認済み。
+    #   ここは LLM不可時に正直フォールバックへ落ち、点数を返さないことを担保する）
     def test_score_question_no_points(self):
-        reply = rule_engine.answer_question(_state(), "これ何点ですか？")
-        self.assertIsNotNone(reply)
-        self.assertIsNone(BAD_SCORE.search(reply), "点数を返してはいけない")
-        self.assertIn("点", reply)  # 「点数はつけていない」の文言は含む
+        msgs, _ = rule_engine.handle_text(
+            _state(phase="practice", current_task="pitch_wobble", baseline_analysis=ANALYSIS_ISSUE),
+            "これ何点ですか？",
+        )
+        text = " ".join(m.get("text") or "" for m in msgs if m["role"] == "coach")
+        self.assertIsNone(BAD_SCORE.search(text), "点数を返してはいけない")
 
     # FR-03: 動画依頼はカードでなく会話文＋リンク
     def test_video_request_inline_no_card(self):
@@ -112,6 +116,24 @@ class ConversationalFBContract(unittest.TestCase):
         for m in msgs:
             self.assertEqual(m["type"], "text")
         self.assertEqual(len(msgs), 1)
+
+    # 定型文廃止: ルールベースの answer_question は削除済み
+    def test_rule_based_qa_removed(self):
+        self.assertFalse(hasattr(rule_engine, "answer_question"),
+                         "ルールベース定型Q&A(answer_question)は廃止されているべき")
+
+    # 定型文廃止: LLM失敗時、はぐらかし定型でなく“正直な短いメッセージ”が返る
+    def test_chat_llm_down_honest_not_hedge(self):
+        # setUpModule で _complete→None（LLM不可）。LESSON中に質問する。
+        st = _state(phase="practice", current_task="pitch_wobble",
+                    baseline_analysis=ANALYSIS_ISSUE, last_analysis=ANALYSIS_ISSUE)
+        msgs, _ = rule_engine.handle_text(st, "音程の揺れって具体的にどのあたり？")
+        text = " ".join(m.get("text") or "" for m in msgs if m["role"] == "coach")
+        # 旧・はぐらかし定型は出ない
+        self.assertNotIn("なるほど😊", text)
+        self.assertNotIn("準備ができたら", text)
+        # 正直フォールバックである
+        self.assertIn("うまく言葉が出せませんでした", text)
 
 
 if __name__ == "__main__":

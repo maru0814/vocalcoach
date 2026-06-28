@@ -4,8 +4,9 @@
 ハイブリッド構成:
   - 重い音声解析・採点・課題診断はルールベース（rule_engine / taxonomy）のまま。
   - ユーザーのテキスト質問への「返答だけ」を LLM に通し、ChatGPT のように自然に答える。
-  - GEMINI_API_KEY 未設定 or API エラー時は None を返し、呼び出し側が
-    ルールベース応答（rule_engine.answer_question）にフォールバックする。
+  - 会話の返答はこの LLM が唯一の生成源。ルールベースの定型Q&A・はぐらかし定型は使わない。
+  - GEMINI_API_KEY 未設定 or API エラー時は None を返し、呼び出し側は偽の定型で取り繕わず、
+    正直に短いメッセージ（やり直し依頼）を返す。
 
 コスト最適化:
   - 最安クラスの Gemini Flash-Lite（無料枠あり）を既定モデルに。
@@ -448,7 +449,11 @@ def generate_reply(
 ) -> Optional[str]:
     """ユーザーのテキストに対するソラ先生の自然言語返答を生成する。"""
     context = build_session_context(state)
-    reply = _complete(_build_contents(state, user_text, history))
+    contents = _build_contents(state, user_text, history)
+    reply = _complete(contents)
+    if not reply and settings.llm_enabled:
+        # 一過性の失敗（タイムアウト/過負荷）で定型に落ちないよう、1回だけ再試行する。
+        reply = _complete(contents)
     if reply:
         # facts / 状況 / ユーザー発言 に無い秒数は伏せる（捏造防止の最終ガード）
         reply = _scrub_invented_seconds(reply, _allowed_seconds(context, user_text))
