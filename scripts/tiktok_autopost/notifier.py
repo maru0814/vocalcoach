@@ -44,19 +44,24 @@ def _thumbnail(video_path: str) -> str | None:
 
 
 def _upload_temp(path: str) -> str | None:
-    """ファイルを 0x0.st にアップロードして公開HTTPS URLを返す。失敗時 None。
+    """ファイルを litterbox.catbox.moe（24h）にアップロードして公開HTTPS URLを返す。失敗時 None。
     動画・サムネイルを一時公開してLINEのビデオメッセージに使う。"""
     if not path or not os.path.exists(path):
         return None
     try:
         import requests
         with open(path, "rb") as f:
-            r = requests.post("https://0x0.st", files={"file": f}, timeout=120)
+            r = requests.post(
+                "https://litterbox.catbox.moe/resources/internals/api.php",
+                data={"reqtype": "fileupload", "time": "24h"},
+                files={"fileToUpload": f},
+                timeout=120,
+            )
         if r.status_code == 200:
             url = r.text.strip()
             if url.startswith("https://"):
                 return url
-        print(f"[warn] 0x0.st アップロード失敗 HTTP {r.status_code}", file=sys.stderr)
+        print(f"[warn] litterbox アップロード失敗 HTTP {r.status_code}: {r.text[:100]}", file=sys.stderr)
     except Exception as e:
         print(f"[warn] 一時アップロード失敗: {e}", file=sys.stderr)
     return None
