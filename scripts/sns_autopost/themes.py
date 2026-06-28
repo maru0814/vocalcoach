@@ -138,29 +138,38 @@ def _diagnose_link(app_url: str) -> str:
     return f"{app_url}/voice-type"
 
 
+# 2部構成の本投稿末尾に付ける“続きはリプ”案内。読者にリプを促すのではなく、
+# 「自分の自己返信に本体（手順）を置いた」という案内（main方針のリプ乞い禁止と両立）。
+NUDGE = "\n\n👇 具体的な手順（大事なとこ）はリプに置きました。"
+
+
 def template_post(pillar: str, day_index: int, app_url: str) -> dict:
-    """Geminiを使わない場合のフォールバック本文。{text, link} を返す（link は自己リプ用）。"""
+    """Geminiを使わない場合のフォールバック。{text, reply, link} を返す。
+    text=本投稿 / reply=自己返信に置く“本体” or None（短文の診断導線型は単発）/ link=リプ用URL。"""
     if pillar == "self_type":
         types = " / ".join(f"{e}{n}" for n, e, _ in VOICE_TYPES)
         return {"text": ("あなたの歌声、実はこの8タイプのどれかです。\n\n"
                          f"{types}\n\n直感でどれっぽい？（プロフィールから無料で診断できます🎤）"),
-                "link": _diagnose_link(app_url)}
+                "reply": None, "link": _diagnose_link(app_url)}
     if pillar == "voice_type":
         n, e, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
         return {"text": (f"【声タイプ図鑑】{n} {e}\n{d}。\n\n"
                          "あなたは何タイプ？プロフィールのリンクから診断できます🎤"),
-                "link": _diagnose_link(app_url)}
-    if pillar == "contrarian":
-        hook, body = CONTRARIAN[day_index % len(CONTRARIAN)]
-        return {"text": f"{hook}\n\n{body}", "link": app_url}
+                "reply": None, "link": _diagnose_link(app_url)}
     if pillar == "visual":
         return {"text": ("あなたの声は、どのタイプ？🎤\n\n"
                          "15秒歌うだけで、AIが8タイプ＋似た声質の歌手まで診断。\n"
                          "結果はそのままシェアできます。\n\n（プロフィールのリンクから無料で🎤）"),
-                "link": _diagnose_link(app_url)}
-    # tip（既定）: 高音・ミックス中心の実践Tips（長文・保存狙い）
+                "reply": None, "link": _diagnose_link(app_url)}
+    if pillar == "contrarian":
+        # 本投稿=誤解を1行で否定して止める / リプ本体=なぜ違うかの根拠解説
+        hook, body = CONTRARIAN[day_index % len(CONTRARIAN)]
+        return {"text": hook + NUDGE, "reply": body, "link": app_url}
+    # tip（既定）: 本投稿=悩みフックで止める / リプ本体=番号付きの実践手順（保存狙い）
     tip = TIPS[day_index % len(TIPS)]
-    return {"text": f"🎤 今日のボイトレメモ\n\n{tip}", "link": app_url}
+    hook_seed = tip.split("\n", 1)[0].rstrip("。") + "。"
+    return {"text": hook_seed + NUDGE,
+            "reply": f"🎤 今日のボイトレメモ\n\n{tip}", "link": app_url}
 
 
 def gemini_prompt(pillar: str, day_index: int, app_url: str) -> str:
@@ -204,4 +213,32 @@ def gemini_prompt(pillar: str, day_index: int, app_url: str) -> str:
         "下敷き（この主旨・情報量・トーンを保ち、より自然で人を惹きつける文に）:\n"
         f"{base}\n"
         "出力はポスト本文のみ。前置き・説明・URL・ハッシュタグの羅列は不要。"
+    )
+
+
+def gemini_twopart_prompt(pillar: str, day_index: int, app_url: str) -> str:
+    """2部構成（本投稿フック＋リプ本体）をJSONで生成させる指示。tip / contrarian で使う。
+    本投稿は手順を言い切らず“続きが気になる”状態に。本体は自己返信(リプ)に置く。"""
+    base = template_post(pillar, day_index, app_url)
+    hook0, body0 = base.get("text", ""), base.get("reply", "") or ""
+    common = (
+        "あなたはAIボイストレーナー『ソラ先生』のSNS担当（人間味のある“中の人”）です。"
+        "X(旧Twitter)に“2部構成”で投稿します。本投稿で読み手を止めて気にさせ、"
+        "具体的な答え（手順・本体）は自分の自己返信(リプ)に置きます。\n"
+        "次の2つを作り、**JSONで {\"hook\": \"...\", \"body\": \"...\"} だけ**出力してください"
+        "（前後に説明・コードフェンスを付けない）。\n\n"
+        "1) hook（本投稿）= 誰の悩みか＋結論の“方向”だけ示し、具体的な手順は書かずに"
+        "“続きが気になる”状態で止める。全角90〜150字。\n"
+        "   - 末尾に『手順（本体）はリプ（返信）に置いた』と分かる一文を添える（👇可）。\n"
+        "   - 読者に『リプして/コメントして』と促すのは禁止。あくまで“自分がリプに続きを書いた”案内。\n"
+        "2) body（リプ＝自己返信に置く本体）= 番号付きの具体手順や根拠で、保存したくなる実用度。"
+        "全角200〜380字。専門用語は一言で噛み砕く。\n\n"
+        "共通: hook・bodyとも**URL/リンクは入れない**。効果は誇張しない（嘘はつかない）。"
+        "ハッシュタグはbody末尾に2個まで。絵文字は各1〜3個。\n"
+    )
+    return (
+        common +
+        "下敷き（主旨・情報量・トーンを保つ。より自然に人を惹きつける文に）:\n"
+        f"hookの素材: {hook0}\n"
+        f"bodyの素材:\n{body0}\n"
     )

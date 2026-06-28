@@ -4,7 +4,10 @@
 1日2回（昼=slot1 / 夜=slot2）cron で実行する想定。
   1) 曜日とスロットに応じて投稿の柱（診断誘導 / Tips / 声タイプ紹介 / 会話）を選ぶ
   2) Gemini で投稿文を生成（失敗・未設定ならテンプレートを使用）
-  3) X API v2 に投稿（キー未設定 or DRY_RUN=1 なら本文を表示して終了）
+     tip/contrarian は2部構成: 本投稿=好奇心フックで寸止め / リプ(自己返信)=手順・本体。
+     リプを開かせてエンゲージを伸ばす設計（診断導線型は単発）。
+  3) X API v2 に投稿: 本投稿→リプ本体→(任意)URL の順でスレッド化。
+     キー未設定 or DRY_RUN=1 なら本文を表示して終了。
 
 環境変数（.env または環境に設定。.env.example 参照）:
   DRY_RUN=1                 … 投稿せず本文だけ表示（既定の安全側）
@@ -36,6 +39,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import sys
 
 import themes
@@ -75,14 +79,21 @@ def _read_jsonl(path: str) -> list:
     return rows
 
 
-def _log_post(tweet_id: str, pillar: str, had_link: bool) -> None:
+def _log_post(tweet_id: str, pillar: str, had_link: bool, had_reply: bool = False) -> None:
     rec = {"tweet_id": tweet_id, "pillar": pillar, "link": bool(had_link),
+           "reply": bool(had_reply),
            "ts": datetime.datetime.now().isoformat(timespec="seconds")}
     with open(POSTS_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def _budget_check(post_has_link: bool, force: bool = False) -> tuple[bool, str]:
+def _post_cost(has_link: bool, has_reply: bool) -> float:
+    """1投稿セットの概算コスト。本投稿＋（リプ本体）＋（URLリプ）。"""
+    return COST_POST + (COST_POST if has_reply else 0.0) + (COST_POST_URL if has_link else 0.0)
+
+
+def _budget_check(post_has_link: bool, post_has_reply: bool = False,
+                  force: bool = False) -> tuple[bool, str]:
     """1日の投稿上限・月間概算コスト上限を超えていないか。超過なら投稿しない。
     force=True（手動 --force）のときは日次上限のみ無視する。月間コスト上限は安全弁として常に有効。"""
     posts = _read_jsonl(POSTS_LOG)
@@ -93,8 +104,8 @@ def _budget_check(post_has_link: bool, force: bool = False) -> tuple[bool, str]:
     max_per_day = int(os.getenv("MAX_POSTS_PER_DAY", "1"))
     if not force and len(todays) >= max_per_day:
         return False, f"本日の投稿上限({max_per_day}件)に到達"
-    spent = sum(COST_POST_URL if p.get("link") else COST_POST for p in months)
-    after = spent + (COST_POST_URL if post_has_link else COST_POST)
+    spent = sum(_post_cost(p.get("link"), p.get("reply")) for p in months)
+    after = spent + _post_cost(post_has_link, post_has_reply)
     cap = float(os.getenv("MONTHLY_COST_CAP_USD", "12"))
     if after > cap:
         return False, f"月間概算コスト上限(${cap})に到達（今月概算${spent:.2f}）"
@@ -102,8 +113,9 @@ def _budget_check(post_has_link: bool, force: bool = False) -> tuple[bool, str]:
 
 
 def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
-    """{text, link} を返す。Geminiがあれば本文を生成、無ければテンプレ。リンクはテンプレ側で決定。"""
-    post = themes.template_post(pillar, day_index, app_url)  # {text, link}
+    """{text, reply, link} を返す。text=本投稿、reply=リプに置く本体 or None。
+    reply を持つ型（tip/contrarian）は2部構成で生成。無ければテンプレ。"""
+    post = themes.template_post(pillar, day_index, app_url)  # {text, reply, link}
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return post
@@ -111,15 +123,24 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         from google import genai
         client = genai.Client(api_key=api_key)
         model = os.getenv("SNS_LLM_MODEL", "gemini-flash-lite-latest")
+        if post.get("reply"):  # 2部構成（本投稿フック＋リプ本体）
+            resp = client.models.generate_content(
+                model=model, contents=themes.gemini_twopart_prompt(pillar, day_index, app_url))
+            m = re.search(r"\{.*\}", (resp.text or "").strip(), re.S)
+            if m:
+                data = json.loads(m.group(0))
+                hook = (data.get("hook") or "").strip()
+                body = (data.get("body") or "").strip()
+                if len(hook) >= 10 and len(body) >= 20 and "http" not in hook and "http" not in body:
+                    return {"text": hook, "reply": body, "link": post.get("link")}
+            return post  # 解析失敗・不正ならテンプレ
+        # 単発型（self_type / voice_type / visual）
         resp = client.models.generate_content(
-            model=model,
-            contents=themes.gemini_prompt(pillar, day_index, app_url),
-        )
+            model=model, contents=themes.gemini_prompt(pillar, day_index, app_url))
         text = (resp.text or "").strip()
-        # 健全性チェック: 短すぎ or 誤って本文にURLを入れたらテンプレへ
         if len(text) < 20 or "http" in text:
             return post
-        return {"text": text, "link": post.get("link")}
+        return {"text": text, "reply": None, "link": post.get("link")}
     except Exception as e:
         print(f"[warn] Gemini生成に失敗 → テンプレ使用: {e}", file=sys.stderr)
         return post
@@ -138,8 +159,19 @@ def _x_session():
     )
 
 
-def post_to_x(text: str, link: str | None, post_link: bool) -> tuple[bool, str, str]:
-    """本文を投稿。post_link=True かつ link がある時だけ自己リプにURLを貼る（$0.20課金なので既定OFF）。
+def _reply(oauth, text: str, in_reply_to: str) -> tuple[bool, str, int]:
+    """自己返信を1件投稿。(ok, new_id, status)。"""
+    r = oauth.post("https://api.twitter.com/2/tweets",
+                   json={"text": text, "reply": {"in_reply_to_tweet_id": in_reply_to}}, timeout=20)
+    if r.status_code in (200, 201):
+        return True, str(r.json().get("data", {}).get("id", "")), r.status_code
+    return False, "", r.status_code
+
+
+def post_to_x(text: str, reply: str | None, link: str | None,
+              post_link: bool) -> tuple[bool, str, str]:
+    """本投稿(text)→リプ本体(reply)→(任意)URL の順にスレッド投稿する。
+    reply に“大事な中身（手順）”を置いてリプを開かせる設計。link は POST_LINK=1 のときだけ。
     returns (ok, tweet_id, info)。"""
     oauth = _x_session()
     if oauth is None:
@@ -149,12 +181,16 @@ def post_to_x(text: str, link: str | None, post_link: bool) -> tuple[bool, str, 
         if r.status_code not in (200, 201):
             return False, "", f"HTTP {r.status_code}: {r.text[:200]}"
         tweet_id = str(r.json().get("data", {}).get("id", ""))
-        info = "ok"
-        if post_link and link and tweet_id:
-            reply = {"text": f"▼ ここから無料で診断できます🎤\n{link}",
-                     "reply": {"in_reply_to_tweet_id": tweet_id}}
-            rr = oauth.post("https://api.twitter.com/2/tweets", json=reply, timeout=20)
-            info = "link付" if rr.status_code in (200, 201) else f"本文OK/リプ失敗 {rr.status_code}"
+        info, last_id = "本投稿OK", tweet_id
+        if reply and last_id:                       # 大事な中身を自己リプに
+            ok, rid, st = _reply(oauth, reply, last_id)
+            if ok:
+                info, last_id = "本投稿+リプ本体", rid or last_id
+            else:
+                info = f"本投稿OK/リプ本体失敗{st}"
+        if post_link and link and last_id:          # 任意でURLリプ（$0.20課金）
+            ok, _, st = _reply(oauth, f"▼ ここから無料で診断できます🎤\n{link}", last_id)
+            info += " +link" if ok else f" +link失敗{st}"
         return True, tweet_id or "ok", info
     except Exception as e:
         return False, "", f"EXC: {e}"
@@ -182,13 +218,17 @@ def main() -> int:
     pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
 
     post = generate_post(pillar, day_index, app_url)
-    text, link = post["text"], post.get("link")
+    text, reply, link = post["text"], post.get("reply"), post.get("link")
     # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
     post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
 
     print("─" * 48)
     print(f"[{today}] slot={slot} pillar={pillar}")
+    print("【本投稿】")
     print(text)
+    if reply:
+        print("\n【リプ（自己返信）＝大事な中身】")
+        print(reply)
     if link:
         print(f"\n[リンク] {link}  (POST_LINK={'ON→リプに付与' if post_link else 'OFF→プロフィール固定で誘導'})")
     print("─" * 48)
@@ -203,7 +243,7 @@ def main() -> int:
     if approval:
         import approval_queue as q
         import line_client
-        draft = q.enqueue(pillar, slot, text, link, post_link)
+        draft = q.enqueue(pillar, slot, text, reply, link, post_link)
         ok_line, info = line_client.push_approval(draft)
         if ok_line:
             print(f"📨 承認待ちに送信しました（id={draft['id']}）。LINEで承認/却下してください。")
@@ -214,16 +254,17 @@ def main() -> int:
         return 1
 
     # --post-now / APPROVAL_MODE=0: 従来どおり生成して即投稿。
-    ok_budget, why = _budget_check(post_has_link=post_link, force=args.force)
+    ok_budget, why = _budget_check(post_has_link=post_link,
+                                   post_has_reply=bool(reply), force=args.force)
     if args.force:
         print("⚠ --force: 本日の投稿上限を無視して投稿します（月間コスト上限は維持）。")
     if not ok_budget:
         print(f"⏸ 予算/上限ガードで停止: {why}")
         return 0
 
-    ok, tweet_id, info = post_to_x(text, link, post_link)
+    ok, tweet_id, info = post_to_x(text, reply, link, post_link)
     if ok:
-        _log_post(tweet_id, pillar, post_link)
+        _log_post(tweet_id, pillar, post_link, bool(reply))
         print(f"✅ 投稿しました: id={tweet_id} ({info})  [{why}]")
         return 0
     print(f"❌ 投稿に失敗: {info}", file=sys.stderr)

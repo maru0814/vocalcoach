@@ -6,8 +6,9 @@ webhook.py が LINE のボタン操作を受けて status を approved/rejected 
 承認されたものだけ X に投稿する。posts_log.jsonl（計測用）とは別物。
 
 各レコード:
-  {id, pillar, slot, text, link, post_link, status, tweet_id, info,
+  {id, pillar, slot, text, reply, link, post_link, status, tweet_id, info,
    created_at, decided_at}
+  reply: 2部構成の本体（自己返信に投稿する中身）。単発型は None。
   status: pending | posted | rejected | failed
 """
 import datetime
@@ -70,14 +71,16 @@ def _write_all(rows: list[dict], path: str = QUEUE_PATH) -> None:
             os.remove(tmp)
 
 
-def enqueue(pillar: str, slot: int, text: str, link: str | None,
-            post_link: bool) -> dict:
-    """下書きを承認待ちとして追加し、作成したレコードを返す。"""
+def enqueue(pillar: str, slot: int, text: str, reply: str | None,
+            link: str | None, post_link: bool) -> dict:
+    """下書きを承認待ちとして追加し、作成したレコードを返す。
+    reply=自己返信に置く本体（2部構成）。診断導線など単発型は None。"""
     rec = {
         "id": uuid.uuid4().hex[:12],
         "pillar": pillar,
         "slot": slot,
         "text": text,
+        "reply": reply,
         "link": link,
         "post_link": bool(post_link),
         "status": "pending",

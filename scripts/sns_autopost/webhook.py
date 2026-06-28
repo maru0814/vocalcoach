@@ -61,17 +61,20 @@ def _handle_postback(data: str, reply_token: str) -> None:
         line_client.reply(reply_token, "⚠️ 不明な操作です。")
         return
 
-    # --- 承認 → 予算ガードを通して実投稿 ---
+    # --- 承認 → 予算ガードを通して実投稿（2部構成ならリプ本体も投稿）---
     post_link = bool(draft.get("post_link"))
-    ok_budget, why = _budget_check(post_has_link=post_link, force=False)
+    reply_body = draft.get("reply")
+    ok_budget, why = _budget_check(post_has_link=post_link,
+                                   post_has_reply=bool(reply_body), force=False)
     if not ok_budget:
         q.mark_decided(draft_id, "failed", info=why)
         line_client.reply(reply_token, f"⏸ 投稿を中止: {why}")
         return
 
-    ok, tweet_id, info = post_to_x(draft.get("text", ""), draft.get("link"), post_link)
+    ok, tweet_id, info = post_to_x(draft.get("text", ""), reply_body,
+                                   draft.get("link"), post_link)
     if ok:
-        _log_post(tweet_id, draft.get("pillar", ""), post_link)
+        _log_post(tweet_id, draft.get("pillar", ""), post_link, bool(reply_body))
         q.mark_decided(draft_id, "posted", tweet_id=tweet_id, info=info)
         line_client.reply(reply_token, f"✅ 投稿しました！\nid={tweet_id}（{why}）")
     else:
