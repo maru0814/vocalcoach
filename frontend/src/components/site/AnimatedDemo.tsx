@@ -5,36 +5,21 @@ import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
 
 /**
  * 「使っている様子」を自動再生するデモ。
- * 録音 → 送信 → AI解析中 → スコアが伸びる → 添削＆基礎練が届く、をループ。
+ * 録音 → 送信 → 解析中 → 会話で感想 → 練習提案、をループ（採点カード・点数は出さない）。
  */
 export function AnimatedDemo() {
-  // step: 0=録音中, 1=ユーザー送信, 2=解析中(typing), 3=スコア表示, 4=基礎練提案
+  // step: 0=録音中, 1=ユーザー送信, 2=解析中(typing), 3=感想チャット, 4=練習提案
   const [step, setStep] = useState(0);
-  const [score, setScore] = useState(0);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const ramp = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const TOTAL = 11000;
 
-    const rampScore = () => {
-      let v = 0;
-      ramp.current = setInterval(() => {
-        v += 4;
-        if (v >= 77) {
-          v = 77;
-          if (ramp.current) clearInterval(ramp.current);
-        }
-        setScore(v);
-      }, 26);
-    };
-
     const run = () => {
       setStep(0);
-      setScore(0);
       timers.current.push(setTimeout(() => setStep(1), 1800));
       timers.current.push(setTimeout(() => setStep(2), 3000));
-      timers.current.push(setTimeout(() => { setStep(3); rampScore(); }, 4600));
+      timers.current.push(setTimeout(() => setStep(3), 4600));
       timers.current.push(setTimeout(() => setStep(4), 7200));
     };
 
@@ -43,12 +28,9 @@ export function AnimatedDemo() {
     return () => {
       timers.current.forEach(clearTimeout);
       timers.current = [];
-      if (ramp.current) clearInterval(ramp.current);
       clearInterval(loop);
     };
   }, []);
-
-  const dash = (score / 100) * 214;
 
   return (
     <div className="mx-auto w-full max-w-[320px]">
@@ -126,39 +108,12 @@ export function AnimatedDemo() {
             </div>
           )}
 
-          {/* スコアカード */}
+          {/* 感想・気づき（会話文。採点カード・点数は出さない） */}
           {step >= 3 && (
-            <div key="score" className="flex animate-pop-in items-end gap-2">
+            <div key="fb" className="flex animate-pop-in items-end gap-2">
               <CoachAvatar size={28} />
-              <div className="flex-1 rounded-2xl rounded-bl-md bg-white p-2.5 shadow ring-1 ring-slate-100">
-                <div className="mb-1.5 text-[11px] font-medium text-slate-600">
-                  サビの高音、地声で押していて裏返りそうですね。ミックスボイスで楽に出しましょう🎯
-                </div>
-                <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-2">
-                  <div className="relative flex h-14 w-14 items-center justify-center">
-                    <svg viewBox="0 0 80 80" className="h-14 w-14 -rotate-90">
-                      <circle cx="40" cy="40" r="34" fill="none" stroke="#eef2f7" strokeWidth="8" />
-                      <circle
-                        cx="40" cy="40" r="34" fill="none" stroke="#f59e0b" strokeWidth="8"
-                        strokeLinecap="round" strokeDasharray={`${dash} 214`}
-                      />
-                    </svg>
-                    <span className="absolute text-sm font-black text-slate-800">{score}</span>
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    {([["音程", 85, "#10b981"], ["リズム", 55, "#f43f5e"], ["表現", 88, "#10b981"]] as const).map(([l, v, c]) => (
-                      <div key={l} className="flex items-center gap-1.5 text-[9px]">
-                        <span className="w-6 text-slate-500">{l}</span>
-                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                          <span
-                            className="block h-1.5 rounded-full transition-all duration-700 ease-out"
-                            style={{ width: step >= 3 ? `${v}%` : "0%", background: c }}
-                          />
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <div className="flex-1 rounded-2xl rounded-bl-md bg-white px-3 py-2.5 text-[11px] font-medium leading-relaxed text-slate-700 shadow ring-1 ring-slate-100">
+                サビの高音、地声で押していて裏返りそうですね。喉が少し詰まって聞こえます。ミックスボイスで軽く前に当てると、楽に届きますよ🎤
               </div>
             </div>
           )}

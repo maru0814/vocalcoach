@@ -8,7 +8,7 @@ import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
 
 const STATS = [
-  { value: "4軸", label: "音程・リズム・表現・総合をAI解析" },
+  { value: "会話型", label: "点数でなく、チャットでフィードバック" },
   { value: "最短1分", label: "録って送れば、すぐFBが届く" },
   { value: "道具ゼロ", label: "専用マイク・機材は不要" },
   { value: "¥0", label: "登録だけで無料で始められる" },
@@ -25,8 +25,8 @@ const FEATURES = [
     icon: "🎙",
     tag: "AI声診断",
     title: "声が、見える化される。",
-    desc: "音程・リズム・表現をAIが解析して数値に。さらに「この曲で出した音域」「使っている声（地声・ミックス・裏声）」「換声点」「声の共鳴」まで“声診断”。「なんとなく下手」が「サビ後半で息が切れている」に変わります。",
-    bullets: ["音程の安定度・強弱・ビブラートを数値化", "音域・声区・換声点まで“声診断”（推定）", "秒数つきで「どこを」直すか分かる"],
+    desc: "あなたの声をAIが解析して、「この曲で出した音域」「使っている声（地声・ミックス・裏声）」「換声点」「声の共鳴」まで“声診断”。「なんとなく下手」が「サビ後半で息が切れている」みたいに、言葉で分かります。",
+    bullets: ["音程の安定・強弱・ビブラートまで解析", "音域・声区・換声点まで“声診断”（推定）", "秒数つきで「どこを」直すか分かる"],
     photo: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1000&q=80&auto=format&fit=crop",
     alt: "AIが歌声を解析しているイメージ",
   },
@@ -52,8 +52,8 @@ const FEATURES = [
     icon: "📈",
     tag: "成長記録",
     title: "上達が、記録に残る。",
-    desc: "レッスンごとに自動で保存。録り直すと「前回よりリズムが良くなった」を数値で実感できます。見えなかった成長が、ちゃんと見える。",
-    bullets: ["レッスンを自動で履歴に保存", "前回との差分を数値で表示", "良くなった点をAIが褒めてくれる"],
+    desc: "レッスンごとに自動で保存。録り直すと「前回より伸ばしが安定した」を、ソラ先生が会話で教えてくれます。見えなかった成長が、ちゃんと分かる。",
+    bullets: ["レッスンを自動で履歴に保存", "前回より良くなった点を会話で伝える", "良くなった点をソラ先生が褒めてくれる"],
     photo: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1000&q=80&auto=format&fit=crop",
     alt: "上達の記録が積み上がるイメージ",
   },
@@ -61,7 +61,7 @@ const FEATURES = [
 
 const STEPS = [
   { n: "1", icon: "🎤", title: "歌って送る", desc: "スマホでそのまま録音、または音源をアップロード。原曲がなくてもOK。" },
-  { n: "2", icon: "💬", title: "AIから添削が届く", desc: "スコア・直すところ・今日の基礎練がチャットで届きます。" },
+  { n: "2", icon: "💬", title: "AIから添削が届く", desc: "良かったところ・直すところ・今日の基礎練が、会話みたいにチャットで届きます。" },
   { n: "3", icon: "🎼", title: "お手本と聴き比べ（任意）", desc: "原曲をアップロードすると、音程の正確さ・リズムをより正確に。" },
 ];
 
@@ -76,7 +76,7 @@ const FOR_YOU = [
 const VOICES = [
   { emoji: "🧑‍💼", name: "27歳・会社員", quote: "「サビで息が切れてる」って秒数で言われて納得。基礎練を続けたら、前より安定しました。" },
   { emoji: "🧑‍🎤", name: "21歳・学生", quote: "教室は緊張するけど、これなら家で気軽に。動画つきで練習法に迷わないのが助かる。" },
-  { emoji: "👩", name: "34歳・主婦", quote: "録り直すたびにスコアが上がるのが楽しい。ちゃんと褒めてくれるので続けられます。" },
+  { emoji: "👩", name: "34歳・主婦", quote: "録り直すたびに「ここ良くなった」って言ってくれるのが楽しい。ちゃんと褒めてくれるので続けられます。" },
 ];
 
 const FAQ = [
@@ -85,7 +85,7 @@ const FAQ = [
   { q: "音痴でも大丈夫ですか？", a: "むしろそういう方向けです。AIボーカルトレーナーが、やさしく具体的にお伝えします。" },
   { q: "録った歌は誰かに見られますか？", a: "いいえ。あなた専用に安全に保存され、他の人には見えません。" },
   { q: "原曲がなくても使えますか？", a: "はい。録音だけでもフィードバックできます。お手本の音源をアップロードすると、音程の正確さやリズムを原曲と聴き比べて、より正確に見られます。" },
-  { q: "プロみたいに正確に判定できますか？", a: "解析には“目安・推定”を含みます。だからこそ点数を盛らず、できること・難しいことを正直にお伝えします。音程の正確さやリズムは、原曲をアップロードするとより正確に判定できます。" },
+  { q: "プロみたいに正確に判定できますか？", a: "解析には“目安・推定”を含みます。だからこそ点数はつけず、できること・難しいことを正直に、言葉でお伝えします。音程の正確さやリズムは、原曲をアップロードするとより正確に見られます。" },
 ];
 
 const JSON_LD = {
@@ -100,30 +100,22 @@ const JSON_LD = {
   offers: { "@type": "Offer", price: "0", priceCurrency: "JPY" },
 };
 
-/** Before → After の声の変化ビジュアル */
+/** Before → After の変化（点数でなく、ソラ先生の会話で示す） */
 function BeforeAfter() {
-  const Gauge = ({ v, color }: { v: number; color: string }) => (
-    <div className="relative flex h-20 w-20 items-center justify-center">
-      <svg viewBox="0 0 80 80" className="h-20 w-20 -rotate-90">
-        <circle cx="40" cy="40" r="34" fill="none" stroke="#eef2f7" strokeWidth="8" />
-        <circle cx="40" cy="40" r="34" fill="none" stroke={color} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(v / 100) * 214} 214`} />
-      </svg>
-      <span className="absolute text-xl font-black text-slate-800">{v}</span>
-    </div>
-  );
   return (
-    <div className="flex items-center justify-center gap-4 sm:gap-8">
-      <div className="text-center">
-        <Gauge v={55} color="#f43f5e" />
-        <div className="mt-2 text-xs font-bold text-slate-400">最初の録音</div>
+    <div className="mx-auto flex max-w-md flex-col gap-3 text-left">
+      <div className="flex items-end gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-50 text-sm">🎤</span>
+        <div className="rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-600 shadow-card">
+          最初の録音：サビの伸ばしが、後半でゆれて下がりがちですね。
+        </div>
       </div>
-      <div className="text-center">
-        <div className="text-3xl">→</div>
-        <div className="text-xs font-bold text-brand-600">基礎練5日</div>
-      </div>
-      <div className="text-center">
-        <Gauge v={78} color="#10b981" />
-        <div className="mt-2 text-xs font-bold text-emerald-600">録り直し</div>
+      <div className="text-center text-xs font-bold text-brand-600">基礎練5日 → 録り直し ↓</div>
+      <div className="flex items-end gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-sm">🌤</span>
+        <div className="rounded-2xl rounded-bl-md bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 shadow-card">
+          伸ばしがまっすぐ安定しましたね！息の支えが効いています✨
+        </div>
       </div>
     </div>
   );
@@ -253,7 +245,7 @@ export default function HomePage() {
               「良かった点 → 直すところ → 今日の基礎練」までチャットで伴走します。
             </p>
             <p className="mx-auto mt-3 max-w-2xl text-sm font-medium text-brand-600">
-              しかも、点数を盛りません。できることはできる、難しいことは難しいと正直に。
+              しかも、点数はつけません。友だちのコーチみたいに、できる・難しいを会話で正直にお伝えします。
             </p>
           </div>
         </Reveal>
@@ -322,15 +314,15 @@ export default function HomePage() {
           <div className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-brand-50 to-pink-50 p-8 text-center shadow-card sm:p-12">
             <p className="text-sm font-bold tracking-wide text-brand-600">BEFORE → AFTER</p>
             <h2 className="mt-2 text-2xl font-black text-slate-800 sm:text-3xl">
-              録り直すたび、数字で伸びる。
+              録り直すたび、変化が分かる。
             </h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-slate-600">
-              課題に合った基礎練をこなして再録音すると、スコアの変化がひと目で分かります。
+              課題に合った基礎練をこなして再録音すると、ソラ先生が「ここが良くなった」と会話で教えてくれます。
             </p>
             <div className="mt-8">
               <BeforeAfter />
             </div>
-            <p className="mt-6 text-xs text-slate-400">※ スコアは「リズム」の一例です。実際の数値は歌唱により異なります。</p>
+            <p className="mt-6 text-xs text-slate-400">※ 体験イメージです。</p>
           </div>
         </Reveal>
 
