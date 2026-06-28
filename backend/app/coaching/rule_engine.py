@@ -150,7 +150,7 @@ def answer_question(state: dict, text: str) -> Optional[str]:
             p = task["practices"][0]
             steps = "／".join(p["steps"][:2])
             cp = f"目安は『{p.get('checkpoint','')}』です。" if p.get("checkpoint") else ""
-            return f"『{p['name']}』から始めましょう。{steps}…という流れです。{cp}上の基礎練カードに手順とお手本動画があるので、見ながらやってみてくださいね😊"
+            return f"『{p['name']}』から始めましょう。{steps}…という流れです。{cp}まずはここだけでOK、やってみたら録音を送ってくださいね😊"
         return "録音を送ってもらえたら、あなたに合った練習法を具体的にお伝えします🎯"
 
     # なぜ／理由
@@ -167,9 +167,9 @@ def answer_question(state: dict, text: str) -> Optional[str]:
             return f"大丈夫、ゆっくりいきましょう💪 まずは『{p['name']}』だけでOKです。{p.get('checkpoint','')} を目安にしてみてください。録音を送ってくれたら、できているか一緒に確かめますね🎤"
         return "焦らなくて大丈夫です😊 まずは1フレーズだけ歌って録ってみましょう🎤"
 
-    # スコア／点数
+    # スコア／点数（点数制は廃止。数字で採点しない方針を伝える）
     if q("スコア", "点数", "何点", "評価"):
-        return "スコアは音程・リズム・表現の3つをAIで解析して出しています。上の分析カードに内訳が出ていますよ📊 もう一度録ると、前回との変化も比べられます。"
+        return "わたしは点数はつけていないんです😊 数字で採点するより、今の声の良いところと、次に試すと良いことを会話でお伝えしますね。気になる箇所があれば教えてください🎤"
 
     # 励まし・お礼への返し
     if q("ありがとう", "わかった", "了解", "やってみる", "がんばる", "頑張る"):
@@ -267,7 +267,20 @@ def _llm_or(text_fallback: str, facts: str, instruction: str, history: Optional[
         reply = None  # 間に合わない → フォールバック（裏のリクエストは捨てる）
     except Exception:
         reply = None
-    return reply or text_fallback
+    # カード・スコアは撤廃済み。万一「カードに〜」と言ってしまっても会話文として消す。
+    return llm.scrub_card_promise(reply or text_fallback)
+
+
+def _append_video_link(text: str, prac: dict) -> str:
+    """練習提案の会話文の末尾に、参考動画URLを1行だけ添える（カードにしない）。
+
+    LLMがURLを落とす事故を避けるため、リンクはコード側で確定的に付与する。
+    """
+    v = prac.get("video") or {}
+    url = v.get("url")
+    if not url or url in (text or ""):
+        return text
+    return (text or "").rstrip() + f"\n（参考にこの動画がわかりやすいです → {url}）"
 
 
 PRONUNCIATION_KW = [
@@ -391,10 +404,10 @@ def detect_topic_task(text: str, history: Optional[list[dict]] = None,
 
 def handle_video_request(state: dict, text: str,
                          history: Optional[list[dict]] = None) -> list[dict]:
-    """「動画ある？」等に、話題に合う実際の練習カード（手順＋実演動画）を確定的に返す。
+    """「動画ある？」等に、話題に合う練習法と参考動画リンクを会話文で返す（カードなし）。
 
-    LLMに任せると「動画カードを用意しました」と言うだけでカードが出ない/別話題の動画に
-    なる事故が起きるため、ここで話題判定→該当課題の練習カードを必ず一緒に出す。
+    LLMに任せると「動画を用意しました」と言うだけでリンクが出ない事故が起きるため、
+    ここで話題判定→該当課題の練習法と動画URLを会話文に確定的に載せる。
     """
     task_id = detect_topic_task(text, history, fallback=state.get("current_task"))
     task = get_task(task_id) if task_id else None
@@ -405,14 +418,12 @@ def handle_video_request(state: dict, text: str,
             "『リズム』『ロングトーン』『強弱』など、気になるテーマを教えてください。",
         )]
     prac = task["practices"][0]
-    intro = (
-        f"「{task['label']}」の参考動画ですね！下のカードに手順と実演動画をのせました。"
-        f"まずは『{prac['name']}』を動画に合わせて真似してみてください😊"
+    steps = "／".join(prac.get("steps", [])[:2])
+    msg = (
+        f"「{task['label']}」ですね！『{prac['name']}』がおすすめです。"
+        f"{steps}…という流れでやってみてください😊"
     )
-    return [
-        coach_msg("text", intro),
-        coach_msg("practice", payload=feedback_builder.build_practice_payload(task)),
-    ]
+    return [coach_msg("text", _append_video_link(msg, prac))]
 
 
 def classify_kind(analysis: dict) -> str:
@@ -663,18 +674,31 @@ def _voice_dx_block(analysis: dict, compare_data: Optional[dict]) -> str:
         return ""
 
 
-_VOICE_INSTR = (
-    "あなたは世界最高峰のボイストレーナーです。発声だけに絞って講評してください（リズム・抑揚・しゃくり/こぶし等の表現技法は扱わない）。"
-    "これは録音への“詳しい”講評なので、チャットの短さ制限は外し、5〜8文でしっかり解説してよい（ただし冗長や繰り返しは避け、1文1メッセージで明快に）。"
-    "次の流れで書く: "
-    "(1)【良い点】具体的に1つ褒める（数値や音域・秒数を添えて）。"
-    "(2)【今の声の状態＝客観診断】与えられた発声指標を“噛み砕いて”説明する。例:『声の芯(CPP)が◯dBで〜』『声帯の閉じ(H1-H2)が◯dBで息が少し漏れ気味』『声のクリアさ(HNR)が◯dB』。数値は与えられたものだけを使い、各指標に必ず一言の補足を付ける。"
-    "(3)【根本原因】表面の力み/息漏れで止めず、息の支え(アッポッジョ)・喉頭懸垂機構(アンザッツ)・共鳴(フォルマント)の観点で“なぜそうなるか”を一言で。"
-    "(4)【処方＝具体的な打ち手】処方候補(★推奨)から1つ選び、『なぜ効くか(メカニズム)』と『どうやるか(身体の感覚・響かせる位置・口の形・母音)』をていねいに。"
-    "原曲比較の事実があれば必ず根拠に使う。音程を外した箇所が事実にあれば『何秒が何centひくい/高い』と具体的に（録音の長さを超える秒は言わない）。"
-    "声区は音響からの推定であり、ユーザーが裏声等の感覚を述べたら断定せず尊重する。事実に無い数値・秒数・声区・処方は作らない。"
-    "練習は一度すすめたら基本そのまま続けるよう導き、毎回別の練習名に変えない。"
-    "最後に基礎練を1つだけ前向きに勧める（基礎練カードが一緒に出る時だけ『この後のカードに手順と動画があります』と添える）。"
+# 録音への「感想・気づき」を会話文1つで返すための指示（1吹き出し目）。
+_COMMENT_INSTR = (
+    "ソラ先生として、録音の感想を友だちのコーチのように話し言葉で返す。"
+    "まず良かった点を1つ具体的に褒め、続けて気づいた発声のポイントを1つだけやさしく伝える。"
+    "2〜4文・120字程度。点数・◎○△×・指標の数値羅列・箇条書き・見出しは使わない（数字で採点しない）。"
+    "原曲比較や秒数の事実があれば根拠に使う（録音の長さを超える秒は言わない）。"
+    "声区は推定なのでユーザーの感覚を否定しない。事実に無い数値・秒数・声区・歌詞は作らない。"
+    "このメッセージでは練習法はまだ出さない（次のメッセージで伝えるため）。"
+)
+
+# 良い録音（大きな課題なし）を、褒めて気持ちよく終えるための指示（練習は出さない）。
+_PRAISE_INSTR = (
+    "ソラ先生として、録音の感想を話し言葉で返す。大きな課題は少ない良い状態なので、"
+    "良かった点を1〜2つ具体的に褒めて、そのまま気持ちよく終える。"
+    "2〜4文・120字程度。点数・◎○△×・指標の数値羅列・箇条書き・見出しは使わない。"
+    "練習法は無理に出さない。事実に無い数値・秒数・声区・歌詞は作らない。"
+)
+
+# 基礎練を1つだけ会話文で渡すための指示（2吹き出し目）。動画URLはコード側で添える。
+_PRACTICE_INSTR = (
+    "ソラ先生として、今いちばん効く基礎練を1つだけ会話文で伝える。"
+    "なぜ効くか一言＋やり方（身体の感覚・響かせる位置・口の形・母音）を、やさしい話し言葉で2〜4文・120字程度。"
+    "処方候補(★推奨)があればそれを選び、候補に無い練習は作らない。複数の練習を並べない。"
+    "点数・◎○△×・箇条書き・見出しは使わない。動画URLは自分で書かなくてよい（システムが最後に1行添える）。"
+    "最後に『やってみて録音を送ってね』と自然にうながす。事実に無い数値・秒数は作らない。"
 )
 
 
@@ -707,146 +731,103 @@ def _voice_issue_task(analysis: dict, compare_data: Optional[dict], exclude: lis
 def _audio_diagnose(
     state: dict, analysis: dict, compare_data: Optional[dict], history: Optional[list[dict]]
 ) -> tuple[list[dict], dict]:
-    """弱点診断（初回 or 課題未確定）。FBカード + 自然文 + 基礎練カード + 任意チップ。"""
+    """弱点診断（初回 or 課題未確定）。会話文だけで返す（カード・点数なし）。
+
+    明確な発声課題が見つかったときだけ、練習法を1つ「2吹き出し目」で提案する。
+    大きな課題が無い良い録音は、褒めて終える（練習を無理に出さない）。
+    """
     out: list[dict] = []
     avoid = state.get("avoid_task")
     exclude = [avoid] if avoid else []
-    # focus 指定があれば優先（ただし除外対象なら無視）、なければ自動診断
+
+    # 内部判断: 明確な課題があるか（focus指定 → 弱点検知 → 発声診断）。
+    # 見つからなければ task=None のまま＝良い録音として練習を出さない。
     task = None
     focus = state.get("focus_task")
     if focus and focus not in exclude:
         task = get_task(focus)
         if task and not _safe_diag(task, analysis, compare_data):
-            auto = diagnose_task(analysis, compare_data, exclude=exclude)
-            task = auto or task
+            task = diagnose_task(analysis, compare_data, exclude=exclude) or task
     else:
         task = diagnose_task(analysis, compare_data, exclude=exclude)
-
-    # 録音できている限り、必ず「課題＋基礎練（動画つき）」を1つ提示する（ユーザー要望）。
-    # 弱点が検知されなくても、発声診断の主課題→次の磨きどころ→既定ドリル の順で必ず確定させる。
     if task is None:
         task = _voice_issue_task(analysis, compare_data, exclude)
-    if task is None:
-        _, _sid = _stretch_target(analysis, compare_data)
-        task = get_task(_sid) if _sid else None
-    if task is None:
-        for _tid in ("weak_resonance", "long_tone_decay", "mixed_voice"):
-            if _tid not in exclude:
-                task = get_task(_tid)
-                if task:
-                    break
 
-    # 採点カード1枚に集約（声の特徴も payload.voice_profile に同居。別の声診断カードは出さない）
-    # 声タイプ診断は独立した別機能（/voice-type ページ）。コーチング講評には混ぜない。
-    ref_attempted = bool(state.get("song_ref_url") or state.get("song_ref_path"))
-    fb_payload = feedback_builder.build_feedback_payload(
-        analysis, compare_data, task, ref_attempted=ref_attempted,
+    # 会話文の根拠（事実）。カードは作らず、ヘッダ総評・良い点は事実供給にだけ使う。
+    headline = feedback_builder.build_headline(analysis, compare_data)
+    goods = "／".join(feedback_builder.build_voice_good_points(analysis, compare_data)[:2])
+    dur = analysis.get("duration_sec", 0) or 0
+    base_facts = (
+        "歌を発声の観点で解析した。\n"
+        f"録音の長さ: 約{dur:.0f}秒（この秒数を超える時刻は言わない）\n"
+        f"発声の一言総評: {headline}\n"
+        f"良かった点: {goods}\n"
+        + _voice_facts(analysis, compare_data) + "\n"
+        + _voice_dx_block(analysis, compare_data)
     )
-    out.append(coach_msg("feedback", payload=fb_payload))
 
     if task:
+        # 課題あり → ① 感想・気づき ② 練習法（＋動画リンク）の2吹き出し
+        comment_fallback = (
+            f"今の歌、{goods or 'しっかり歌い切れています'}。"
+            f"気になったのは「{task['label']}」のあたりですね。一緒に整えていきましょう🎤"
+        )
+        out.append(coach_msg("text", _llm_or(comment_fallback, base_facts, _COMMENT_INSTR, history)))
+
         prac = task["practices"][0]
-        goods = "／".join(fb_payload.get("good_points", [])[:2])
-        headline = fb_payload.get("headline", "")
-        facts = (
-            "歌を発声の観点で解析した。\n"
-            f"録音の長さ: 約{analysis.get('duration_sec', 0):.0f}秒（この秒数を超える時刻は言わない）\n"
-            f"発声の一言総評: {headline}\n"
-            f"良かった点: {goods}\n"
-            + _voice_facts(analysis, compare_data) + "\n"
-            + _voice_dx_block(analysis, compare_data) + "\n"
-            + f"今日の最優先課題: 「{task['label']}」。おすすめ基礎練『{prac['name']}』（目安: {prac.get('checkpoint', '')}）。手順カードはこの後に表示される。"
+        prac_facts = (
+            f"今日の最優先課題: 「{task['label']}」。\n"
+            f"おすすめ基礎練『{prac['name']}』: " + "／".join(prac.get("steps", [])[:3]) + "\n"
+            f"目安: {prac.get('checkpoint', '')}\n"
+            + _voice_dx_block(analysis, compare_data)
         )
-        instr = _VOICE_INSTR
-        fallback = (
-            f"今日のポイントは「{task['label']}」ですね。これに効く基礎練を用意したので、一緒にやってみましょう👇"
+        prac_fallback = (
+            f"こういうときは『{prac['name']}』が効きますよ。"
+            + "／".join(prac.get("steps", [])[:2])
+            + "…という感じで試してみてください。やってみたら録音を送ってもらえたら、変わったか一緒に見ますね😊"
         )
-        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
-        out.append(coach_msg("practice", payload=feedback_builder.build_practice_payload(task)))
-        out.append(coach_msg(
-            "text",
-            "やってみたら基礎練の録音を、もう同じ箇所を歌い直して確かめたいなら曲の録音を送ってください。"
-            "発音を詳しく見たいときは「🗣 発音を見る」もどうぞ😊",
-            payload=_action_chips("more_practice", "recheck_song", "pronunciation", "finish"),
-        ))
+        prac_text = _append_video_link(_llm_or(prac_fallback, prac_facts, _PRACTICE_INSTR, history), prac)
+        out.append(coach_msg("text", prac_text))
         updates = {"phase": LESSON, "current_task": task["id"], "baseline_analysis": analysis, "avoid_task": None}
     else:
-        goods = "／".join(fb_payload.get("good_points", [])[:3])
-        headline = fb_payload.get("headline", "")
-        stretch, stretch_id = _stretch_target(analysis, compare_data)
-        stretch_task = get_task(stretch_id) if stretch_id else None
-        prac_line = ""
-        if stretch_task:
-            p0 = stretch_task["practices"][0]
-            prac_line = f"次の一歩の基礎練『{p0['name']}』（手順と実演動画はこの後のカードに出る）\n"
-        facts = (
-            "歌を発声の観点で解析した。大きな弱点は少なく、とても良い状態。\n"
-            f"録音の長さ: 約{analysis.get('duration_sec', 0):.0f}秒（この秒数を超える時刻は言わない）\n"
-            f"発声の一言総評: {headline}\n"
-            f"良かった点: {goods}\n"
-            + _voice_facts(analysis, compare_data) + "\n"
-            + _voice_dx_block(analysis, compare_data) + "\n"
-            + f"もっと良くできる発声の点（必ず1つ伝える）: {stretch}\n"
-            + prac_line
-        )
-        instr = (
-            _VOICE_INSTR
-            + "今回は大きな弱点が少ない良い状態なので、まず一緒に喜びつつ、それでも『もっと良くできる発声の点』を必ず1つ具体的に伝える。"
-            + ("基礎練を勧めるときは『この後のカードに手順と動画があります』と一言添える。" if stretch_task else "")
-        )
-        fallback = "大きな弱点は見当たりませんでした！とてもいい状態ですよ✨ さらに伸ばすなら、下の基礎練に挑戦してみましょう。"
-        text_msg = coach_msg("text", _llm_or(fallback, facts, instr, history))
-        if stretch_task:
-            out.append(text_msg)
-            out.append(coach_msg("practice", payload=feedback_builder.build_practice_payload(stretch_task)))
-            out.append(coach_msg(
-                "text", "やってみたら基礎練の録音を送ってください。発音を見たいときは「🗣 発音を見る」もどうぞ😊",
-                payload=_action_chips("more_practice", "recheck_song", "pronunciation", "finish"),
-            ))
-            updates = {"phase": LESSON, "current_task": stretch_task["id"], "baseline_analysis": analysis, "avoid_task": None}
-        else:
-            # 基礎練カードを出さないので、テキストの「カードに手順があります」約束は消す
-            text_msg["text"] = llm.scrub_card_promise(text_msg.get("text"))
-            text_msg["payload"] = _action_chips("recheck_song", "finish")
-            out.append(text_msg)
-            updates = {"phase": DONE, "baseline_analysis": analysis, "avoid_task": None}
+        # 課題なし（良い録音）→ 褒めて終える。練習は出さない（1吹き出しのみ）。
+        praise_fallback = f"今の発声、とても良い状態です✨ {goods}。この調子で、別の箇所も聞かせてくださいね🎶"
+        out.append(coach_msg("text", _llm_or(praise_fallback, base_facts, _PRAISE_INSTR, history)))
+        updates = {"phase": DONE, "baseline_analysis": analysis, "avoid_task": None}
     return out, updates
 
 
 def _audio_practice_check(
     state: dict, analysis: dict, history: Optional[list[dict]]
 ) -> tuple[list[dict], dict]:
-    """基礎練の達成判定（出来を見てほしい人向け）。judgeカード + 自然文 + 任意チップ。"""
+    """基礎練の達成判定（出来を見てほしい人向け）。会話文だけで返す（カードなし）。"""
     out: list[dict] = []
     task = get_task(state.get("current_task"))
     if not task:
         return _audio_diagnose(state, analysis, None, history)
 
-    judge = feedback_builder.build_judge_payload(task, analysis)
-    out.append(coach_msg("judge", payload=judge))
+    judge = feedback_builder.build_judge_payload(task, analysis)  # 内部判定にだけ使う（カードは出さない）
     prac = task["practices"][0]
 
     if judge["result"] == "pass":
         facts = f"基礎練『{task['label']}』の達成判定: 達成（基準「{task['achieve_label']}」をクリア）。"
         instr = (
-            "基礎練ができていることを一緒に喜んでください。そのうえで、同じ箇所を歌い直して治ったか確かめるか、"
-            "別のことをするか、ユーザーが選べるよう自然に促してください。"
+            "ソラ先生として、基礎練ができたことを一緒に喜ぶ。話し言葉で2〜4文、点数や表は使わない。"
+            "そのうえで、同じ箇所を歌い直して変化を確かめてみようと自然にうながす。"
         )
-        fallback = "クリアです！🎉 よくがんばりましたね。同じ箇所を歌い直して確かめてもいいですよ😊"
-        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
-                             payload=_action_chips("recheck_song", "more_practice", "change_task", "finish")))
+        fallback = "できていますね、いい感じです🎉 同じところを歌い直して、どう変わったか一緒に確かめてみましょう😊"
+        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
     else:
         facts = (
             f"基礎練『{task['label']}』の達成判定: まだ達成していない。"
             f"基準「{task['achieve_label']}」。チェックポイント: {prac.get('checkpoint','')}。"
         )
-        instr = "あと少しであることを前向きに伝え、チェックポイントを意識してもう一度試してみようと優しく励ましてください。"
-        fallback = (
-            f"あと少しです！『{prac['name']}』のチェックポイント（{prac.get('checkpoint','')}）"
-            f"を意識して、もう一度録ってみてください😊"
+        instr = (
+            "ソラ先生として、あと少しであることを前向きに、話し言葉で2〜4文。点数や表は使わない。"
+            "チェックポイントを一言そえて、もう一度試してみようとやさしく励ます。"
         )
-        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
-                             payload=_action_chips("more_practice", "recheck_song", "change_task")))
+        fallback = f"あと少しです💪 {prac.get('checkpoint','')} を意識して、もう一度録ってみてください😊"
+        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
     return out, {"phase": LESSON}
 
 
@@ -858,8 +839,7 @@ def _audio_recheck(
     out: list[dict] = []
     baseline = state.get("baseline_analysis") or {}
     next_task = diagnose_task(analysis, None, exclude=[state.get("current_task")])
-    progress = feedback_builder.build_progress_payload(baseline, analysis, next_task)
-    out.append(coach_msg("progress", payload=progress))
+    progress = feedback_builder.build_progress_payload(baseline, analysis, next_task)  # 内部判定にだけ使う（カードなし）
     brief = _voice_brief(analysis)
     cmp_brief = _compare_brief(compare_data)
     if cmp_brief:
@@ -868,35 +848,45 @@ def _audio_recheck(
     if progress["improved"]:
         praise = progress.get("praise") or "最初より良くなっています。"
         if next_task:
+            # ① 改善を喜ぶ ② 次の練習を1つ（2吹き出し）
             facts = (
                 f"歌い直しの結果、最初の録音より改善した。{praise}\n"
-                f"今回の声の状態: {brief}\n"
-                f"次に伸ばせそうな弱点: 「{next_task['label']}」（根拠: {next_task['reason'](analysis, None)}）。"
+                f"今回の声の状態: {brief}"
             )
             instr = (
-                "良くなった点を具体的に伝えて一緒に喜び、次のおすすめ課題をやんわり提案してください。"
-                "ビブラートや声の張り（張りどころ）にも、状態に応じて自然に触れてよい。"
-                "続けるか別のことをするかはユーザーが選べる雰囲気で。"
+                "ソラ先生として、良くなった点を具体的に話し言葉で一緒に喜ぶ（2〜4文・点数や表は使わない）。"
+                "このメッセージでは練習法はまだ出さない（次のメッセージで伝えるため）。"
             )
-            fallback = f"いい調子ですね😊 次は「{next_task['label']}」がおすすめです。続けますか？それとも別のことをしますか？"
+            fallback = f"良くなっていますね😊 {praise}"
             out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
-            out.append(coach_msg("practice", payload=feedback_builder.build_practice_payload(next_task)))
-            out.append(coach_msg("text", "下のボタンからも選べます👇",
-                                 payload=_action_chips("more_practice", "recheck_song", "change_task", "finish")))
+
+            prac = next_task["practices"][0]
+            prac_facts = (
+                f"次の課題: 「{next_task['label']}」（根拠: {next_task['reason'](analysis, None)}）。\n"
+                f"おすすめ基礎練『{prac['name']}』: " + "／".join(prac.get("steps", [])[:3]) + "\n"
+                f"目安: {prac.get('checkpoint', '')}"
+            )
+            prac_fallback = f"次は『{prac['name']}』を試してみましょう。やってみたら録音を送ってくださいね😊"
+            prac_text = _append_video_link(_llm_or(prac_fallback, prac_facts, _PRACTICE_INSTR, history), prac)
+            out.append(coach_msg("text", prac_text))
             updates = {"phase": LESSON, "current_task": next_task["id"], "baseline_analysis": analysis}
         else:
-            facts = f"歌い直しの結果、最初より改善し、大きな弱点はほぼ無くなった。{praise}\n今回の声の状態: {brief}"
-            instr = "改善を大いに喜び、ビブラートや声の張りの状態にも一言触れつつ、今日はここまででも別の曲でも続けられると前向きに伝えてください。"
-            fallback = "弱点がかなり減りましたね！素晴らしいです✨ 今日はここまででも、別の曲でも続けられますよ🎶"
-            out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
-                                 payload=_action_chips("recheck_song", "finish")))
+            facts = f"歌い直しの結果、最初より改善し、大きな課題はほぼ無くなった。{praise}\n今回の声の状態: {brief}"
+            instr = (
+                "ソラ先生として、改善を大いに喜ぶ。話し言葉で2〜4文、点数や表は使わない。"
+                "今日はここまででも別の曲でも続けられると前向きに伝える。"
+            )
+            fallback = "ぐっと良くなりましたね、すばらしいです✨ 今日はここまででも、別の曲でも続けられますよ🎶"
+            out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
             updates = {"phase": DONE}
     else:
         facts = f"歌い直したが、初回と比べて大きな改善はまだ出ていない。\n今回の声の状態: {brief}"
-        instr = "落ち込ませないよう励まし、ビブラートや声の張りの状態にも一言触れつつ、もう少し基礎練を続けるか別の課題に変えるかを優しく提案してください。"
-        fallback = "今回はまだ大きな変化は出ていないみたいですね。でも大丈夫、もう少し基礎練するか、別の課題に変えてみましょう💪"
-        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history),
-                             payload=_action_chips("more_practice", "change_task", "recheck_song", "finish")))
+        instr = (
+            "ソラ先生として、落ち込ませないよう励ます。話し言葉で2〜4文、点数や表は使わない。"
+            "もう少し続けるか別のところを見るかを、やさしく提案する。"
+        )
+        fallback = "今回はまだ大きな変化は出ていないみたいですね。でも大丈夫、もう少し続けるか、別のところを見てみましょう💪"
+        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
         updates = {"phase": LESSON}
     return out, updates
 
