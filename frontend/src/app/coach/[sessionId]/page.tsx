@@ -122,12 +122,12 @@ export default function CoachChatPage() {
     }
   }
 
-  async function handleAudio(blob: Blob, filename: string, kind: "song" | "practice" | "auto") {
+  async function handleAudio(blob: Blob, filename: string, kind: "song" | "practice" | "auto", comment?: string) {
     setBusy(true);
     setBusyLabel(kind === "practice" ? "基礎練を聴いています" : "あなたの歌を聴いています");
     setError(null);
     try {
-      const res = await sendCoachAudio(sessionId, blob, kind, filename);
+      const res = await sendCoachAudio(sessionId, blob, kind, filename, comment);
       setMessages((m) => [...m, ...res.messages]);
       setPhase(res.phase);
     } catch (e) {

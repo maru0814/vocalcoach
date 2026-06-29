@@ -652,7 +652,8 @@ def _voice_issue_task(analysis: dict, compare_data: Optional[dict], exclude: lis
 
 
 def _audio_diagnose(
-    state: dict, analysis: dict, compare_data: Optional[dict], history: Optional[list[dict]]
+    state: dict, analysis: dict, compare_data: Optional[dict], history: Optional[list[dict]],
+    user_comment: Optional[str] = None,
 ) -> tuple[list[dict], dict]:
     """弱点診断（初回 or 課題未確定）。会話文だけで返す（カード・点数なし）。
 
@@ -680,11 +681,13 @@ def _audio_diagnose(
     headline = feedback_builder.build_headline(analysis, compare_data)
     goods = "／".join(feedback_builder.build_voice_good_points(analysis, compare_data)[:2])
     dur = analysis.get("duration_sec", 0) or 0
+    comment_block = f"ユーザーからのコメント・質問: 「{user_comment}」\n→ この悩みや質問に、感想を返す中で自然に答えること。\n" if user_comment else ""
     base_facts = (
-        "歌を発声の観点で解析した。\n"
-        f"録音の長さ: 約{dur:.0f}秒（この秒数を超える時刻は言わない）\n"
-        f"発声の一言総評: {headline}\n"
-        f"良かった点: {goods}\n"
+        comment_block
+        + "歌を発声の観点で解析した。\n"
+        + f"録音の長さ: 約{dur:.0f}秒（この秒数を超える時刻は言わない）\n"
+        + f"発声の一言総評: {headline}\n"
+        + f"良かった点: {goods}\n"
         + _voice_facts(analysis, compare_data) + "\n"
         + _voice_dx_block(analysis, compare_data)
     )
@@ -721,13 +724,14 @@ def _audio_diagnose(
 
 
 def _audio_practice_check(
-    state: dict, analysis: dict, history: Optional[list[dict]]
+    state: dict, analysis: dict, history: Optional[list[dict]],
+    user_comment: Optional[str] = None,
 ) -> tuple[list[dict], dict]:
     """基礎練の達成判定（出来を見てほしい人向け）。会話文だけで返す（カードなし）。"""
     out: list[dict] = []
     task = get_task(state.get("current_task"))
     if not task:
-        return _audio_diagnose(state, analysis, None, history)
+        return _audio_diagnose(state, analysis, None, history, user_comment)
 
     judge = feedback_builder.build_judge_payload(task, analysis)  # 内部判定にだけ使う（カードは出さない）
     prac = task["practices"][0]
@@ -757,6 +761,7 @@ def _audio_practice_check(
 def _audio_recheck(
     state: dict, analysis: dict, history: Optional[list[dict]],
     compare_data: Optional[dict] = None,
+    user_comment: Optional[str] = None,
 ) -> tuple[list[dict], dict]:
     """同じ箇所の歌い直し → 初回との改善判定（基礎練確認を飛ばしたい人向け）。"""
     out: list[dict] = []
@@ -764,6 +769,7 @@ def _audio_recheck(
     next_task = diagnose_task(analysis, None, exclude=[state.get("current_task")])
     progress = feedback_builder.build_progress_payload(baseline, analysis, next_task)  # 内部判定にだけ使う（カードなし）
     brief = _voice_brief(analysis)
+    comment_prefix = f"ユーザーのコメント・質問: 「{user_comment}」→ この悩みに自然に答えること。\n" if user_comment else ""
     cmp_brief = _compare_brief(compare_data)
     if cmp_brief:
         brief = brief + " " + cmp_brief
@@ -773,8 +779,9 @@ def _audio_recheck(
         if next_task:
             # ① 改善を喜ぶ ② 次の練習を1つ（2吹き出し）
             facts = (
-                f"歌い直しの結果、最初の録音より改善した。{praise}\n"
-                f"今回の声の状態: {brief}"
+                comment_prefix
+                + f"歌い直しの結果、最初の録音より改善した。{praise}\n"
+                + f"今回の声の状態: {brief}"
             )
             instr = (
                 "ソラ先生として、良くなった点を具体的に話し言葉で一緒に喜ぶ（2〜4文・点数や表は使わない）。"
@@ -817,6 +824,7 @@ def _audio_recheck(
 def handle_audio(
     state: dict, analysis: dict, compare_data: Optional[dict], kind: str,
     history: Optional[list[dict]] = None,
+    user_comment: Optional[str] = None,
 ) -> tuple[list[dict], dict]:
     """音声受信時のディスパッチ（意図駆動・フェーズ非依存）。
 
@@ -824,15 +832,16 @@ def handle_audio(
     - 基礎練 + 課題あり    → 達成判定（出来を見たい人）
     - 曲 + 課題&基準あり   → 改善判定（歌い直して治ったか見たい人。基礎練確認を飛ばしてOK）
     - それ以外（初回など） → 弱点診断
+    user_comment: 録音と一緒にユーザーが送った質問/コメント（任意）。LLMの文脈に注入する。
     """
     has_task = bool(state.get("current_task"))
     has_baseline = bool(state.get("baseline_analysis"))
 
     if kind == "practice" and has_task:
-        return _audio_practice_check(state, analysis, history)
+        return _audio_practice_check(state, analysis, history, user_comment)
     if kind == "song" and has_task and has_baseline:
-        return _audio_recheck(state, analysis, history, compare_data)
-    return _audio_diagnose(state, analysis, compare_data, history)
+        return _audio_recheck(state, analysis, history, compare_data, user_comment)
+    return _audio_diagnose(state, analysis, compare_data, history, user_comment)
 
 
 def handle_action(state: dict, action_id: str) -> tuple[list[dict], dict]:
