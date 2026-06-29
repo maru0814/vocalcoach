@@ -490,8 +490,12 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
         if audio_layers:
             comp = _set_audio(comp, mpy.CompositeAudioClip(audio_layers))
 
-        comp.write_videofile(out_path, fps=30, codec="libx264", audio_codec="aac",
-                             preset="veryfast", threads=2, logger=None)
+        # 低メモリ時はスレッドを1に絞り、出力fpsも24に落としてメモリ/CPUを節約。
+        out_fps = 24 if lowmem else 30
+        out_threads = 1 if lowmem else 2
+        comp.write_videofile(out_path, fps=out_fps, codec="libx264", audio_codec="aac",
+                             preset="veryfast", threads=out_threads, logger=None,
+                             ffmpeg_params=["-max_muxing_queue_size", "1024"])
         return {"ok": True, "mode": "mp4", "path": out_path, "note": "rendered"}
     except Exception as e:
         return _emit_storyboard(storyboard, narration_audio, out_path,
