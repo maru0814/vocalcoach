@@ -139,6 +139,150 @@ def _safe_reason(task: Optional[dict], analysis: Optional[dict]) -> Optional[str
         return None
 
 
+# 分析ターン専用のシステムプロンプト（docs/43・ゼロベース個人最適FB）。
+# 雑談用 SYSTEM_PROMPT と違い「カタログから選ぶ」蓋を外し、証拠から推論して生成させる。
+# 接地（捏造防止）は『メニュー制限』ではなく『実測値への引用規律』で担保する。
+ANALYSIS_SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という{COACH_ROLE}です。サービス「{SERVICE_NAME}」で、
+録音された歌を“ゼロベースで聴いて”、この人だけに向けた講評をします。
+
+# 人物像・口調
+- 解剖学・音響学・音声医学(MEAD)・アンザッツ理論に精通した世界トップレベルのボイストレーナー。明るく面倒見がよく、専門語は必ず初心者向けに一言で噛み砕く。一人称「わたし」、やわらかい敬体、絵文字は0〜2個。
+
+# やること（証拠から推論する）
+- 与えられた「実測の証拠」と音声そのものを聴いて、**この人にいま一番効く1点**を自分で診断する。固定のチェックリストから選ぶのではなく、証拠が示す物語を読む。
+- 診断したら **機構→原因→処方** で講評する。処方（練習）は「参考エクササイズ知識」を土台に、**この人向けに選び・調整・連結してよい**（固定の台本をそのまま貼らない）。ただし出す練習には必ず「なぜ効くか（機構）」を添える＝でたらめ防止。
+- 優先順位の指針（ゲートではなく指針）: 声の基礎欠損(支え・喉締め) > 音程 > ミックス/換声点 > リズム > 表現。土台が崩れているなら高度な話より土台を優先。
+
+# 接地（最重要・捏造防止）
+- **秒数・音名・cents・「息漏れ/締めすぎ」等の事実は、「実測の証拠」に書かれた値だけを根拠にする。証拠に無い数値・秒数・歌詞・母音を新しく作らない。**
+- 原曲との照合が「対応づかない/低信頼」とある時は、音程の正確さ・リズムを断定しない。
+- 音色・感情・歌い回しなど音声から聴き取った“質”は述べてよいが、位置は「〜秒あたり／高い音／サビあたり」のように証拠の範囲で言う。歌詞は引用しない。
+
+# 出力フォーマット（会話チャット）
+- 採点・点数・◎○△×・指標の数値羅列・大きな表・カード・Markdown見出しは使わない。普通の会話文。
+- まず良かった点を1つ具体的に褒め、続けて一番効く1点をやさしく伝える。必要なら練習を1つだけ、やり方（身体感覚・響かせる位置・口の形・母音）とともに。最後に「やってみて録音を送ってね」と促す。
+- 全体で4〜7文程度。練習は**1つだけ**。毎回たくさん出さない。
+"""
+
+
+def render_exercise_kb() -> str:
+    """エクササイズ master DB を『参照知識』として整形（固定台本ではなく素材）。"""
+    try:
+        from app.coaching.voice_coach import EXERCISES
+    except Exception:
+        return ""
+    cats = {"A": "呼吸・支え(Appoggio)", "B": "半閉鎖声道(SOVTE)", "C": "喉頭調整(アンザッツ)",
+            "D": "声区融合・ミックス", "E": "共鳴・フォルマント", "F": "ビブラート・強弱"}
+    lines = ["参考エクササイズ知識（この人向けに選び・調整・連結して使ってよい。固定の台本ではない）:"]
+    cur = None
+    for k, ex in EXERCISES.items():
+        c = ex.get("cat")
+        if c != cur:
+            lines.append(f"[{c}: {cats.get(c, c)}]")
+            cur = c
+        lines.append(f"  ・{k} {ex['name']} — 機構: {ex['mechanism']}／やり方: {ex['how']}")
+    return "\n".join(lines)
+
+
+def _render_timeline(analysis: dict) -> str:
+    """区間ごとの実測（伸ばし）を全部ダンプ。事前選定の1課題でなく“生の証拠”を渡すため。"""
+    segs = (analysis.get("timeline") or {}).get("sustained_segments", []) if analysis else []
+    rows = []
+    _rj = {"chest": "地声", "mix": "ミックス", "head": "裏声"}
+    for s in segs:
+        st, en = s.get("start_sec"), s.get("end_sec")
+        if st is None or en is None:
+            continue
+        f0 = s.get("mean_f0_hz")
+        parts = [f"{st:.0f}〜{en:.0f}秒", _note_name(f0) if f0 else "—"]
+        reg = _rj.get(s.get("register") or s.get("voice_type_estimate"))
+        if reg:
+            parts.append(reg)
+        std = s.get("f0_std_cents")
+        if std is not None:
+            parts.append(f"揺れ{std:.0f}cents")
+        cen = s.get("spectral_centroid_hz")
+        if cen:
+            parts.append(f"明るさ{cen:.0f}Hz")
+        rows.append("  ・" + "／".join(parts))
+    return "区間ごとの実測（伸ばし。ここにある秒数・音名だけ使う）:\n" + "\n".join(rows) if rows else ""
+
+
+def build_evidence_pack(state: dict) -> str:
+    """分析ターン用の“生の証拠一式”。接地済みfacts(build_session_context)＋全区間タイムライン＋参照KB。"""
+    blocks = [build_session_context(state)]  # 既存の接地済みfacts(秒/cents/声区)を流用（DRY）
+    analysis = state.get("last_analysis") or state.get("baseline_analysis")
+    tl = _render_timeline(analysis) if analysis else ""
+    if tl:
+        blocks.append(tl)
+    kb = render_exercise_kb()
+    if kb:
+        blocks.append(kb)
+    return "\n\n".join(blocks)
+
+
+def generate_feedback(
+    state: dict, user_wav: Optional[bytes] = None, ref_wav: Optional[bytes] = None
+) -> Optional[str]:
+    """録音FBの“ゼロベース個人最適”生成（docs/43）。
+
+    強モデル＋thinking＋ハイブリッド音声（DSP実測の Evidence Pack ＋ 生音声）で、
+    カタログから選ぶのではなく証拠から推論して講評する。enable_zero_base_fb がOFF・
+    APIキー無し・SDK無し・失敗時は None（呼び出し側はルールベースFBにフォールバック）。
+    """
+    if not settings.llm_enabled or not settings.enable_zero_base_fb:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception:  # pragma: no cover - SDK 未導入
+        return None
+    evidence = build_evidence_pack(state)
+    try:
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.llm_analysis_timeout_sec * 1000)),
+        )
+        parts: list = []
+        if user_wav:
+            parts.append(types.Part.from_bytes(data=user_wav, mime_type="audio/wav"))
+        if ref_wav:
+            parts.append(types.Part.from_bytes(data=ref_wav, mime_type="audio/wav"))
+        if user_wav and ref_wav:
+            intro = "1つ目の音声はユーザーの歌、2つ目はお手本（原曲）です。"
+        elif user_wav:
+            intro = "この音声はユーザーの歌です。"
+        else:
+            intro = ""
+        prompt = (
+            f"{intro}\n\n# 実測の証拠（数値・秒はここにあるものだけ使う）\n{evidence}\n\n"
+            "# 指示\n上の音声と証拠から、この人にいま一番効く1点を自分で診断し、会話で講評してください。"
+        )
+        parts.append(types.Part.from_text(text=prompt))
+        resp = client.models.generate_content(
+            model=settings.llm_analysis_model,
+            contents=[types.Content(role="user", parts=parts)],
+            config=types.GenerateContentConfig(
+                system_instruction=ANALYSIS_SYSTEM_PROMPT,
+                max_output_tokens=settings.llm_analysis_max_tokens,
+                temperature=0.4,
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=settings.llm_analysis_thinking_budget
+                ),
+            ),
+        )
+        reply = (resp.text or "").strip()
+        if not reply:
+            return None
+        # 接地ガード: 証拠に無い秒の捏造を抑制＋“カードを出す約束”を除去
+        reply = _scrub_invented_seconds(reply, _allowed_seconds(evidence, prompt))
+        reply = scrub_card_promise(reply)
+        return reply or None
+    except Exception as e:
+        logger.warning("ゼロベースFB生成に失敗（ルールベースにフォールバック）: %s", e)
+        return None
+
+
 def build_session_context(state: dict) -> str:
     """セッション状態を、LLM に渡す「現在のレッスン状況」テキストにまとめる。
 

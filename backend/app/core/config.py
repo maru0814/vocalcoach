@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     # 直近何件の会話履歴を文脈として渡すか
     llm_history_turns: int = 12
 
+    # --- ゼロベース個人最適FB（docs/43）。既定OFF。ONにするまで本番挙動は不変 ---
+    # 録音FBを「カタログ選択」から「証拠＋生音声を聴いて推論生成」へ切替える経路の有効化。
+    enable_zero_base_fb: bool = False
+    # 分析ターン専用の強モデル（推論＋音色判断）。雑談は従来の llm_model のまま。
+    llm_analysis_model: str = "gemini-2.5-pro"
+    llm_analysis_max_tokens: int = 1200
+    # >0 で thinking（推論）有効。証拠から診断・処方を組み立てるため有効化。
+    llm_analysis_thinking_budget: int = 2048
+    # 生音声＋大きい文脈＋推論で重いのでタイムアウト長め。
+    llm_analysis_timeout_sec: float = 90.0
+
     @property
     def llm_enabled(self) -> bool:
         return bool(self.gemini_api_key and self.gemini_api_key.strip())

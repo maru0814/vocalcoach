@@ -784,10 +784,25 @@ def send_audio(
     else:
         s.last_analysis = user_analysis
 
+    # ゼロベース個人最適FB（docs/43）。フラグONの時だけ、強モデル＋生音声＋実測証拠で
+    # “聴いて推論した”講評を生成する。失敗時は下のルールベースFBにフォールバック。
+    zero_base_reply = None
+    if settings.enable_zero_base_fb and settings.llm_enabled:
+        try:
+            _uw = open(wav_path, "rb").read()
+            _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
+            zero_base_reply = llm.generate_feedback(_session_state(s), user_wav=_uw, ref_wav=_rw)
+        except Exception:
+            zero_base_reply = None
+
     msgs, updates = rule_engine.handle_audio(
         _session_state(s), user_analysis, compare_data, kind, history=history
     )
     _apply_updates(s, updates)
+    # 状態遷移(updates)はルールベースのまま使い、ユーザーに見せるFB本文だけ
+    # ゼロベース講評（会話文）に差し替える（カード/採点は出さない＝docs/42）。
+    if zero_base_reply:
+        msgs = [{"role": "coach", "type": "text", "text": zero_base_reply}]
     # 原曲URLを貼ってくれたのに取得できなかった時は、黙って単体FBにせず一言ことわる
     # （URLを貼った＝聴き比べを期待しているので、比較できなかった事実を隠さない）。
     if ref_fetch_failed and not compare_data:
