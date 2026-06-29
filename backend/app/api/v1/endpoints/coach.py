@@ -646,6 +646,7 @@ def send_audio(
     session_id: int,
     audio_file: UploadFile = File(...),
     kind: str = Form("song"),
+    comment: str = Form(""),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ) -> ChatResponse:
@@ -679,6 +680,12 @@ def send_audio(
             status_code=400,
             detail={"code": "BAD_REQUEST", "message": f"ファイルが大きすぎます（{settings.max_audio_mb}MBまで）"},
         )
+
+    # コメントがあれば先にユーザーテキストメッセージとして保存（LLM履歴に乗る）
+    user_comment = comment.strip() or None
+    if user_comment:
+        comment_msg = ChatMessage(session_id=s.id, role="user", type="text", text=user_comment)
+        db.add(comment_msg)
 
     ensure_dir(settings.coach_audio_dir)
     user_msg = ChatMessage(session_id=s.id, role="user", type="audio")
@@ -804,7 +811,8 @@ def send_audio(
                 llm_budget.record(_est)  # 成功した呼び出しだけ当月コストに積む
 
     msgs, updates = rule_engine.handle_audio(
-        _session_state(s), user_analysis, compare_data, kind, history=history
+        _session_state(s), user_analysis, compare_data, kind, history=history,
+        user_comment=user_comment,
     )
     _apply_updates(s, updates)
     # 状態遷移(updates)はルールベースのまま使い、ユーザーに見せるFB本文だけ
@@ -823,10 +831,14 @@ def send_audio(
         ] + msgs
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
+    if user_comment:
+        db.refresh(comment_msg)
     db.refresh(user_msg)
     for r in rows:
         db.refresh(r)
-    out = [_msg_out(user_msg)] + [_msg_out(r) for r in rows]
+    out = (([_msg_out(comment_msg)] if user_comment else [])
+           + [_msg_out(user_msg)]
+           + [_msg_out(r) for r in rows])
     return ChatResponse(phase=s.phase, current_task=s.current_task, messages=out)
 
 

@@ -10,6 +10,7 @@ import {
   SessionSummary,
 } from "@/lib/api";
 import { BrandWordmark, Pill } from "@/components/brand/Brand";
+import { PremiumWidget } from "@/components/PremiumWidget";
 
 const PHASE_LABEL: Record<string, string> = {
   A: "曲を決める", B: "課題を見つける", C: "基礎練中", D: "練習チェック", E: "再録音", done: "完了",
@@ -74,11 +75,14 @@ export default function CoachListPage() {
 
   return (
     <div className="bg-studio min-h-[100dvh]">
-      <header className="mx-auto flex max-w-2xl items-center justify-between p-5">
+      <header className="mx-auto flex max-w-2xl items-center justify-between gap-3 p-5">
         <BrandWordmark size={40} />
-        <Link href="/login" className="text-sm font-medium text-slate-500 hover:text-brand-600">
-          ログアウト
-        </Link>
+        <div className="flex items-center gap-4">
+          <PremiumWidget />
+          <Link href="/login" className="text-sm font-medium text-slate-500 hover:text-brand-600">
+            ログアウト
+          </Link>
+        </div>
       </header>
 
       <main className="mx-auto max-w-2xl space-y-5 px-5 pb-16">

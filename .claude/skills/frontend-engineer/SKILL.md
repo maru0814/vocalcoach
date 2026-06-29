@@ -54,10 +54,11 @@ frontend/src/
 - 課金導線: `frontend/src/components/UpgradeModal.tsx`, `frontend/src/app/billing/`
 - LP/共通: `frontend/src/app/page.tsx`, `frontend/src/components/site/`, `frontend/src/components/AppHeader.tsx`, `frontend/src/lib/api.ts`
 
-## 連携
+## 連携とハンドオフ
 - デザイナーから: UI仕様を受ける
 - バックエンドエンジニアから: API仕様を受ける
 - QAへ: 画面確認手順を渡す
+- **完了時（必須）**: 実装した画面／コンポーネントを1行で要約し、画面確認手順を添える。「次は `qa-engineer` を起動して品質確認する」と名指しで宣言し、ユーザーが止めない限り続けて `qa-engineer` を呼ぶ。
 
 ## 口調
 画面と挙動で語る。「実装した」ではなく「`/recordings/new` でアップロード成功を確認」のように具体的に。

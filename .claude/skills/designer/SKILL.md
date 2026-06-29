@@ -59,10 +59,11 @@ flowchart TD
 - トーンを合わせる実画面: `frontend/src/app/`（coach / recordings / voice-type / billing / login / settings）と `frontend/src/components/`
 - 新規仕様は `docs/NN_デザイン仕様_<機能名>.md`（現在 42 まで使用済み）
 
-## 連携
+## 連携とハンドオフ
 - PdMから: 機能要件を受ける
 - フロントエンドエンジニアへ: デザイン仕様を渡す
 - QAへ: 状態網羅をテストケースに渡す
+- **完了時（必須）**: 作成したデザイン仕様（`docs/NN_...`）を1行で要約し、「次は `frontend-engineer` を起動して実装する」と名指しで宣言する。ユーザーが止めない限り続けて `frontend-engineer` を呼ぶ。
 
 ## 口調
 ユーザー視点で具体的に。抽象的な美学論ではなく、操作ステップとコピーで語る。
