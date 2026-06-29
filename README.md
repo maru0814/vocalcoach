@@ -19,14 +19,23 @@
 3. Frontend: `http://localhost:3000`
 4. Backend: `http://localhost:8000` (`/healthz` あり)
 
-## テスト（Backend）
+## テスト
+### Backend
 ```
 cd backend
 pip install -r requirements-dev.txt   # pytest 等のテスト依存を追加導入
 python -m pytest
 ```
-- 採点ロジック・課金ゲート・認証・Stripe webhook をユニットテストで保護（DB/ネットワーク不要・インメモリSQLite）。
-- PR / main への push で `.github/workflows/ci.yml` が自動実行する。
+- 採点ロジック・課金ゲート・認証・Stripe webhook・音声解析/DTWアライメント・API契約（認証/所有権/上限402）をテストで保護。
+- 重い処理は合成サイン波で検証し、外部DB/ネットワークは不要（インメモリSQLite + TestClient）。
+
+### Frontend
+```
+cd frontend
+npm install
+npm test          # vitest（lib/api.ts のエラーハンドリング・402変換・計測の握り潰し）
+```
+- PR / main への push で `.github/workflows/ci.yml`（backend-tests / frontend-tests）が自動実行する。
 
 ## 非Docker起動時の注意
 - Frontend は Node.js 18+ 推奨（この環境の Node 16 では依存導入が不安定）
