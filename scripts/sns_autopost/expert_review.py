@@ -164,7 +164,9 @@ def review_and_gate(text: str, reply: str | None, pillar: str,
       approved=True のときだけ呼び出し側は LINE 承認に回す。
     """
     min_score = int(os.getenv("EXPERT_REVIEW_MIN_SCORE", "80"))
-    rounds = int(os.getenv("EXPERT_REVIEW_ROUNDS", "2"))
+    # 受かるまで「改善→再採点」を繰り返す。暴走防止の安全上限＋“頭打ち”検出付き。
+    max_attempts = int(os.getenv("EXPERT_REVIEW_MAX_ATTEMPTS",
+                                 os.getenv("EXPERT_REVIEW_ROUNDS", "6")))
 
     if not os.getenv("GEMINI_API_KEY"):
         return {"approved": True, "skipped": True, "score": None, "scores": None,
@@ -172,40 +174,54 @@ def review_and_gate(text: str, reply: str | None, pillar: str,
                 "report": "⚠️ 専門家レビュー未実施（GEMINI_API_KEY 未設定）"}
 
     cur_text, cur_reply = text, reply
-    last = None
+    best = None          # (total, text, reply, result)
+    prev_total = -1
+    stagnant = 0         # スコアが上がらない連続回数
+    seen = set()         # 同じ改善案のループを検出
     try:
-        for _ in range(rounds + 1):
+        for attempt in range(1, max_attempts + 1):
             r = _review_once(cur_text, cur_reply, pillar, image_path)
             if not r:
                 break
-            last = r
             total = r["total"]
+            if best is None or total > best[0]:
+                best = (total, cur_text, cur_reply, r)
+            # 合格 → このバージョンで承認（何回目で受かったかも表示）
             if not r["hard_fail"] and total >= min_score:
-                report = (f"✅ 専門家レビュー合格 {total}/{min_score}点（{r['model']}）\n"
-                          f"内訳: {_breakdown(r['scores'])}")
+                report = (f"✅ 専門家レビュー合格 {total}/{min_score}点"
+                          f"（{attempt}回目で通過 / {r['model']}）\n内訳: {_breakdown(r['scores'])}")
                 return {"approved": True, "skipped": False, "score": total,
                         "scores": r["scores"], "text": cur_text, "reply": cur_reply,
                         "report": report}
-            # 改善案で差し替えて次ラウンドで再採点（URL混入の改善は採用しない）
+            # まだ受かっていない → 改善案を取り込んで再提出
             rt = r["revised_text"]
-            if rt and "http" not in rt:
-                cur_text = rt
-            rr = r["revised_reply"]
-            if rr is not None:
-                rr = (rr or "").strip() or None
+            new_text = rt if (rt and "http" not in rt) else cur_text
+            new_reply = cur_reply
+            if r["revised_reply"] is not None:
+                rr = (r["revised_reply"] or "").strip() or None
                 if not (rr and "http" in rr):
-                    cur_reply = rr
-        if last is None:
+                    new_reply = rr
+            # 頭打ち検出: 改善案が前と同じ／スコアが2回連続で上がらない → これ以上は無理
+            sig = (new_text, new_reply or "")
+            stagnant = stagnant + 1 if total <= prev_total else 0
+            prev_total = total
+            if (new_text == cur_text and new_reply == cur_reply) or sig in seen or stagnant >= 2:
+                break
+            seen.add(sig)
+            cur_text, cur_reply = new_text, new_reply
+
+        # ここに来たら未達（安全上限到達 or 頭打ち or 採点不能）→ いちばん良かった版で保留
+        if best is None:
             raise RuntimeError("全モデルで採点不能")
-        total = last["total"]
-        head = ("⛔ 専門家レビュー失格（本文/リプにURL）" if last["hard_fail"]
-                else "⛔ 専門家レビュー不合格")
-        report = (f"{head} {total}/{min_score}点（{last['model']}）→ LINE未送信・保留\n"
-                  f"内訳: {_breakdown(last['scores'])}")
-        if last["fixes"]:
-            report += "\n改善要求: " + " / ".join(str(x) for x in last["fixes"][:3])
-        return {"approved": False, "skipped": False, "score": total,
-                "scores": last["scores"], "text": cur_text, "reply": cur_reply,
+        btotal, btext, breply, br = best
+        head = ("⛔ 専門家レビュー失格（本文/リプにURL）" if br["hard_fail"]
+                else f"⛔ 専門家レビュー不合格（{max_attempts}回改善しても基準未達）")
+        report = (f"{head} 最高{btotal}/{min_score}点（{br['model']}）→ LINE未送信・保留\n"
+                  f"内訳: {_breakdown(br['scores'])}")
+        if br["fixes"]:
+            report += "\n改善要求: " + " / ".join(str(x) for x in br["fixes"][:3])
+        return {"approved": False, "skipped": False, "score": btotal,
+                "scores": br["scores"], "text": btext, "reply": breply,
                 "report": report}
     except Exception as e:
         print(f"[warn] 専門家レビュー実行に失敗 → 未レビューで通します: {e}", file=sys.stderr)

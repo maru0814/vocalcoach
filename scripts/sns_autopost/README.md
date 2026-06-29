@@ -30,13 +30,17 @@ cp .env.example .env      # 値を入れる（.env はGitに入らない）
 
 ## 専門家ゲート（出稿前レビュー / skill: sns-strategist）
 生成した投稿（本文＋自己リプ＋画像）は、**世界水準SNSマーケの採点ゲート**（`expert_review.py`）を
-通してから承認に進む。基準（既定80点）を満たさない投稿は**改善案を生成して再採点**し、
-最終的に基準未達なら **LINEに出さず保留**（`pending_queue` に `status=held`）＝運用者の確認も入らない。
-- 採点基準は `.claude/skills/sns-strategist/SKILL.md` の表（フック停止力・アルゴリズム適合・画像停止力 等）。
-- 通過した投稿のLINEには判定（例「✅ 専門家レビュー合格 86/80点」）が先頭に表示される。
-- 環境変数: `SNS_REVIEW_MODEL`(既定 gemini-2.5-flash／flash-liteは採点が雑なので非推奨)、
-  `EXPERT_REVIEW_MIN_SCORE`(既定80)、`EXPERT_REVIEW_ROUNDS`(既定2)、`SNS_IMAGE_DIR`(審査画像の場所)。
+通してから承認に進む。採点は**項目別**（フック停止力・アルゴリズム適合・画像停止力 等）で行い、
+合計はコード側で算出する（モデルが中間点に丸めるのを防ぐ）。
+- **受かるまで再提出**: 基準（既定80点）未満なら専門家が改善版を作って再採点…を**合格するまで繰り返す**。
+  暴走防止に安全上限 `EXPERT_REVIEW_MAX_ATTEMPTS`(既定6) と“スコア頭打ち”検出あり。
+  上限まで改善しても基準未達なら **LINEに出さず保留**（`pending_queue` に `status=held`）＝運用者の確認も入らない。
+- 通過した投稿のLINEには判定（例「✅ 合格 84/80点（3回目で通過）」＋項目別内訳）が先頭に表示される。
+- 採点基準のSSOTは `.claude/skills/sns-strategist/SKILL.md`。
+- 環境変数: `SNS_REVIEW_MODEL`(既定 gemini-2.5-flash／flash-liteは採点が雑なので非推奨。503時はpro等へ自動フォールバック)、
+  `EXPERT_REVIEW_MIN_SCORE`(既定80)、`EXPERT_REVIEW_MAX_ATTEMPTS`(既定6)、`SNS_IMAGE_DIR`(審査画像の場所)。
 - `GEMINI_API_KEY` 未設定や一時エラー時は「未レビュー」と明示してfail-open（運用を止めない）。
+- 本文/リプにURLがあれば即失格（ハード失格）。
 
 ## 投稿前にLINEで承認するフロー（既定）
 
