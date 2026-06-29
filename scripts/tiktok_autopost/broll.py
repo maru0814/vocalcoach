@@ -24,7 +24,9 @@ try:
 except Exception:
     pass
 
-W, H = 1080, 1920
+# 解像度は環境変数で下げられる（video_assembler と揃える）。変えたら broll_cache を消して焼き直す。
+W = int(os.getenv("TIKTOK_W", "1080"))
+H = int(os.getenv("TIKTOK_H", "1920"))
 _DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(_DIR, "assets", "broll_cache")
 RAW_DIR = os.path.join(CACHE_DIR, "raw")

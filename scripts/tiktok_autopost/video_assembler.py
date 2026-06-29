@@ -21,7 +21,9 @@ import re
 import sys
 import json
 
-W, H = 1080, 1920
+# 解像度は環境変数で下げられる（低メモリVPSで合成が重い時。720x1280でもTikTokは十分）。
+W = int(os.getenv("TIKTOK_W", "1080"))
+H = int(os.getenv("TIKTOK_H", "1920"))
 _DIR = os.path.dirname(os.path.abspath(__file__))
 CLIPS_DIR = os.path.join(_DIR, "assets", "demo_clips")
 BGM_DIR = os.path.join(_DIR, "assets", "bgm")
