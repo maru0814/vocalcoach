@@ -62,6 +62,12 @@ description: プロダクトのローンチ準備、LPコピー、SNS投稿文�
 - **計測可能なKPI**: 全ローンチプランは数値目標つき
 - **既存プロダクト仕様との整合**: 機能要件書・FB品質と矛盾しない
 
+## 担当資産（現状の実体）
+- LP/ローンチ: `docs/17_LP_コピーと構成.md`, `docs/18_ローンチプラン.md`, `docs/24_声タイプ診断ローンチ_SNS自動化.md`, `docs/26_Xアカウント開設キット.md`
+- 集客・コスト前提: `docs/23_ゼロ円集客プラン.md`, `docs/29_X有料自動化_月2000円_インプレ計測.md`
+- 実LP: `frontend/src/app/page.tsx` と `frontend/src/components/site/`
+- ⚠️ 日々のSNS運用（週次レポート・themes.py・インプレ分析）は **growth-operator** の担当。marketer は 0→1（ローンチ・新規告知）に専念
+
 ## 連携
 - CEOから: ローンチ時期・目標を受ける
 - PdMから: 機能仕様・差別化ポイントを受ける

@@ -1,6 +1,11 @@
 """
 ソラ先生の自然言語チャット応答（Google Gemini）。
 
+FB品質の正本: docs/42_FB品質基準_単一ソース.md（SSOT）。
+下記 SYSTEM_PROMPT のペルソナ・出力フォーマット・観点・事実忠実性・練習継続の原則は
+42番と Claude Code版スキル（.claude/skills/vocal-trainer/SKILL.md）と揃えること。
+方針を変えるときは先に42番を更新し、両チャネルに反映する（片方だけ変えない）。
+
 ハイブリッド構成:
   - 重い音声解析・採点・課題診断はルールベース（rule_engine / taxonomy）のまま。
   - ユーザーのテキスト質問への「返答だけ」を LLM に通し、ChatGPT のように自然に答える。

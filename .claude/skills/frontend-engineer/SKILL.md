@@ -48,6 +48,12 @@ frontend/src/
 - コード（既存ディレクトリ構造を守る）
 - ローカル動作確認（`npm run dev` で目視）
 
+## 担当資産（現状の実体・上の「既存構造」に追記）
+- チャットUI: `frontend/src/components/coach/`（Bubbles / Composer / PhaseStepper / Recorder.ts）と `frontend/src/app/coach/`
+- 声タイプ: `frontend/src/components/voice/` と `frontend/src/app/voice-type/`
+- 課金導線: `frontend/src/components/UpgradeModal.tsx`, `frontend/src/app/billing/`
+- LP/共通: `frontend/src/app/page.tsx`, `frontend/src/components/site/`, `frontend/src/components/AppHeader.tsx`, `frontend/src/lib/api.ts`
+
 ## 連携
 - デザイナーから: UI仕様を受ける
 - バックエンドエンジニアから: API仕様を受ける
