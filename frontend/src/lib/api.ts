@@ -178,10 +178,12 @@ export async function sendCoachAudio(
   blob: Blob,
   kind: "song" | "practice" | "auto",
   filename = "recording.webm",
+  comment?: string,
 ) {
   const fd = new FormData();
   fd.append("audio_file", blob, filename);
   fd.append("kind", kind);
+  if (comment) fd.append("comment", comment);
   return request<ChatResponse>(`/api/v1/coach/sessions/${id}/audio`, {
     method: "POST",
     body: fd,

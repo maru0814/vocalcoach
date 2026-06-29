@@ -9,12 +9,13 @@ type Kind = "song" | "practice" | "auto";
 type Props = {
   disabled?: boolean;
   onSendText: (text: string) => void;
-  onSendAudio: (blob: Blob, filename: string, kind: Kind) => void;
+  onSendAudio: (blob: Blob, filename: string, kind: Kind, comment?: string) => void;
 };
 
 export function Composer({ disabled, onSendText, onSendAudio }: Props) {
   const [text, setText] = useState("");
   const [recording, setRecording] = useState(false);
+  const pendingCommentRef = useRef<string>("");
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const recorderRef = useRef<Recorder | null>(null);
@@ -38,6 +39,8 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
 
   async function startRecording() {
     setError(null);
+    pendingCommentRef.current = text.trim();
+    setText("");
     try {
       const rec = new Recorder();
       await rec.start();
@@ -65,7 +68,8 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
     setRecording(false);
     try {
       const { blob, ext } = await rec.stop();
-      onSendAudio(blob, `recording.${ext}`, "auto");
+      onSendAudio(blob, `recording.${ext}`, "auto", pendingCommentRef.current || undefined);
+      pendingCommentRef.current = "";
     } catch {
       setError("録音に失敗しました");
     }
@@ -81,7 +85,11 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
-    if (f) onSendAudio(f, f.name, "auto");
+    if (f) {
+      const c = text.trim() || undefined;
+      setText("");
+      onSendAudio(f, f.name, "auto", c);
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -91,6 +99,11 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
   if (recording) {
     return (
       <div className="glass border-t border-white/40 p-3">
+        {pendingCommentRef.current && (
+          <div className="mb-2 truncate rounded-xl bg-brand-50 px-3 py-1.5 text-xs text-brand-700">
+            💬 {pendingCommentRef.current}
+          </div>
+        )}
         <div className="flex items-center gap-3 rounded-2xl bg-rose-50 px-4 py-3">
           <span className="relative flex h-3 w-3">
             <span className="absolute inline-flex h-full w-full animate-pulse-ring rounded-full bg-rose-400" />
@@ -149,7 +162,7 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
             }
           }}
           rows={1}
-          placeholder={`メッセージを入力（${isMac ? "⌘+Enter" : "Shift+Enter"}で送信）／🎙録音・📎で歌や基礎練を送る`}
+          placeholder={`質問や一言を書いてから🎙録音・📎アップロードするとコメント付きで送れます（${isMac ? "⌘+Enter" : "Shift+Enter"}で文章のみ送信）`}
           disabled={disabled}
           className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:shadow-glow disabled:opacity-40"
         />
