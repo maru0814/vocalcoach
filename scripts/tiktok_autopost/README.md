@@ -9,7 +9,8 @@
 ## できること
 - ✅ 台本の自動生成（曜日で `tip`/`demo` をローテ。Claudeがあれば口語リライト、無くてもテンプレ）。
 - ✅ ナレーション（ElevenLabsで声クローン。無ければ無音で尺だけ確保＝字幕動画として成立）。
-- ✅ 縦9:16のMP4組立（**グラデ背景＋CapCut風アニメ字幕＋キーワード黄色ハイライト＋BGM**。検証型は画面録画を合成）。
+- ✅ 縦9:16のMP4組立（**動く焼き込み背景＋CapCut風アニメ字幕＋キーワード黄色ハイライト＋BGM**。検証型は画面録画を合成）。
+  - 動き（背景のドリフト＋ズーム）は `make_motion_bg.sh` で**一度だけ**焼くので、毎日の生成は軽いまま。
 - ✅ TikTok Content Posting APIへ投稿（未承認/キー無なら生成のみ）。
 - ✅ トレンドに寄せる（Research APIで伸びてる尺・音源を取得 → テンプレに反映）。
 - ✅ 投稿前チェック通知（LINE/Discordでサムネ付き → `python approve.py` で承認）。
@@ -37,6 +38,10 @@ pip install -r requirements.txt
 # MP4描画する場合はOSにffmpegと日本語フォントも入れる:
 #   sudo apt install ffmpeg fonts-noto-cjk
 cp .env.example .env      # 値を入れる（.env はGitに入らない）
+
+# （任意・推奨）動く背景を一度だけ焼く。以後の生成はこの背景を使い回す（描画は軽いまま）:
+./make_motion_bg.sh
+# BGMを鳴らすなら assets/bgm/ にフリー音源を1つ置く（assets/bgm/README.md 参照）
 ```
 
 ## 使い方
@@ -136,6 +141,7 @@ python fetch_metrics.py --manual   # アプリのインサイト値を手入力�
 ```
 tiktok_autopost/
 ├── install_cron.sh         ← cron4本を一括登録（冪等。--remove で解除）
+├── make_motion_bg.sh       ← 動く背景を一度だけ焼く（assets/bg/motion.mp4）。以後は使い回し
 ├── generate_and_render.py  ← オーケストレータ（cronで叩く）
 ├── themes.py               ← 型・ネタ・絵コンテ生成 + hook_pattern分類（Claudeプロンプト）
 ├── autotune.py             ← 実績フィードバック（勝ちパターンのネタを自動優先）

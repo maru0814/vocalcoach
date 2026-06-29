@@ -20,3 +20,7 @@ assets/audio_samples/*.wav
 assets/audio_samples/*.mp3
 # Playwright 認証セッション（個人情報含む）
 assets/auth_state.json
+assets/bg/*.mp4
+assets/bg/*.mov
+assets/bg/*.webm
+assets/bg/*.mkv

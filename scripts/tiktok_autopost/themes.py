@@ -199,7 +199,7 @@ def _tip_storyboard(day_index: int, target_sec: int, bgm) -> dict:
     return {
         "pillar": "tip", "scenario_tag": None,
         "duration": round(t + cta_sec, 2),
-        "bg": {"type": "gradient", "colors": ["#1a0a2e", "#0d0d1a"]},
+        "bg": {"type": "gradient", "colors": ["#0B2E33", "#06141A"]},
         "bgm": bgm, "scenes": scenes, "narration": narration,
         "hashtags": hashtags_for(idx),
         "caption": tip["hook"],

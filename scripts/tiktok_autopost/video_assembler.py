@@ -25,6 +25,7 @@ W, H = 1080, 1920
 _DIR = os.path.dirname(os.path.abspath(__file__))
 CLIPS_DIR = os.path.join(_DIR, "assets", "demo_clips")
 BGM_DIR = os.path.join(_DIR, "assets", "bgm")
+BG_DIR = os.path.join(_DIR, "assets", "bg")   # 焼き込みモーション背景の置き場（make_motion_bg.sh で生成）
 
 ACCENT = "#FFE14D"   # キーワードのハイライト色（黄）
 
@@ -135,7 +136,7 @@ def _gradient_array(colors):
     ys = np.linspace(0.0, 1.0, H)[:, None]                  # H×1
     xs = np.linspace(0.0, 1.0, W)[None, :]                  # 1×W
     d = np.sqrt((xs - 0.5) ** 2 + (ys - 0.36) ** 2)         # H×W
-    glow = np.clip(1.0 - d * 1.7, 0, 1)[:, :, None] * np.array([45, 32, 70])
+    glow = np.clip(1.0 - d * 1.7, 0, 1)[:, :, None] * np.array([20, 70, 80])
     return np.clip(img + glow, 0, 255).astype("uint8")
 
 
@@ -147,6 +148,29 @@ def _bg_clip(mpy, colors, duration):
     except Exception:
         avg = tuple((a + b) // 2 for a, b in zip(_hx(colors[0]), _hx(colors[-1])))
         return _set_dur(mpy.ColorClip(size=(W, H), color=avg), duration)
+
+
+def _motion_bg(mpy, duration):
+    """焼き込み済みのモーション背景動画(assets/bg/*.mp4等)があれば使う。
+    動き(ズーム/ドリフト)は事前にffmpegで焼いてあるので、ここでは“読んで切るだけ”＝毎フレーム計算ゼロ。
+    無ければ None（呼び出し側が静止グラデにフォールバック）。"""
+    if not os.path.isdir(BG_DIR):
+        return None
+    files = []
+    for ext in ("mp4", "mov", "webm", "mkv"):
+        files += sorted(glob.glob(os.path.join(BG_DIR, f"*.{ext}")))
+    if not files:
+        return None
+    try:
+        v = mpy.VideoFileClip(files[0]).without_audio()
+        d = min(duration, float(v.duration))
+        v = v.subclipped(0, d) if hasattr(v, "subclipped") else v.subclip(0, d)
+        v = v.resized(width=W) if hasattr(v, "resized") else v.resize(width=W)
+        v = _set_pos(v, ("center", "center"))
+        return _set_dur(v, duration)
+    except Exception as e:
+        print(f"[warn] モーション背景の読み込み失敗→静止グラデにフォールバック: {e}", file=sys.stderr)
+        return None
 
 
 def _vignette(mpy, duration):
@@ -178,7 +202,7 @@ def _make_text(mpy, text, font, size, color="white", stroke_w=6, method="caption
     common = dict(font=font, color=color, stroke_color="black", stroke_width=stroke_w,
                   method=method)
     if method == "caption":
-        common["size"] = (box_w or int(W * 0.84), None)
+        common["size"] = (box_w or int(W * 0.82), None)
     try:
         kw = dict(common)
         if method == "caption":
@@ -218,7 +242,7 @@ def _caption_layers(mpy, line, font, t0, seg, y, size):
             seg_clips, widths = [], []
             for p in parts:
                 col = ACCENT if _KW_RE.fullmatch(p) else "white"
-                c = _make_text(mpy, p, font, size, color=col, stroke_w=6, method="label")
+                c = _make_text(mpy, p, font, size, color=col, stroke_w=8, method="label")
                 if c is None:
                     raise ValueError("empty seg")
                 seg_clips.append((c, col))
@@ -235,7 +259,7 @@ def _caption_layers(mpy, line, font, t0, seg, y, size):
         except Exception:
             pass  # フォールバックへ
 
-    tc = _make_text(mpy, line, font, size, color="white", stroke_w=6, method="caption")
+    tc = _make_text(mpy, line, font, size, color="white", stroke_w=8, method="caption")
     if tc is None:
         return []
     return [_set_start(_slide_pos(_set_dur(tc, seg), "center", y), t0)]
@@ -251,7 +275,8 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
     try:
         mpy = _mp()
         duration = float(storyboard["duration"])
-        layers = [_bg_clip(mpy, storyboard["bg"]["colors"], duration)]
+        bg = _motion_bg(mpy, duration) or _bg_clip(mpy, storyboard["bg"]["colors"], duration)
+        layers = [bg]
 
         vig = _vignette(mpy, duration)
         if vig is not None:
@@ -277,22 +302,22 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
                 continue
 
             if kind == "hook":
-                tc = _make_text(mpy, sc.get("text", ""), font, 96, color=ACCENT, stroke_w=9)
+                tc = _make_text(mpy, sc.get("text", ""), font, 100, color=ACCENT, stroke_w=10)
                 if tc:
                     layers.append(_set_start(
-                        _slide_pos(_set_dur(tc, seg), "center", int(H * 0.40), rise=60), t0))
+                        _slide_pos(_set_dur(tc, seg), "center", int(H * 0.36), rise=60), t0))
                 continue
 
             if kind == "cta":
-                tc = _make_text(mpy, sc.get("text", ""), font, 64, color=ACCENT, stroke_w=7)
+                tc = _make_text(mpy, sc.get("text", ""), font, 68, color=ACCENT, stroke_w=8)
                 if tc:
                     layers.append(_set_start(
-                        _slide_pos(_set_dur(tc, seg), "center", int(H * 0.70)), t0))
+                        _slide_pos(_set_dur(tc, seg), "center", int(H * 0.60)), t0))
                 continue
 
-            # body
+            # body（下部UIゾーンを避けて中央やや下に。フォント大きめ）
             layers.extend(_caption_layers(mpy, sc.get("text", ""), font, t0, seg,
-                                          int(H * 0.60), 62))
+                                          int(H * 0.44), 74))
 
         flash = _hook_flash(mpy)
         if flash is not None:
@@ -324,7 +349,7 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
             comp = _set_audio(comp, mpy.CompositeAudioClip(audio_layers))
 
         comp.write_videofile(out_path, fps=30, codec="libx264", audio_codec="aac",
-                             preset="medium", threads=2, logger=None)
+                             preset="veryfast", threads=2, logger=None)
         return {"ok": True, "mode": "mp4", "path": out_path, "note": "rendered"}
     except Exception as e:
         return _emit_storyboard(storyboard, narration_audio, out_path,
