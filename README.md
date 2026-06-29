@@ -26,7 +26,7 @@ cd backend
 pip install -r requirements-dev.txt   # pytest 等のテスト依存を追加導入
 python -m pytest
 ```
-- 採点ロジック・課金ゲート・認証・Stripe webhook・音声解析/DTWアライメント・API契約（認証/所有権/上限402）をテストで保護。
+- 採点ロジック・課金ゲート・認証・Stripe webhook・音声解析/DTWアライメント・ルールエンジン(意図検出/状態遷移)・FB組み立て・API契約（認証/所有権/上限402/チャットセッション）をテストで保護。
 - 重い処理は合成サイン波で検証し、外部DB/ネットワークは不要（インメモリSQLite + TestClient）。
 
 ### Frontend
