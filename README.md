@@ -19,6 +19,24 @@
 3. Frontend: `http://localhost:3000`
 4. Backend: `http://localhost:8000` (`/healthz` あり)
 
+## テスト
+### Backend
+```
+cd backend
+pip install -r requirements-dev.txt   # pytest 等のテスト依存を追加導入
+python -m pytest
+```
+- 採点ロジック・課金ゲート・認証・Stripe webhook・音声解析/DTWアライメント・ルールエンジン(意図検出/状態遷移)・FB組み立て・発声診断/声タイプ判定・課題タクソノミー・API契約（認証/所有権/上限402/チャットセッション）をテストで保護。
+- 重い処理は合成サイン波で検証し、外部DB/ネットワークは不要（インメモリSQLite + TestClient）。
+
+### Frontend
+```
+cd frontend
+npm install
+npm test          # vitest（lib/api.ts・Recorder・主要画面・チャット部品 Composer/Bubbles/PhaseStepper・声タイプ集計/データ整合性・UpgradeModal）
+```
+- PR / main への push で `.github/workflows/ci.yml`（backend-tests / frontend-tests）が自動実行する。
+
 ## 非Docker起動時の注意
 - Frontend は Node.js 18+ 推奨（この環境の Node 16 では依存導入が不安定）
 - Backend は `backend/.venv` を使って起動可能
