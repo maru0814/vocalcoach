@@ -24,3 +24,11 @@ assets/bg/*.mp4
 assets/bg/*.mov
 assets/bg/*.webm
 assets/bg/*.mkv
+
+# 実写B-rollのキャッシュ（DL物・容量）
+assets/broll_cache/*.mp4
+assets/broll_cache/raw/
+# 効果音（DL物。READMEのみ管理）
+assets/sfx/*.mp3
+assets/sfx/*.wav
+assets/sfx/*.m4a

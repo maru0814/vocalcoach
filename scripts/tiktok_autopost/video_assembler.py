@@ -197,12 +197,66 @@ def _vignette(mpy, duration):
         return None
 
 
-def _hook_flash(mpy):
-    """冒頭の一瞬の白フラッシュ（指を止める）。"""
+def _flash(mpy, t0, dur=0.12, op=0.55):
+    """一瞬の白フラッシュ（カットを“事件”にする）。t0 で開始。"""
     try:
-        f = _set_dur(mpy.ColorClip(size=(W, H), color=(255, 255, 255)), 0.12)
-        return _set_start(_set_opacity(f, 0.55), 0.0)
+        f = _set_dur(mpy.ColorClip(size=(W, H), color=(255, 255, 255)), dur)
+        return _set_start(_set_opacity(f, op), t0)
     except Exception:
+        return None
+
+
+def _dark_overlay(mpy, duration, op=0.30):
+    """B-rollの上に敷く全面暗化（明るい実写でも白字幕が読めるように）。"""
+    try:
+        o = _set_dur(mpy.ColorClip(size=(W, H), color=(0, 0, 0)), duration)
+        return _set_opacity(o, op)
+    except Exception:
+        return None
+
+
+def _crossfadein(clip, d):
+    """カット頭のクロスフェードイン（前カット/背景から溶ける）。版差を吸収。"""
+    try:
+        from moviepy import vfx
+        return clip.with_effects([vfx.CrossFadeIn(d)])
+    except Exception:
+        pass
+    try:
+        from moviepy.video.fx.all import crossfadein as _cf
+        return _cf(clip, d)
+    except Exception:
+        pass
+    try:
+        return clip.crossfadein(d)
+    except Exception:
+        return clip
+
+
+def _loop_clip(mpy, clip, d):
+    """clip を尺 d に合わせる。短ければループ、長ければ切る。"""
+    dur = float(getattr(clip, "duration", d) or d)
+    if dur >= d:
+        return clip.subclipped(0, d) if hasattr(clip, "subclipped") else clip.subclip(0, d)
+    try:
+        from moviepy.video.fx.all import loop as _loopfx
+        return _set_dur(_loopfx(clip, duration=d), d)
+    except Exception:
+        return _set_dur(clip, d)
+
+
+def _broll_clip(mpy, path, t0, seg):
+    """正規化済み(1080x1920)のB-rollを、シーン窓[t0, t0+seg]に敷くクリップにする。失敗時 None。"""
+    try:
+        v = mpy.VideoFileClip(path).without_audio()
+        v = _loop_clip(mpy, v, seg)
+        if int(getattr(v, "w", W)) != W:   # 焼いてあるので普通は不要。保険でカバー。
+            v = v.resized(width=W) if hasattr(v, "resized") else v.resize(width=W)
+        v = _set_pos(v, ("center", "center"))
+        v = _crossfadein(v, min(0.3, seg / 2.0))
+        return _set_start(v, t0)
+    except Exception as e:
+        print(f"[warn] B-rollクリップ生成失敗: {e}", file=sys.stderr)
         return None
 
 
@@ -289,11 +343,15 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
         mpy = _mp()
         duration = float(storyboard["duration"])
         bg = _motion_bg(mpy, duration) or _bg_clip(mpy, storyboard["bg"]["colors"], duration)
-        layers = [bg]
-
         vig = _vignette(mpy, duration)
-        if vig is not None:
-            layers.append(vig)
+
+        try:
+            import broll as _broll
+        except Exception:
+            _broll = None
+
+        broll_layers, text_layers = [], []
+        exclude_ids, used_broll, cta_t0 = set(), False, None
 
         for sc in storyboard["scenes"]:
             t0, t1 = float(sc["t0"]), float(sc["t1"])
@@ -307,34 +365,62 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
                     v = _set_dur(v, min(seg, v.duration))
                     v = v.resized(width=W) if hasattr(v, "resized") else v.resize(width=W)
                     v = _set_start(_set_pos(v, ("center", "center")), t0)
-                    layers.append(v)
+                    broll_layers.append(v)
                 else:
                     ph = _make_text(mpy, "▶ アプリ画面録画\n(demo_clips に配置)", font, 60)
                     if ph:
-                        layers.append(_set_start(_set_pos(_set_dur(ph, seg), "center"), t0))
+                        text_layers.append(_set_start(_set_pos(_set_dur(ph, seg), "center"), t0))
                 continue
+
+            # このカットに実写B-rollを敷く（取得できれば）。失敗時は背景のまま。
+            if _broll is not None:
+                try:
+                    bpath = _broll.fetch_for(sc.get("text", ""), exclude_ids,
+                                             is_hook=(kind == "hook"))
+                except Exception as e:
+                    print(f"[warn] B-roll取得失敗（背景にフォールバック）: {e}", file=sys.stderr)
+                    bpath = None
+                if bpath:
+                    bclip = _broll_clip(mpy, bpath, t0, seg)
+                    if bclip is not None:
+                        broll_layers.append(bclip)
+                        used_broll = True
 
             if kind == "hook":
                 tc = _make_text(mpy, sc.get("text", ""), font, 100, color=ACCENT, stroke_w=10)
                 if tc:
-                    layers.append(_set_start(
+                    text_layers.append(_set_start(
                         _slide_pos(_set_dur(tc, seg), "center", int(H * 0.36), rise=60), t0))
                 continue
 
             if kind == "cta":
+                cta_t0 = t0
                 tc = _make_text(mpy, sc.get("text", ""), font, 68, color=ACCENT, stroke_w=8)
                 if tc:
-                    layers.append(_set_start(
+                    text_layers.append(_set_start(
                         _slide_pos(_set_dur(tc, seg), "center", int(H * 0.60)), t0))
                 continue
 
             # body（下部UIゾーンを避けて中央やや下に。フォント大きめ）
-            layers.extend(_caption_layers(mpy, sc.get("text", ""), font, t0, seg,
-                                          int(H * 0.44), 74))
+            text_layers.extend(_caption_layers(mpy, sc.get("text", ""), font, t0, seg,
+                                               int(H * 0.44), 74))
 
-        flash = _hook_flash(mpy)
-        if flash is not None:
-            layers.append(flash)
+        # レイヤー順: 背景 → B-roll(各カット) → 暗化 → ビネット → 字幕 → フラッシュ
+        layers = [bg] + broll_layers
+        if used_broll:
+            do = _dark_overlay(mpy, duration)
+            if do is not None:
+                layers.append(do)
+        if vig is not None:
+            layers.append(vig)
+        layers += text_layers
+        f0 = _flash(mpy, 0.0)
+        if f0 is not None:
+            layers.append(f0)
+        if cta_t0 is not None:
+            fc = _flash(mpy, cta_t0, dur=0.10, op=0.5)
+            if fc is not None:
+                layers.append(fc)
 
         comp = mpy.CompositeVideoClip(layers, size=(W, H))
         comp = _set_dur(comp, duration)

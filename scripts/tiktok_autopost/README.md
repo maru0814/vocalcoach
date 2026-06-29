@@ -9,8 +9,9 @@
 ## できること
 - ✅ 台本の自動生成（曜日で `tip`/`demo` をローテ。Claudeがあれば口語リライト、無くてもテンプレ）。
 - ✅ ナレーション（ElevenLabsで声クローン。無ければ無音で尺だけ確保＝字幕動画として成立）。
-- ✅ 縦9:16のMP4組立（**動く焼き込み背景＋CapCut風アニメ字幕＋キーワード黄色ハイライト＋BGM**。検証型は画面録画を合成）。
-  - 動き（背景のドリフト＋ズーム）は `make_motion_bg.sh` で**一度だけ**焼くので、毎日の生成は軽いまま。
+- ✅ 縦9:16のMP4組立（**実写B-rollをカットごとに切替＋クロスフェード＋CapCut風アニメ字幕＋キーワード黄色＋BGM**。検証型は画面録画を合成）。
+  - 🎬 **実写B-roll**（紙芝居脱却の核）：`PEXELS_API_KEY` があればネタに合う縦型の実写素材を自動取得し、本文カットごとに切り替える（`broll.py`）。キー/ffmpegが無ければ背景にフォールバック。
+  - 動き（背景のドリフト＋ズーム）は `make_motion_bg.sh` で**一度だけ**焼くので生成は軽いまま。
 - ✅ TikTok Content Posting APIへ投稿（未承認/キー無なら生成のみ）。
 - ✅ トレンドに寄せる（Research APIで伸びてる尺・音源を取得 → テンプレに反映）。
 - ✅ 投稿前チェック通知（LINE/Discordでサムネ付き → `python approve.py` で承認）。
@@ -143,6 +144,7 @@ tiktok_autopost/
 ├── install_cron.sh         ← cron4本を一括登録（冪等。--remove で解除）
 ├── make_motion_bg.sh       ← 動く背景を一度だけ焼く（assets/bg/motion.mp4）。以後は使い回し
 ├── generate_and_render.py  ← オーケストレータ（cronで叩く）
+├── broll.py                ← 実写B-roll取得（Pexels API→ffmpegで9:16正規化→キャッシュ）
 ├── themes.py               ← 型・ネタ・絵コンテ生成 + hook_pattern分類（Claudeプロンプト）
 ├── autotune.py             ← 実績フィードバック（勝ちパターンのネタを自動優先）
 ├── trends.py               ← トレンド検出（Research API / seed）
