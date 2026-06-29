@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s\\n' '【起動保証リマインド】Vocal Coach Inc. は11名の役職スキルで動く会社です。実装・ドキュメント・運用タスクに着手する前に、必ず該当役職スキルを起動してください（自動起動に頼り切らない）。対応表: 優先順位=ceo / 要件=pdm / UI=designer / 設計=architect / API実装=backend-engineer / 画面実装=frontend-engineer / テスト=qa-engineer / 歌FB=vocal-trainer / ローンチ=marketer / SNS週次運用=growth-operator / 本番障害・デプロイ=sre。詳細は claude.md の役職表を参照。'"
+          }
+        ]
+      }
+    ]
+  }
+}
