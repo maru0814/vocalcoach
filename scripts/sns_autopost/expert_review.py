@@ -210,17 +210,22 @@ def review_and_gate(text: str, reply: str | None, pillar: str,
             seen.add(sig)
             cur_text, cur_reply = new_text, new_reply
 
-        # ここに来たら未達（安全上限到達 or 頭打ち or 採点不能）→ いちばん良かった版で保留
+        # ここに来たら未達（安全上限到達 or 頭打ち or 採点不能）。
         if best is None:
             raise RuntimeError("全モデルで採点不能")
         btotal, btext, breply, br = best
-        head = ("⛔ 専門家レビュー失格（本文/リプにURL）" if br["hard_fail"]
-                else f"⛔ 専門家レビュー不合格（{max_attempts}回改善しても基準未達）")
-        report = (f"{head} 最高{btotal}/{min_score}点（{br['model']}）→ LINE未送信・保留\n"
-                  f"内訳: {_breakdown(br['scores'])}")
+        if br["hard_fail"]:
+            # URLが残る版は方針違反（reach減・$0.20課金）。これだけは送らず保留する。
+            report = (f"⛔ 専門家レビュー失格（本文/リプにURL）最高{btotal}/{min_score}点 "
+                      f"→ LINE未送信・保留\n内訳: {_breakdown(br['scores'])}")
+            return {"approved": False, "skipped": False, "score": btotal,
+                    "scores": br["scores"], "text": btext, "reply": breply, "report": report}
+        # 基準未達でも、何回も改善した中での“いちばん良かった版”をLINEに送る（人間が最終判断）。
+        report = (f"⚠️ 専門家ライン未達（{max_attempts}回改善の最高 {btotal}/{min_score}点）"
+                  f"→ 最良版を確認用に送付（{br['model']}）\n内訳: {_breakdown(br['scores'])}")
         if br["fixes"]:
-            report += "\n改善要求: " + " / ".join(str(x) for x in br["fixes"][:3])
-        return {"approved": False, "skipped": False, "score": btotal,
+            report += "\n残る改善点: " + " / ".join(str(x) for x in br["fixes"][:3])
+        return {"approved": True, "skipped": False, "score": btotal,
                 "scores": br["scores"], "text": btext, "reply": breply,
                 "report": report}
     except Exception as e:
