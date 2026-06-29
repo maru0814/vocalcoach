@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     llm_analysis_est_jpy_per_call: float = 20.0
     # 月次コスト台帳の保存先（コンテナの永続volume配下を想定）。
     llm_cost_ledger_path: str = "uploads/llm_cost_ledger.json"
+    # 上限に達したら通知するWebhook URL（任意）。LINE/Slack/Discord等の受け口を指定。
+    # 未設定でもログには必ず出る。通知は当月1回だけ（毎回は鳴らさない）。
+    llm_budget_notify_webhook: str | None = None
 
     @property
     def llm_enabled(self) -> bool:

@@ -791,7 +791,9 @@ def send_audio(
     if settings.enable_zero_base_fb and settings.llm_enabled:
         from app.core import llm_budget
         _est = settings.llm_analysis_est_jpy_per_call
-        if not llm_budget.would_exceed(_est):  # 当月概算+今回 が上限を超えないときだけ呼ぶ
+        if llm_budget.would_exceed(_est):  # 上限到達 → 当月1回だけ通知してルールベースFBへ
+            llm_budget.notify_budget_reached_once()
+        else:  # 当月概算+今回 が上限を超えないときだけ呼ぶ
             try:
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None

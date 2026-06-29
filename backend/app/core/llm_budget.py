@@ -74,10 +74,51 @@ def would_exceed(est_jpy: float) -> bool:
 
 
 def record(est_jpy: float) -> None:
-    """実際に1回呼んだ後、当月の概算コストに積む。"""
+    """実際に1回呼んだ後、当月の概算コストに積む。上限に達したら当月1回だけ通知する。"""
+    crossed = False
     with _lock:
         d = _load()
         d["jpy"] = round(float(d.get("jpy", 0.0)) + float(est_jpy), 2)
+        cap = settings.llm_monthly_budget_jpy
+        if cap and cap > 0 and d["jpy"] >= cap and not d.get("notified"):
+            d["notified"] = True
+            crossed = True
         _save(d)
-        logger.info("ゼロベースFB: 当月概算 ¥%.0f / 上限 ¥%s",
-                    d["jpy"], settings.llm_monthly_budget_jpy)
+        spend = d["jpy"]
+    logger.info("ゼロベースFB: 当月概算 ¥%.0f / 上限 ¥%s", spend, settings.llm_monthly_budget_jpy)
+    if crossed:
+        _notify(f"🛑 ゼロベースFBの当月概算コストが上限¥{settings.llm_monthly_budget_jpy}に達しました"
+                f"（概算¥{spend:.0f}）。以降は自動でルールベースFBに切り替えています。")
+
+
+def notify_budget_reached_once() -> None:
+    """すでに上限超過の状態で呼ばれた時、当月まだ通知していなければ1回だけ通知する。"""
+    with _lock:
+        d = _load()
+        if d.get("notified"):
+            return
+        d["notified"] = True
+        _save(d)
+        spend = float(d.get("jpy", 0.0))
+    _notify(f"🛑 ゼロベースFBの当月概算コストが上限¥{settings.llm_monthly_budget_jpy}に達しました"
+            f"（概算¥{spend:.0f}）。以降は自動でルールベースFBに切り替えています。")
+
+
+def _notify(text: str) -> None:
+    """通知を送る。ログには必ず出し、Webhookが設定されていればPOSTする（失敗は無視）。"""
+    logger.warning("【コスト上限通知】%s", text)
+    url = settings.llm_budget_notify_webhook
+    if not url:
+        return
+    try:
+        import json as _json
+        import urllib.request
+
+        # text / content の両キーを入れて LINE/Slack/Discord どれでも拾えるようにする
+        data = _json.dumps({"text": text, "content": text}).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:  # 通知失敗で本処理は止めない
+        logger.warning("コスト上限通知の送信に失敗: %s", e)
