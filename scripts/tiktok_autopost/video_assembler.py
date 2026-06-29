@@ -50,6 +50,10 @@ _FONT_CANDIDATES = [
 ]
 
 
+def _truthy_env(name: str) -> bool:
+    return str(os.getenv(name) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _font() -> str | None:
     for f in _FONT_CANDIDATES:
         if f and os.path.exists(f):
@@ -493,8 +497,10 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
         # 低メモリ時はスレッドを1に絞り、出力fpsも24に落としてメモリ/CPUを節約。
         out_fps = 24 if lowmem else 30
         out_threads = 1 if lowmem else 2
+        # TIKTOK_PROGRESS=1 で進捗バーを表示（手動実行で“固まってない”と分かる。cronでは付けない）。
+        logger = "bar" if _truthy_env("TIKTOK_PROGRESS") else None
         comp.write_videofile(out_path, fps=out_fps, codec="libx264", audio_codec="aac",
-                             preset="veryfast", threads=out_threads, logger=None,
+                             preset="veryfast", threads=out_threads, logger=logger,
                              ffmpeg_params=["-max_muxing_queue_size", "1024"])
         return {"ok": True, "mode": "mp4", "path": out_path, "note": "rendered"}
     except Exception as e:
