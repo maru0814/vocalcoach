@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     llm_analysis_thinking_budget: int = 2048
     # 生音声＋大きい文脈＋推論で重いのでタイムアウト長め。
     llm_analysis_timeout_sec: float = 90.0
+    # --- 月次コスト上限（これだけ）。当月の概算コストが上限に達しそうなら強制停止し、
+    #     ルールベースFBにフォールバックする。0以下で無制限。docs/43。
+    llm_monthly_budget_jpy: int = 2000
+    # 分析ターン1回の概算コスト(JPY)。上限判定に使う目安（実測に合わせて env で調整）。
+    llm_analysis_est_jpy_per_call: float = 20.0
+    # 月次コスト台帳の保存先（コンテナの永続volume配下を想定）。
+    llm_cost_ledger_path: str = "uploads/llm_cost_ledger.json"
 
     @property
     def llm_enabled(self) -> bool:

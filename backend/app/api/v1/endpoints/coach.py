@@ -786,14 +786,20 @@ def send_audio(
 
     # ゼロベース個人最適FB（docs/43）。フラグONの時だけ、強モデル＋生音声＋実測証拠で
     # “聴いて推論した”講評を生成する。失敗時は下のルールベースFBにフォールバック。
+    # 月次コスト上限（¥2000）に達しそうなら呼ばず、ルールベースFBに切り替える。
     zero_base_reply = None
     if settings.enable_zero_base_fb and settings.llm_enabled:
-        try:
-            _uw = open(wav_path, "rb").read()
-            _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
-            zero_base_reply = llm.generate_feedback(_session_state(s), user_wav=_uw, ref_wav=_rw)
-        except Exception:
-            zero_base_reply = None
+        from app.core import llm_budget
+        _est = settings.llm_analysis_est_jpy_per_call
+        if not llm_budget.would_exceed(_est):  # 当月概算+今回 が上限を超えないときだけ呼ぶ
+            try:
+                _uw = open(wav_path, "rb").read()
+                _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
+                zero_base_reply = llm.generate_feedback(_session_state(s), user_wav=_uw, ref_wav=_rw)
+            except Exception:
+                zero_base_reply = None
+            if zero_base_reply:
+                llm_budget.record(_est)  # 成功した呼び出しだけ当月コストに積む
 
     msgs, updates = rule_engine.handle_audio(
         _session_state(s), user_analysis, compare_data, kind, history=history
