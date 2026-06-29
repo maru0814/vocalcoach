@@ -54,7 +54,7 @@ export default function TokushohoPage() {
         </Row>
 
         <Row label="販売価格">
-          プレミアムプラン: 月額 500円（消費税込）
+          プレミアムプラン: 月額 800円（消費税込）
           <br />
           無料プランは0円でご利用いただけます。
         </Row>

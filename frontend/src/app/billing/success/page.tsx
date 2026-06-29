@@ -27,31 +27,37 @@ export default function BillingSuccessPage() {
   }, []);
 
   return (
-    <div className="space-y-4 rounded bg-white p-6 shadow">
-      {ready ? (
-        <>
-          <h1 className="text-xl font-bold">ようこそプレミアムへ 🎉</h1>
-          <p className="text-sm text-gray-700">
-            これから録音解析が無制限になり、詳細添削レポートも使えます。
-          </p>
-          <div className="flex gap-3">
-            <Link className="rounded bg-blue-600 px-4 py-2 text-sm text-white" href="/recordings">
-              録音一覧へ
+    <div className="bg-studio flex min-h-[100dvh] items-center justify-center p-5">
+      <div className="w-full max-w-md space-y-4 rounded-3xl bg-white/90 p-8 text-center shadow-card backdrop-blur">
+        {ready ? (
+          <>
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-gradient text-3xl shadow-soft">
+              🎉
+            </div>
+            <h1 className="text-xl font-black text-slate-800">ようこそプレミアムへ</h1>
+            <p className="text-sm text-slate-600">
+              これから録音解析が無制限になり、詳細添削レポートも使えます。
+            </p>
+            <Link
+              className="inline-block rounded-full bg-brand-gradient px-6 py-2.5 text-sm font-bold text-white shadow-soft transition hover:opacity-95 active:scale-95"
+              href="/coach"
+            >
+              ホームへ戻る
             </Link>
-            <Link className="rounded border px-4 py-2 text-sm" href="/coach">
-              ホームへ
-            </Link>
-          </div>
-        </>
-      ) : (
-        <>
-          <h1 className="text-xl font-bold">お支払いを確認しています…</h1>
-          <p className="text-sm text-gray-700">
-            反映まで少しかかることがあります（最大1分ほど）。このままお待ちください。
-          </p>
-          <div className="h-4 w-2/3 animate-pulse rounded bg-gray-200" />
-        </>
-      )}
+          </>
+        ) : (
+          <>
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-3xl">
+              ⏳
+            </div>
+            <h1 className="text-xl font-black text-slate-800">お支払いを確認しています…</h1>
+            <p className="text-sm text-slate-600">
+              反映まで少しかかることがあります（最大1分ほど）。このままお待ちください。
+            </p>
+            <div className="mx-auto h-3 w-2/3 animate-pulse rounded-full bg-slate-200" />
+          </>
+        )}
+      </div>
     </div>
   );
 }
