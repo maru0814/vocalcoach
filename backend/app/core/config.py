@@ -62,18 +62,23 @@ class Settings(BaseSettings):
     # --- ゼロベース個人最適FB（docs/43）。既定OFF。ONにするまで本番挙動は不変 ---
     # 録音FBを「カタログ選択」から「証拠＋生音声を聴いて推論生成」へ切替える経路の有効化。
     enable_zero_base_fb: bool = False
-    # 分析ターン専用の強モデル（推論＋音色判断）。雑談は従来の llm_model のまま。
-    llm_analysis_model: str = "gemini-2.5-pro"
-    llm_analysis_max_tokens: int = 1200
-    # >0 で thinking（推論）有効。証拠から診断・処方を組み立てるため有効化。
-    llm_analysis_thinking_budget: int = 2048
+    # 分析ターン専用モデル（推論＋音色判断）。雑談は従来の llm_model のまま。
+    # 既定 flash: 安定供給＋安価で完全な講評を返す（実測 pro は 503 多発）。最高品質が
+    # 要る時だけ env で gemini-2.5-pro に上書き可。
+    llm_analysis_model: str = "gemini-2.5-flash"
+    # ⚠️ Gemini 2.5 では thinking トークンも出力枠を消費する。max は thinking より十分大きく
+    #    すること（thinking=512+本文 で実測 finish=STOP。max<thinking だと本文が途中で切れる）。
+    llm_analysis_max_tokens: int = 2048
+    # >0 で thinking（推論）有効。診断に十分な範囲で控えめに（出力切れ＆コスト回避）。
+    llm_analysis_thinking_budget: int = 512
     # 生音声＋大きい文脈＋推論で重いのでタイムアウト長め。
     llm_analysis_timeout_sec: float = 90.0
     # --- 月次コスト上限（これだけ）。当月の概算コストが上限に達しそうなら強制停止し、
     #     ルールベースFBにフォールバックする。0以下で無制限。docs/43。
     llm_monthly_budget_jpy: int = 2000
-    # 分析ターン1回の概算コスト(JPY)。上限判定に使う目安（実測に合わせて env で調整）。
-    llm_analysis_est_jpy_per_call: float = 20.0
+    # 分析ターン1回の概算コスト(JPY)。flash 実測 ≒¥0.5/回（音声込み総~3.3kトークン）に対し
+    # 安全側に ¥1.5 を既定とする。pro に上げる時はこの値も上げること（env）。
+    llm_analysis_est_jpy_per_call: float = 1.5
     # 月次コスト台帳の保存先（コンテナの永続volume配下を想定）。
     llm_cost_ledger_path: str = "uploads/llm_cost_ledger.json"
     # 上限に達したら通知するWebhook URL（任意）。LINE/Slack/Discord等の受け口を指定。
