@@ -334,8 +334,29 @@ def _caption_layers(mpy, line, font, t0, seg, y, size):
     return [_set_start(_slide_pos(_set_dur(tc, seg), "center", y), t0)]
 
 
+def _is_lowmem() -> bool:
+    """低メモリ環境か判定。TIKTOK_LOWMEM で明示指定可。既定は MemTotal<約3GB を低メモリとみなす。"""
+    v = os.getenv("TIKTOK_LOWMEM")
+    if v is not None:
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) < 3_000_000  # kB
+    except Exception:
+        pass
+    return False
+
+
 def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict:
-    """絵コンテをMP4に描画。returns {ok, mode, path, note}。"""
+    """絵コンテをMP4に描画。returns {ok, mode, path, note}。
+
+    メモリに応じて2モード:
+      - 通常: 本文カットごとに実写B-rollを切り替える（リッチだが同時に複数動画＝重い）。
+      - 低メモリ(自動): 実写B-rollを1本だけ全編の背景に敷く（同時に開く動画は1本＝軽い）。
+        960MB級VPSでも完走する。カット切替は諦めるが背景が実写になり“紙芝居”を脱する。
+    """
     font = _font()
     if not _try_moviepy() or font is None:
         return _emit_storyboard(storyboard, narration_audio, out_path,
@@ -344,8 +365,8 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
     try:
         mpy = _mp()
         duration = float(storyboard["duration"])
-        bg = _motion_bg(mpy, duration) or _bg_clip(mpy, storyboard["bg"]["colors"], duration)
         vig = _vignette(mpy, duration)
+        lowmem = _is_lowmem()
 
         try:
             import broll as _broll
@@ -354,6 +375,26 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
 
         broll_layers, text_layers = [], []
         exclude_ids, used_broll, cta_t0 = set(), False, None
+
+        # 低メモリ: 実写B-rollを“1本だけ”全編背景に敷く（フックのネタで顔/動きの強い素材を選ぶ）。
+        single_bg = None
+        if lowmem and _broll is not None:
+            htext = next((s.get("text", "") for s in storyboard["scenes"]
+                          if s.get("kind") == "hook"), "")
+            try:
+                p = _broll.fetch_for(htext, set(), is_hook=True)
+                if p:
+                    single_bg = _broll_clip(mpy, p, 0.0, duration)
+            except Exception as e:
+                print(f"[warn] B-roll取得失敗（背景にフォールバック）: {e}", file=sys.stderr)
+            if single_bg is not None:
+                used_broll = True
+
+        # 背景: 低メモリで実写が取れたらそれ、無ければ焼き込みモーション/静止グラデ。
+        if single_bg is not None:
+            bg = single_bg
+        else:
+            bg = _motion_bg(mpy, duration) or _bg_clip(mpy, storyboard["bg"]["colors"], duration)
 
         for sc in storyboard["scenes"]:
             t0, t1 = float(sc["t0"]), float(sc["t1"])
@@ -374,8 +415,8 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
                         text_layers.append(_set_start(_set_pos(_set_dur(ph, seg), "center"), t0))
                 continue
 
-            # このカットに実写B-rollを敷く（取得できれば）。失敗時は背景のまま。
-            if _broll is not None:
+            # 通常メモリ時のみ: カットごとに実写B-rollを切り替える（低メモリ時は単一背景で代替）。
+            if _broll is not None and not lowmem:
                 try:
                     bpath = _broll.fetch_for(sc.get("text", ""), exclude_ids,
                                              is_hook=(kind == "hook"))
