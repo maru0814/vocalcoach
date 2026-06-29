@@ -24,7 +24,8 @@ Vocal Coach Inc. の実行を差配する。曖昧な依頼や複数役職をま
 | バグ修正 | `qa-engineer`（再現・切り分け）→ 該当エンジニア → `qa-engineer`（回帰確認） |
 | UI改善のみ | `designer` → `frontend-engineer` → `qa-engineer` |
 | サーバーサイド改修のみ | `architect`（必要時）→ `backend-engineer` → `qa-engineer` |
-| 集客・ローンチ | `marketer`（必要なら `ceo` で時期判断） |
+| 集客・ローンチ（横断） | `marketer`（責任者・差配）→ `sns-specialist`／`digital-marketer`／`pr-specialist`／`content-marketer`／`growth-analyst`（必要な専門役職）（時期判断は `ceo`） |
+| 単発のマーケ成果物 | 該当専門役職を直接（SNS=`sns-specialist`／広告・SEO=`digital-marketer`／広報=`pr-specialist`／記事・LP=`content-marketer`／分析=`growth-analyst`） |
 | 評価ロジック・FB品質の改善 | `vocal-trainer`（品質基準）→ `pdm`（要件化）→ `backend-engineer`（`evaluation_service.py` 反映）→ `qa-engineer` |
 | 優先順位・やる/やらない判断 | `ceo` |
 
