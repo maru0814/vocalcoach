@@ -4,17 +4,36 @@ degrade設計（sns_autopostの流儀）:
 - moviepy/ffmpeg があればMP4を描画。
 - 無ければ絵コンテJSON＋ナレーション台本を書き出して“何が作られるか”を見せる（安全縮退）。
 
-レイアウト: 1080x1920。背景グラデ＋テロップ（中央寄せ）＋自動字幕の代わりにシーンtextを焼き込む。
-検証型(kind=clip)は assets/demo_clips/ の画面録画を被せる。無ければ背景＋「画面録画ここに」を表示。
+ビジュアル方針（TikTokでスクロールを止める完成度を狙う）:
+- 背景: 本物の縦グラデ＋上部グロー。ゆっくりズーム(Ken Burns)で“動いてる”状態に。
+- 字幕: 黒フチ付きの極太白文字を下からスライドイン(CapCut風)。読みやすさ最優先。
+- 強調: ニッチのキーワード(高音/ミックス/力む…)だけ黄色ハイライトで色分け。
+- フック: 1.5秒で刺す特大テロップ＋冒頭フラッシュ。
+- 補助: 下部の暗いビネット(可読性)＋上部の進捗バー(離脱抑制)。
+- 音: ナレーション(ElevenLabs/無音) + assets/bgm/ のフリーBGMを小音量でループ。
+
+検証型(kind=clip)は assets/demo_clips/ の画面録画を被せる。無ければプレースホルダ表示。
 """
 import glob
-import json
 import os
+import re
 import sys
+import json
 
 W, H = 1080, 1920
 _DIR = os.path.dirname(os.path.abspath(__file__))
 CLIPS_DIR = os.path.join(_DIR, "assets", "demo_clips")
+BGM_DIR = os.path.join(_DIR, "assets", "bgm")
+
+ACCENT = "#FFE14D"   # キーワードのハイライト色（黄）
+
+# 字幕でハイライトするニッチのキーワード（長い語を先にマッチさせる）。
+KEYWORDS = sorted([
+    "ミックスボイス", "ミックス", "裏声", "地声", "高音", "換声点", "声帯", "倍音",
+    "リップロール", "ハミング", "力む", "喉", "息", "録音", "音痴", "無料",
+    "プロフィール", "診断", "嘘", "間違", "逆", "近道", "原因", "理由", "バランス",
+], key=len, reverse=True)
+_KW_RE = re.compile("(" + "|".join(re.escape(k) for k in KEYWORDS) + ")")
 
 # 日本語が描画できるフォント候補（環境にあるものを使う）。
 _FONT_CANDIDATES = [
@@ -53,6 +72,19 @@ def _pick_clip(tag: str | None) -> str | None:
     return pats[0] if pats else None
 
 
+def _resolve_bgm(sb_bgm) -> str | None:
+    """BGMを解決する。storyboardが実ファイルパスならそれ、無ければ assets/bgm/ を自動検出。
+    trends は音源ID(文字列)を渡してくるが実ファイルでなければ無視 → フリーBGMにフォールバック。"""
+    if sb_bgm and os.path.exists(str(sb_bgm)):
+        return str(sb_bgm)
+    if os.path.isdir(BGM_DIR):
+        for ext in ("mp3", "m4a", "wav", "ogg", "aac"):
+            files = sorted(glob.glob(os.path.join(BGM_DIR, f"*.{ext}")))
+            if files:
+                return files[0]
+    return None
+
+
 # ── moviepy 1.x / 2.x 両対応の薄いシム ───────────────────────────────
 def _mp():
     import moviepy.editor as mpy  # 1.x。2.xでも editor シムが入ることが多い
@@ -75,28 +107,154 @@ def _set_audio(clip, a):
     return clip.with_audio(a) if hasattr(clip, "with_audio") else clip.set_audio(a)
 
 
+def _set_opacity(clip, o):
+    return clip.with_opacity(o) if hasattr(clip, "with_opacity") else clip.set_opacity(o)
+
+
+def _resize_fn(clip, fn):
+    """時間関数 or 倍率/サイズで拡縮（1.x: resize / 2.x: resized）。"""
+    return clip.resized(fn) if hasattr(clip, "resized") else clip.resize(fn)
+
+
+def _vol(clip, factor):
+    return clip.with_volume_scaled(factor) if hasattr(clip, "with_volume_scaled") \
+        else clip.volumex(factor)
+
+
+def _hx(c):
+    c = str(c).lstrip("#")
+    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+
+
+# ── 背景: 本物の縦グラデ＋グロー＋ゆっくりズーム ──────────────────────
+def _gradient_array(colors):
+    import numpy as np
+    top = np.array(_hx(colors[0]), dtype=float)
+    bot = np.array(_hx(colors[-1]), dtype=float)
+    ramp = np.linspace(0.0, 1.0, H)[:, None]            # H×1
+    grad = top[None, :] * (1 - ramp) + bot[None, :] * ramp  # H×3
+    img = np.tile(grad[:, None, :], (1, W, 1))          # H×W×3
+    # 上部中央に淡いグロー（のっぺり防止）
+    yy, xx = np.mgrid[0:H, 0:W]
+    cx, cy = W * 0.5, H * 0.36
+    d = np.sqrt(((xx - cx) / W) ** 2 + ((yy - cy) / H) ** 2)
+    glow = np.clip(1.0 - d * 1.7, 0, 1)[:, :, None] * np.array([45, 32, 70])
+    return np.clip(img + glow, 0, 255).astype("uint8")
+
+
 def _bg_clip(mpy, colors, duration):
-    """単色（暗）背景。グラデは依存を増やすため上下2色の平均色で近似。"""
-    def hx(c):
-        c = c.lstrip("#")
-        return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
-    a, b = hx(colors[0]), hx(colors[-1])
-    avg = tuple((x + y) // 2 for x, y in zip(a, b))
-    return _set_dur(mpy.ColorClip(size=(W, H), color=avg), duration)
+    """縦グラデの ImageClip にゆっくりズームをかけて“動いてる背景”にする。失敗時は単色。"""
+    try:
+        arr = _gradient_array(colors)
+        clip = _set_dur(mpy.ImageClip(arr), duration)
+        # 1.0→1.06 倍のKen Burns。中央寄せでCompositeがW×Hにクロップ。
+        clip = _resize_fn(clip, lambda t: 1.0 + 0.06 * (t / max(duration, 0.1)))
+        return _set_pos(clip, ("center", "center"))
+    except Exception:
+        avg = tuple((a + b) // 2 for a, b in zip(_hx(colors[0]), _hx(colors[-1])))
+        return _set_dur(mpy.ColorClip(size=(W, H), color=avg), duration)
 
 
-def _text_clip(mpy, text, font, big=False):
+def _vignette(mpy, duration):
+    """下部を暗くして字幕の可読性を上げる半透明オーバーレイ。"""
+    try:
+        h = int(H * 0.42)
+        v = _set_dur(mpy.ColorClip(size=(W, h), color=(0, 0, 0)), duration)
+        v = _set_opacity(v, 0.45)
+        return _set_pos(v, ("center", H - h))
+    except Exception:
+        return None
+
+
+def _progress_bar(mpy, duration):
+    """上部の進捗バー（0→満タン）。離脱抑制の定番。失敗時は省略。"""
+    try:
+        bar = _set_dur(mpy.ColorClip(size=(W, 10), color=_hx(ACCENT)), duration)
+        bar = _resize_fn(bar, lambda t: (max(1, int(W * t / max(duration, 0.1))), 10))
+        return _set_pos(bar, (0, 0))
+    except Exception:
+        return None
+
+
+def _hook_flash(mpy):
+    """冒頭の一瞬の白フラッシュ（指を止める）。"""
+    try:
+        f = _set_dur(mpy.ColorClip(size=(W, H), color=(255, 255, 255)), 0.12)
+        return _set_start(_set_opacity(f, 0.55), 0.0)
+    except Exception:
+        return None
+
+
+# ── テロップ ────────────────────────────────────────────────────────
+def _make_text(mpy, text, font, size, color="white", stroke_w=6, method="caption",
+               box_w=None):
+    """黒フチ付きテキスト。1.x/2.x のAPI差を吸収。"""
     if not text:
         return None
-    size = 92 if big else 64
-    kwargs = dict(text=text, font=font, font_size=size, color="white",
-                  method="caption", size=(int(W * 0.82), None), text_align="center")
+    common = dict(font=font, color=color, stroke_color="black", stroke_width=stroke_w,
+                  method=method)
+    if method == "caption":
+        common["size"] = (box_w or int(W * 0.84), None)
     try:
-        return mpy.TextClip(**kwargs)
+        kw = dict(common)
+        if method == "caption":
+            kw["text_align"] = "center"
+        return mpy.TextClip(text=text, font_size=size, **kw)
     except TypeError:
-        # 旧API（font_size→fontsize, text→txt, text_align無し）
-        return mpy.TextClip(txt=text, font=font, fontsize=size, color="white",
-                            method="caption", size=(int(W * 0.82), None), align="center")
+        kw = dict(common)
+        if method == "caption":
+            kw["align"] = "center"
+        return mpy.TextClip(txt=text, fontsize=size, **kw)
+
+
+def _slide_pos(clip, x, y, rise=48, dur=0.28):
+    """下から rise px だけせり上がって着地（ease-out cubic）。x は数値 or 'center'。"""
+    if x == "center":
+        try:
+            x = max(0, (W - clip.w) // 2)
+        except Exception:
+            x = 0
+
+    def pos(t):
+        if t < dur:
+            e = 1 - (1 - t / dur) ** 3
+            return (x, int(y + rise * (1 - e)))
+        return (x, y)
+    return _set_pos(clip, pos)
+
+
+def _caption_layers(mpy, line, font, t0, seg, y, size):
+    """本文1行を字幕レイヤー群にする。キーワードを黄色で色分けして横並び。
+    幅が収まらない/失敗時は1枚の白テロップにフォールバック。"""
+    parts = [p for p in _KW_RE.split(line) if p]
+    has_kw = any(_KW_RE.fullmatch(p) for p in parts)
+
+    if has_kw and len(parts) > 1:
+        try:
+            seg_clips, widths = [], []
+            for p in parts:
+                col = ACCENT if _KW_RE.fullmatch(p) else "white"
+                c = _make_text(mpy, p, font, size, color=col, stroke_w=6, method="label")
+                if c is None:
+                    raise ValueError("empty seg")
+                seg_clips.append((c, col))
+                widths.append(c.w)
+            total = sum(widths)
+            if total <= int(W * 0.94):
+                x = (W - total) // 2
+                out = []
+                for (c, _), w in zip(seg_clips, widths):
+                    c = _set_start(_slide_pos(_set_dur(c, seg), x, y), t0)
+                    out.append(c)
+                    x += w
+                return out
+        except Exception:
+            pass  # フォールバックへ
+
+    tc = _make_text(mpy, line, font, size, color="white", stroke_w=6, method="caption")
+    if tc is None:
+        return []
+    return [_set_start(_slide_pos(_set_dur(tc, seg), "center", y), t0)]
 
 
 def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict:
@@ -111,10 +269,16 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
         duration = float(storyboard["duration"])
         layers = [_bg_clip(mpy, storyboard["bg"]["colors"], duration)]
 
+        vig = _vignette(mpy, duration)
+        if vig is not None:
+            layers.append(vig)
+
         for sc in storyboard["scenes"]:
             t0, t1 = float(sc["t0"]), float(sc["t1"])
             seg = max(t1 - t0, 0.3)
-            if sc["kind"] == "clip":
+            kind = sc["kind"]
+
+            if kind == "clip":
                 clip_path = _pick_clip(sc.get("clip_tag"))
                 if clip_path:
                     v = mpy.VideoFileClip(clip_path).without_audio()
@@ -123,27 +287,58 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
                     v = _set_start(_set_pos(v, ("center", "center")), t0)
                     layers.append(v)
                 else:
-                    ph = _text_clip(mpy, "▶ アプリ画面録画\n(demo_clips に配置)", font)
+                    ph = _make_text(mpy, "▶ アプリ画面録画\n(demo_clips に配置)", font, 60)
                     if ph:
                         layers.append(_set_start(_set_pos(_set_dur(ph, seg), "center"), t0))
                 continue
-            tc = _text_clip(mpy, sc.get("text", ""), font, big=(sc.get("style") == "big"))
-            if tc:
-                pos = ("center", "center") if sc["kind"] != "cta" else ("center", int(H * 0.72))
-                layers.append(_set_start(_set_pos(_set_dur(tc, seg), pos), t0))
+
+            if kind == "hook":
+                tc = _make_text(mpy, sc.get("text", ""), font, 96, color=ACCENT, stroke_w=9)
+                if tc:
+                    layers.append(_set_start(
+                        _slide_pos(_set_dur(tc, seg), "center", int(H * 0.40), rise=60), t0))
+                continue
+
+            if kind == "cta":
+                tc = _make_text(mpy, sc.get("text", ""), font, 64, color=ACCENT, stroke_w=7)
+                if tc:
+                    layers.append(_set_start(
+                        _slide_pos(_set_dur(tc, seg), "center", int(H * 0.70)), t0))
+                continue
+
+            # body
+            layers.extend(_caption_layers(mpy, sc.get("text", ""), font, t0, seg,
+                                          int(H * 0.60), 62))
+
+        bar = _progress_bar(mpy, duration)
+        if bar is not None:
+            layers.append(bar)
+        flash = _hook_flash(mpy)
+        if flash is not None:
+            layers.append(flash)
 
         comp = mpy.CompositeVideoClip(layers, size=(W, H))
         comp = _set_dur(comp, duration)
 
-        # 音声: ナレーション＋（あれば）BGMを小さく。
+        # 音声: ナレーション ＋（あれば）BGMを小さくループ。
         audio_layers = []
         if narration_audio and os.path.exists(narration_audio):
             audio_layers.append(mpy.AudioFileClip(narration_audio))
-        bgm = storyboard.get("bgm")
-        if bgm and os.path.exists(str(bgm)):
-            a = mpy.AudioFileClip(str(bgm))
-            a = a.with_volume_scaled(0.12) if hasattr(a, "with_volume_scaled") else a.volumex(0.12)
-            audio_layers.append(_set_dur(a, duration))
+        bgm_path = _resolve_bgm(storyboard.get("bgm"))
+        if bgm_path:
+            try:
+                a = mpy.AudioFileClip(bgm_path)
+                try:  # 尺に足りなければループ
+                    from moviepy.audio.fx.all import audio_loop
+                    a = audio_loop(a, duration=duration)
+                except Exception:
+                    sub = a.subclipped(0, min(duration, a.duration)) \
+                        if hasattr(a, "subclipped") else a.subclip(0, min(duration, a.duration))
+                    a = sub
+                a = _set_dur(_vol(a, 0.10), duration)
+                audio_layers.append(a)
+            except Exception as e:
+                print(f"[warn] BGM読み込み失敗（無視して続行）: {e}", file=sys.stderr)
         if audio_layers:
             comp = _set_audio(comp, mpy.CompositeAudioClip(audio_layers))
 
@@ -180,6 +375,6 @@ def _emit_storyboard(storyboard, narration_audio, out_path, note: str) -> dict:
 if __name__ == "__main__":
     import themes
     import trends
-    sb = themes.storyboard("demo", 0, trends.current_profile())
+    sb = themes.storyboard("tip", 0, trends.current_profile())
     res = render(sb, None, os.path.join(_DIR, "out", "preview.mp4"))
     print(json.dumps(res, ensure_ascii=False, indent=2))

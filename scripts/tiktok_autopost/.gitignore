@@ -13,6 +13,9 @@ assets/demo_clips/*.mp4
 assets/demo_clips/*.webm
 assets/bgm/*.mp3
 assets/bgm/*.wav
+assets/bgm/*.m4a
+assets/bgm/*.ogg
+assets/bgm/*.aac
 assets/audio_samples/*.wav
 assets/audio_samples/*.mp3
 # Playwright 認証セッション（個人情報含む）
