@@ -88,8 +88,20 @@ def _resolve_bgm(sb_bgm) -> str | None:
 
 
 # ── moviepy 1.x / 2.x 両対応の薄いシム ───────────────────────────────
+def _patch_pil():
+    """Pillow 10 で Image.ANTIALIAS が廃止され moviepy 1.x の resize が落ちる問題を吸収。"""
+    try:
+        from PIL import Image
+        if not hasattr(Image, "ANTIALIAS"):
+            resampling = getattr(Image, "Resampling", Image)
+            Image.ANTIALIAS = getattr(resampling, "LANCZOS", 1)
+    except Exception:
+        pass
+
+
 def _mp():
     import moviepy.editor as mpy  # 1.x。2.xでも editor シムが入ることが多い
+    _patch_pil()
     return mpy
 
 
@@ -165,7 +177,8 @@ def _motion_bg(mpy, duration):
         v = mpy.VideoFileClip(files[0]).without_audio()
         d = min(duration, float(v.duration))
         v = v.subclipped(0, d) if hasattr(v, "subclipped") else v.subclip(0, d)
-        v = v.resized(width=W) if hasattr(v, "resized") else v.resize(width=W)
+        if int(getattr(v, "w", W)) != W:  # 既に1080幅なら不要なリサイズを避ける（PIL負荷も回避）
+            v = v.resized(width=W) if hasattr(v, "resized") else v.resize(width=W)
         v = _set_pos(v, ("center", "center"))
         return _set_dur(v, duration)
     except Exception as e:
