@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#
+# post-checkout — git worktree 作成 / checkout 時に母艦の .env を自動リンクする。
+# 引数: $1=old-head  $2=new-head  $3=branch-checkout-flag(1=ブランチ切替)
+#
+# 有効化（ローカル設定。1回だけ／母艦で実行）:
+#   git config core.hooksPath "$(git rev-parse --show-toplevel)/.githooks"
+#
+set -euo pipefail
+
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -x "$top/scripts/link-env.sh" ] || exit 0
+# .env リンクは利便機能。失敗してもチェックアウト自体は止めない。
+"$top/scripts/link-env.sh" || true

@@ -106,6 +106,10 @@ COO（受付・差配） → CEO（優先順位） → PdM（機能要件書）
 - 歌唱コーチング（`vocal-trainer`）など git に触れない読み取り中心のセッションは worktree 不要。
 - 作業が済んだら通常どおり push → PR。worktree はセッション終了時に keep/remove を選べる。
 - worktree 内では tracked パスは小文字 `claude.md`。`git add` 時は大文字 `CLAUDE.md` を指定しない（大小無視FSで staging されない罠）。
+- **`.env`（Gemini/Stripe 等のキー）は worktree に自動リンクされる**。`.env` は `.gitignore` のため fresh worktree には複製されず、毎回キーを入れ直す手間になっていた。母艦（メイン作業ツリー）の `.env` を「唯一の正」とし、`scripts/link-env.sh` が worktree へ symlink する（対象: `backend/.env`, `scripts/sns_autopost/.env`, `docker/.env`, `frontend/.env.local` のうち存在するもの）。
+  - **有効化は1回だけ**（母艦で実行）: `git config core.hooksPath "$(git rev-parse --show-toplevel)/.githooks"`。以降 `git worktree add`（`EnterWorktree` 含む）時に `.githooks/post-checkout` が自動でリンクする。
+  - 自動が走らない時の手動フォールバック: worktree 内で `bash scripts/link-env.sh`（冪等）。
+  - キーを更新する時は**母艦の `.env` だけ**直せば、全 worktree に即反映される。
 
 ## ルール
 - 日本語で設計書を作成する
