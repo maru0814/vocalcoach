@@ -41,7 +41,10 @@ import json
 import os
 import re
 import sys
+import uuid
 
+import images
+import infographic
 import themes
 
 try:
@@ -55,6 +58,7 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.getenv("SNS_DATA_DIR", _DIR)
 os.makedirs(_DATA_DIR, exist_ok=True)
 POSTS_LOG = os.path.join(_DATA_DIR, "posts_log.jsonl")  # 投稿ID・型の記録（計測/予算用）
+IMG_DIR = os.path.join(_DATA_DIR, "images")              # 添付画像の保存先
 
 # X API 概算単価（2026。URL投稿は高い→既定で避ける）
 COST_POST = 0.015      # URLなし投稿 $/件
@@ -146,6 +150,40 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         return post
 
 
+def build_image(pillar: str, slot: int, day_index: int, app_url: str) -> str | None:
+    """投稿に添付するブランド画像を生成してパスを返す（作れなければ None）。
+    - tip / contrarian: 図解インフォグラフィック（Playwright）。失敗時はカードにフォールバック。
+    - 診断導線（self_type/voice_type/visual）: 従来のカード（情報量が少なく図解に不向き）。"""
+    if not _truthy(os.getenv("SNS_IMAGE", "1")):
+        return None
+    name = (f"{datetime.date.today().isoformat()}_s{slot}_{pillar}_"
+            f"{uuid.uuid4().hex[:6]}.png")
+    out = os.path.join(IMG_DIR, name)
+    if pillar in ("tip", "contrarian"):
+        p = infographic.generate(pillar, day_index, app_url, out)
+        if p:
+            return p
+        # 図解レンダリング不可（playwright未導入等）→ カードにフォールバック
+    base = themes.template_post(pillar, day_index, app_url)
+    headline = images.build_headline(pillar, base.get("text", ""), base.get("reply"))
+    return images.generate_image(pillar, headline, out)
+
+
+def _upload_media(oauth, image_path: str) -> str | None:
+    """画像を X にアップロードして media_id を返す（失敗なら None）。"""
+    try:
+        with open(image_path, "rb") as f:
+            r = oauth.post("https://upload.twitter.com/1.1/media/upload.json",
+                           files={"media": f}, timeout=60)
+        if r.status_code in (200, 201):
+            j = r.json()
+            return str(j.get("media_id_string") or j.get("media_id") or "") or None
+        print(f"[warn] 画像アップロード失敗 {r.status_code}: {r.text[:200]}", file=sys.stderr)
+    except Exception as e:
+        print(f"[warn] 画像アップロード例外: {e}", file=sys.stderr)
+    return None
+
+
 def _x_session():
     keys = {k: os.getenv(k) for k in
             ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET")}
@@ -169,19 +207,29 @@ def _reply(oauth, text: str, in_reply_to: str) -> tuple[bool, str, int]:
 
 
 def post_to_x(text: str, reply: str | None, link: str | None,
-              post_link: bool) -> tuple[bool, str, str]:
+              post_link: bool, image_path: str | None = None) -> tuple[bool, str, str]:
     """本投稿(text)→リプ本体(reply)→(任意)URL の順にスレッド投稿する。
+    image_path があれば本投稿にブランド画像を添付する（アップロード失敗時は文字だけで続行）。
     reply に“大事な中身（手順）”を置いてリプを開かせる設計。link は POST_LINK=1 のときだけ。
     returns (ok, tweet_id, info)。"""
     oauth = _x_session()
     if oauth is None:
         return False, "", "X_KEYS_MISSING"
     try:
-        r = oauth.post("https://api.twitter.com/2/tweets", json={"text": text}, timeout=20)
+        payload: dict = {"text": text}
+        img_info = ""
+        if image_path and os.path.exists(image_path):
+            mid = _upload_media(oauth, image_path)
+            if mid:
+                payload["media"] = {"media_ids": [mid]}
+                img_info = "+画像"
+            else:
+                img_info = "/画像失敗"
+        r = oauth.post("https://api.twitter.com/2/tweets", json=payload, timeout=30)
         if r.status_code not in (200, 201):
             return False, "", f"HTTP {r.status_code}: {r.text[:200]}"
         tweet_id = str(r.json().get("data", {}).get("id", ""))
-        info, last_id = "本投稿OK", tweet_id
+        info, last_id = "本投稿OK" + img_info, tweet_id
         if reply and last_id:                       # 大事な中身を自己リプに
             ok, rid, st = _reply(oauth, reply, last_id)
             if ok:
@@ -221,6 +269,8 @@ def main() -> int:
     text, reply, link = post["text"], post.get("reply"), post.get("link")
     # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
     post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
+    # 全投稿にブランド画像を添付（tip/contrarian=図解 / 診断導線=カード。SNS_IMAGE=0で無効）。
+    image_path = build_image(pillar, slot, day_index, app_url)
 
     print("─" * 48)
     print(f"[{today}] slot={slot} pillar={pillar}")
@@ -231,6 +281,7 @@ def main() -> int:
         print(reply)
     if link:
         print(f"\n[リンク] {link}  (POST_LINK={'ON→リプに付与' if post_link else 'OFF→プロフィール固定で誘導'})")
+    print(f"[画像] {image_path or '生成なし（SNS_IMAGE=0 or 失敗）'}")
     print("─" * 48)
 
     dry = args.dry_run or _truthy(os.getenv("DRY_RUN", "1"))  # 既定は安全側でドライラン
@@ -243,7 +294,7 @@ def main() -> int:
     if approval:
         import approval_queue as q
         import line_client
-        draft = q.enqueue(pillar, slot, text, reply, link, post_link)
+        draft = q.enqueue(pillar, slot, text, reply, link, post_link, image_path)
         ok_line, info = line_client.push_approval(draft)
         if ok_line:
             print(f"📨 承認待ちに送信しました（id={draft['id']}）。LINEで承認/却下してください。")
@@ -262,7 +313,7 @@ def main() -> int:
         print(f"⏸ 予算/上限ガードで停止: {why}")
         return 0
 
-    ok, tweet_id, info = post_to_x(text, reply, link, post_link)
+    ok, tweet_id, info = post_to_x(text, reply, link, post_link, image_path)
     if ok:
         _log_post(tweet_id, pillar, post_link, bool(reply))
         print(f"✅ 投稿しました: id={tweet_id} ({info})  [{why}]")

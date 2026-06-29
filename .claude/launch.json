@@ -25,6 +25,17 @@
       ],
       "port": 8000,
       "cwd": "backend"
+    },
+    {
+      "name": "sns-templates",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8099"
+      ],
+      "port": 8099,
+      "cwd": "scripts/sns_autopost/templates"
     }
   ]
 }

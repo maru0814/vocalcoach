@@ -18,6 +18,7 @@ import sys
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Header, Request, Response
+from fastapi.responses import FileResponse
 
 try:
     from dotenv import load_dotenv
@@ -27,7 +28,7 @@ except Exception:
 
 import approval_queue as q
 import line_client
-from generate_and_post import _budget_check, _log_post, post_to_x
+from generate_and_post import IMG_DIR, _budget_check, _log_post, post_to_x
 
 app = FastAPI(title="sns-approval-webhook")
 
@@ -35,6 +36,20 @@ app = FastAPI(title="sns-approval-webhook")
 @app.get("/sns/healthz")
 def healthz() -> dict:
     return {"status": "ok", "line": line_client.enabled()}
+
+
+@app.get("/sns/img/{name}")
+def serve_image(name: str) -> Response:
+    """承認プレビュー用に生成画像(PNG)を配信する。LINEのimageメッセージは公開URLが要るため。
+    path traversal防止: basenameのみ・.png限定・IMG_DIR内の実在ファイルのみ。"""
+    safe = os.path.basename(name)
+    if safe != name or not safe.lower().endswith(".png"):
+        return Response(status_code=404, content="not found")
+    path = os.path.join(IMG_DIR, safe)
+    if not os.path.isfile(path):
+        return Response(status_code=404, content="not found")
+    return FileResponse(path, media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 def _handle_postback(data: str, reply_token: str) -> None:
@@ -72,7 +87,7 @@ def _handle_postback(data: str, reply_token: str) -> None:
         return
 
     ok, tweet_id, info = post_to_x(draft.get("text", ""), reply_body,
-                                   draft.get("link"), post_link)
+                                   draft.get("link"), post_link, draft.get("image"))
     if ok:
         _log_post(tweet_id, draft.get("pillar", ""), post_link, bool(reply_body))
         q.mark_decided(draft_id, "posted", tweet_id=tweet_id, info=info)

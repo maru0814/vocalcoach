@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- フォント: dev は Google Fonts。本番(オフラインDocker)は下の @font-face を
+     ローカルファイル（url('file:///app/assets/fonts/ZenMaruGothic-*.ttf')）に差し替える。
+     差し替え箇所はこの <style id="font"> に集約してある。 -->
+<style id="font">
+@import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap');
+</style>
+<style>
+  :root {
+    --v: #7c3aed;   /* step1 / brand violet */
+    --m: #b14ad6;   /* step2 / mid */
+    --p: #ec4899;   /* step3 / pink */
+    --slate: #334155;
+    --sub: #64748b;
+    --hl: #fde68a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #e9e6f2; }
+  body {
+    font-family: 'Zen Maru Gothic', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* スクショ対象。16:9 固定。 */
+  .card {
+    position: relative;
+    width: 1600px; height: 900px;
+    background: #fff;
+    background-image:
+      radial-gradient(1200px 500px at 0% -20%, rgba(124,58,237,.10), transparent 60%),
+      radial-gradient(1000px 500px at 100% 120%, rgba(236,72,153,.10), transparent 60%);
+    border-radius: 28px;
+    overflow: hidden;
+    padding: 64px 72px;
+    /* 本文とキャラは“別カラム”。flexで領域を物理的に分けるので、本文がキャラに
+       絶対に被らない（重なり起因の文字消失を構造的に不可能にする）。 */
+    display: flex; flex-direction: row; align-items: stretch; gap: 32px;
+  }
+  .content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+
+  /* キャラ専用カラム（固定幅で予約。本文はここに入れない） */
+  .char-col { flex: 0 0 440px; position: relative; align-self: stretch; }
+  .character {
+    position: absolute; right: 0; bottom: -64px;
+    width: 440px; height: auto;       /* カラム幅を超えない＝左の本文に侵入しない */
+    object-fit: contain;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent 100%);
+            mask-image: linear-gradient(to bottom, #000 88%, transparent 100%);
+  }
+
+  /* タイトル */
+  .title {
+    font-weight: 700; font-size: 50px; line-height: 1.34;
+    background: linear-gradient(120deg, var(--v), var(--p));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* サブ見出し（点線で挟む） */
+  .subtitle {
+    display: flex; align-items: center; gap: 14px;
+    margin: 12px 0 22px; color: var(--sub); font-weight: 500; font-size: 28px;
+  }
+  .subtitle::before, .subtitle::after {
+    content: ""; height: 0; border-top: 3px dashed; flex: 0 0 40px; opacity: .5;
+  }
+  .subtitle::before { color: var(--v); }
+  .subtitle::after { flex: 1; color: var(--p); }
+
+  /* ステップ群（flexで残り高さを等分） */
+  .steps { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+  .step {
+    position: relative;
+    display: flex; align-items: center; gap: 22px;
+    border-radius: 22px; padding: 0 26px;
+    flex: 1; min-height: 0;
+  }
+  .step-1 { background: #f3efff; } .step-2 { background: #fbeefb; } .step-3 { background: #fdecf4; }
+  .step-4 { background: #eef2ff; }
+  .badge {
+    flex: 0 0 64px; width: 64px; height: 64px; border-radius: 50%;
+    color: #fff; font-weight: 700; font-size: 34px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .b1 { background: var(--v); } .b2 { background: var(--m); }
+  .b3 { background: var(--p); } .b4 { background: #6366f1; }
+  .step-main { flex: 1; min-width: 0; }
+  .pill {
+    display: inline-block; color: #fff; font-weight: 700; font-size: 30px;
+    border-radius: 999px; padding: 4px 20px; line-height: 1.4;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .p1 { background: var(--v); } .p2 { background: var(--m); }
+  .p3 { background: var(--p); } .p4 { background: #6366f1; }
+  .step-body {
+    color: var(--slate); font-size: 27px; margin-top: 6px; line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .step-aside { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+  .tag {
+    font-size: 21px; color: #475569; background: #fff;
+    border: 1px solid #e2e8f0; border-radius: 10px; padding: 3px 12px; white-space: nowrap;
+  }
+  .icn { width: 46px; height: 46px; }
+  /* ステップ間の下向き矢印 */
+  .arrow { position: absolute; left: 32px; bottom: -19px; z-index: 2; width: 26px; height: 26px; }
+  /* 4ステップ時は詰める */
+  .n4 .step-body { font-size: 24px; -webkit-line-clamp: 1; }
+  .n4 .pill { font-size: 27px; }
+  .n4 .badge { flex-basis: 56px; width: 56px; height: 56px; font-size: 30px; }
+
+  /* まとめ帯 */
+  .summary {
+    display: flex; align-items: center; gap: 16px;
+    background: #f8fafc; border-radius: 20px; padding: 18px 24px; margin-top: 16px;
+  }
+  .summary .lab {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--v); font-weight: 700; font-size: 27px; white-space: nowrap;
+  }
+  .summary .txt { flex: 1; color: var(--slate); font-size: 27px; line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .summary mark { background: var(--hl); padding: 0 4px; border-radius: 4px; color: var(--slate); }
+  .summary .tags { color: var(--v); font-weight: 500; font-size: 24px; white-space: nowrap; }
+
+  /* ===== contrarian ===== */
+  .myth-head { display: flex; align-items: center; gap: 20px; }
+  .myth-text { flex: 1; }
+  .myth-label { color: #94a3b8; font-weight: 500; font-size: 26px; margin-bottom: 6px; }
+  .myth-quote { font-size: 46px; font-weight: 700; color: var(--slate); line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .stamp {
+    flex: 0 0 auto; transform: rotate(8deg);
+    background: var(--p); color: #fff; font-weight: 700; font-size: 38px;
+    border-radius: 18px; padding: 12px 28px;
+    box-shadow: 0 10px 24px -8px rgba(236,72,153,.6);
+  }
+  .myth-bridge { display: flex; align-items: center; gap: 10px; color: var(--sub);
+    font-weight: 500; font-size: 27px; margin: 22px 0 18px; }
+  .reasons { display: flex; gap: 20px; flex: 1; min-height: 0; }
+  .reason { flex: 1; display: flex; gap: 16px; border-radius: 22px; padding: 22px 24px; }
+  .reason.r1 { background: #f3efff; } .reason.r2 { background: #fdecf4; }
+  .reason .badge { flex-basis: 52px; width: 52px; height: 52px; font-size: 28px; }
+  .reason h3 { font-size: 30px; font-weight: 700; }
+  .reason.r1 h3 { color: var(--v); } .reason.r2 h3 { color: var(--p); }
+  .reason p { font-size: 26px; color: var(--slate); margin-top: 8px; line-height: 1.45; }
+</style>
+</head>
+<body>
+  <div class="card" id="card"><div class="content" id="content"></div></div>
+
+<script>
+/* バックエンドが下のトークンを window.__DATA__ = {...} に置換して注入する。
+   未注入時は組込みサンプルで描画（ブラウザ単体プレビュー用）。 */
+/*__DATA__*/
+const SAMPLE = {
+  type: "tip",
+  title: "「ミックス」の土台は“裏声そのもの”。芯のある裏声を育てる3ステップ",
+  subtitle: "強い高音は「安定した裏声」の土台の上にしか乗らない",
+  steps: [
+    { pill: "「フー」でロングトーン", body: "小さく綺麗な「フー」で、高めの音を揺らさず伸ばす。", tag: "脱力", icon: "mic" },
+    { pill: "音域を少しずつ上へ", body: "揺れずに伸ばせる音域を、半音ずつ上へ広げる。", tag: "半音ずつ", icon: "stairs" },
+    { pill: "芯のある裏声へ", body: "息漏れを減らし、スカスカな裏声を“芯”のある音へ。", tag: "息漏れ減", icon: "wave" }
+  ],
+  summary: "強い高音は、強い裏声の上にしか乗りません。まず静かな裏声の質から。",
+  highlight: "強い裏声の上にしか乗りません",
+  hashtags: "#ボイトレ #裏声",
+  character: ""    // data URI（任意）。空なら詰める。
+};
+
+const ICONS = {
+  mic: '<svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/></svg>',
+  stairs: '<svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h4v-4h4v-4h4v-4h4V5"/></svg>',
+  wave: '<svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2-5 4-5 6 0s4 5 6 0 4-5 6 0"/></svg>',
+  lungs: '<svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M8 8c0 6-2 8-4 8a2 2 0 0 1-2-2c0-3 2-5 2-8"/><path d="M16 8c0 6 2 8 4 8a2 2 0 0 0 2-2c0-3-2-5-2-8"/></svg>',
+  feather: '<svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4C12 4 6 10 6 18l-2 2"/><path d="M16 8 9 15"/></svg>'
+};
+const ARROW = '<svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15"/><path d="m6 13 6 6 6-6"/></svg>';
+const MICLAB = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/></svg>';
+
+const esc = (s) => String(s == null ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function highlighted(text, mark) {
+  const t = esc(text);
+  if (!mark) return t;
+  const m = esc(mark);
+  const i = t.indexOf(m);
+  return i < 0 ? t : t.slice(0, i) + "<mark>" + m + "</mark>" + t.slice(i + m.length);
+}
+
+function summaryHTML(d) {
+  return '<div class="summary">'
+    + '<span class="lab">' + MICLAB + ' まとめ</span>'
+    + '<span class="txt">' + highlighted(d.summary, d.highlight) + '</span>'
+    + (d.hashtags ? '<span class="tags">' + esc(d.hashtags) + '</span>' : '')
+    + '</div>';
+}
+
+function renderTip(d) {
+  const steps = (d.steps || []).slice(0, 4);
+  const n = steps.length;
+  const rows = steps.map((s, i) => {
+    const k = i + 1;
+    const arrow = i < n - 1
+      ? ARROW.replace('class="arrow"', 'class="arrow" style="color:var(--' + ['v','m','p','m'][i+1] + ')"')
+      : "";
+    const icon = ICONS[s.icon] ? '<span style="color:var(--' + ['v','m','p','v'][i] + ')">' + ICONS[s.icon] + '</span>' : "";
+    const tag = s.tag ? '<span class="tag">' + esc(s.tag) + '</span>' : "";
+    return '<div class="step step-' + k + '">'
+      + '<span class="badge b' + k + '">' + k + '</span>'
+      + '<div class="step-main">'
+      +   '<span class="pill p' + k + '">' + esc(s.pill) + '</span>'
+      +   '<div class="step-body">' + esc(s.body) + '</div>'
+      + '</div>'
+      + '<div class="step-aside">' + tag + icon + '</div>'
+      + arrow + '</div>';
+  }).join("");
+  return '<div class="title">' + esc(d.title) + '</div>'
+    + '<div class="subtitle">' + esc(d.subtitle) + '</div>'
+    + '<div class="steps' + (n >= 4 ? ' n4' : '') + '">' + rows + '</div>'
+    + summaryHTML(d);
+}
+
+function renderContrarian(d) {
+  const reasons = (d.reasons || []).slice(0, 2);
+  const rh = reasons.map((r, i) => {
+    const k = i + 1;
+    return '<div class="reason r' + k + '">'
+      + '<span class="badge b' + (i === 0 ? 1 : 3) + '">' + k + '</span>'
+      + '<div><h3>' + esc(r.title) + '</h3><p>' + esc(r.body) + '</p></div></div>';
+  }).join("");
+  return '<div class="myth-head">'
+    +   '<div class="myth-text">'
+    +     '<div class="myth-label">よくある誤解</div>'
+    +     '<div class="myth-quote">' + esc(d.title) + '</div>'
+    +   '</div>'
+    +   '<div class="stamp">' + esc(d.verdict || "半分ウソ") + '</div>'
+    + '</div>'
+    + '<div class="myth-bridge">' + ARROW.replace('class="arrow"', 'style="width:28px;height:28px;color:var(--m)"') + ' 本当の鍵は、別のところにある</div>'
+    + '<div class="reasons">' + rh + '</div>'
+    + summaryHTML(d);
+}
+
+(function () {
+  const d = (typeof window !== "undefined" && window.__DATA__) ? window.__DATA__ : SAMPLE;
+  const card = document.getElementById("card");
+  const content = document.getElementById("content");
+  content.innerHTML = d.type === "contrarian" ? renderContrarian(d) : renderTip(d);
+  if (d.character) {
+    const col = document.createElement("div");
+    col.className = "char-col";
+    const img = document.createElement("img");
+    img.className = "character"; img.src = d.character; img.alt = "";
+    col.appendChild(img);
+    card.appendChild(col);   // 本文(.content)の“隣”の予約カラムに入れる
+  }
+})();
+</script>
+</body>
+</html>

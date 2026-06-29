@@ -1,7 +1,9 @@
 # SNS自動投稿スクリプトの依存（本体バックエンドとは独立）
-google-genai==2.7.0        # 文面のAI生成（任意。無くてもテンプレで動く）
-requests-oauthlib==2.0.0   # X API v2 への投稿（OAuth1.0a。requests も付随）
+google-genai==2.7.0        # 文面/AI背景の生成（任意。無くてもテンプレ＋グラデで動く）
+requests-oauthlib==2.0.0   # X API v2 への投稿＋画像アップロード（OAuth1.0a。requests も付随）
 python-dotenv==1.0.1       # .env 読み込み（任意）
+pillow==11.0.0             # 診断導線カードの生成・日本語見出しの焼き込み
+playwright==1.49.0         # 図解インフォグラフィック（HTML→PNG。要 `playwright install chromium`）
 
 # 承認フロー（LINEで投稿前に確認）の Webhook 常駐サーバ
 fastapi==0.115.6
