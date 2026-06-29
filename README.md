@@ -33,7 +33,7 @@ python -m pytest
 ```
 cd frontend
 npm install
-npm test          # vitest（lib/api.ts のエラーハンドリング・録音フローのコンポーネント・録音ラッパ Recorder）
+npm test          # vitest（lib/api.ts・録音ラッパ Recorder・主要画面のコンポーネント: ログイン/録音アップロード/声タイプ/設定/アップグレードモーダル）
 ```
 - PR / main への push で `.github/workflows/ci.yml`（backend-tests / frontend-tests）が自動実行する。
 
