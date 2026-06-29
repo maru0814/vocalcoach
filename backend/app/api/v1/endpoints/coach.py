@@ -785,15 +785,29 @@ def send_audio(
         s.last_analysis = user_analysis
 
     # ゼロベース個人最適FB（docs/43）。フラグONの時だけ、強モデル＋生音声＋実測証拠で
-    # “聴いて推論した”講評を生成する。失敗時は下のルールベースFBにフォールバック。
+    # “聴いて推論した”講評を生成する。失敗・上限超過時は下のルールベースFBにフォールバック。
     zero_base_reply = None
     if settings.enable_zero_base_fb and settings.llm_enabled:
-        try:
-            _uw = open(wav_path, "rb").read()
-            _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
-            zero_base_reply = llm.generate_feedback(_session_state(s), user_wav=_uw, ref_wav=_rw)
-        except Exception:
-            zero_base_reply = None
+        from app.core import llm_budget
+        _user_key = str(getattr(s, "user_id", None) or s.id)
+        if llm_budget.allow_analysis_call(_user_key):  # 日次/月次の上限内のときだけ呼ぶ
+            try:
+                # コスト源の原曲フル音声は既定で送らない（DSPの原曲比較で代替）。
+                _rw = (open(ref_wav, "rb").read()
+                       if (ref_wav and settings.llm_analysis_send_ref_audio
+                           and os.path.exists(ref_wav)) else None)
+                # 大きすぎる録音は音声を送らず実測証拠テキストだけで講評（コスト上限）。
+                _uw = None
+                _cap = settings.llm_analysis_max_audio_mb * 1024 * 1024
+                if os.path.getsize(wav_path) <= _cap:
+                    _uw = open(wav_path, "rb").read()
+                zero_base_reply = llm.generate_feedback(
+                    _session_state(s), user_wav=_uw, ref_wav=_rw
+                )
+            except Exception:
+                zero_base_reply = None
+            if zero_base_reply:
+                llm_budget.record_analysis_call()  # 成功した呼び出しだけ月次に積算
 
     msgs, updates = rule_engine.handle_audio(
         _session_state(s), user_analysis, compare_data, kind, history=history
