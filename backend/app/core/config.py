@@ -62,30 +62,13 @@ class Settings(BaseSettings):
     # --- ゼロベース個人最適FB（docs/43）。既定OFF。ONにするまで本番挙動は不変 ---
     # 録音FBを「カタログ選択」から「証拠＋生音声を聴いて推論生成」へ切替える経路の有効化。
     enable_zero_base_fb: bool = False
-    # 分析ターン専用モデル。雑談は従来の llm_model のまま。
-    # コスト優先で既定は flash（マルチモーダル・十分強い）。最高品質が要るなら env で
-    # gemini-2.5-pro に上書き可（単価が大きく上がるので注意）。
-    llm_analysis_model: str = "gemini-2.5-flash"
+    # 分析ターン専用の強モデル（推論＋音色判断）。雑談は従来の llm_model のまま。
+    llm_analysis_model: str = "gemini-2.5-pro"
     llm_analysis_max_tokens: int = 1200
-    # >0 で thinking（推論）有効。コスト抑制のため控えめ（証拠から1点を選ぶには十分）。
-    llm_analysis_thinking_budget: int = 1024
+    # >0 で thinking（推論）有効。証拠から診断・処方を組み立てるため有効化。
+    llm_analysis_thinking_budget: int = 2048
     # 生音声＋大きい文脈＋推論で重いのでタイムアウト長め。
     llm_analysis_timeout_sec: float = 90.0
-
-    # --- コスト・ガード（無尽蔵に膨らむのを防ぐ多層の上限。docs/43 §5）---
-    # 原曲(お手本)のフル音声は最大のコスト源。既定では送らず、DSPの原曲比較(実測)で代替する。
-    # ユーザー音声(短いクリップ)だけ聴かせる＝ハイブリッドは維持しつつコストを大幅圧縮。
-    llm_analysis_send_ref_audio: bool = False
-    # 1録音あたり送る音声の上限(MB)。超える録音は音声を送らず実測証拠テキストだけで講評（安全側）。
-    llm_analysis_max_audio_mb: float = 8.0
-    # 1ユーザー1日あたりの分析ターン上限（連投・悪用での膨張を遮断）。超過はルールベースFBへ。
-    llm_analysis_max_per_user_per_day: int = 20
-    # 月次・全体の分析ターン呼び出し上限（ハードシーリング）。超過はルールベースFBへ。
-    llm_analysis_monthly_call_cap: int = 500
-    # レポート用の1呼び出し概算コスト(USD)。月次台帳に積算（厳密な課金額ではなく目安）。
-    llm_analysis_est_usd_per_call: float = 0.03
-    # 月次コスト台帳の保存先（コンテナの永続volume配下を想定）。
-    llm_cost_ledger_path: str = "uploads/llm_cost_ledger.json"
 
     @property
     def llm_enabled(self) -> bool:
