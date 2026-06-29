@@ -5,11 +5,12 @@ degrade設計（sns_autopostの流儀）:
 - 無ければ絵コンテJSON＋ナレーション台本を書き出して“何が作られるか”を見せる（安全縮退）。
 
 ビジュアル方針（TikTokでスクロールを止める完成度を狙う）:
-- 背景: 本物の縦グラデ＋上部グロー。ゆっくりズーム(Ken Burns)で“動いてる”状態に。
+- 背景: 本物の縦グラデ＋上部グロー（静止＝低スペックVPSでも軽い）。
 - 字幕: 黒フチ付きの極太白文字を下からスライドイン(CapCut風)。読みやすさ最優先。
+        動きは“毎フレームの拡縮”ではなく位置アニメで出す（描画が重くならない）。
 - 強調: ニッチのキーワード(高音/ミックス/力む…)だけ黄色ハイライトで色分け。
 - フック: 1.5秒で刺す特大テロップ＋冒頭フラッシュ。
-- 補助: 下部の暗いビネット(可読性)＋上部の進捗バー(離脱抑制)。
+- 補助: 下部の暗いビネット(可読性)。
 - 音: ナレーション(ElevenLabs/無音) + assets/bgm/ のフリーBGMを小音量でループ。
 
 検証型(kind=clip)は assets/demo_clips/ の画面録画を被せる。無ければプレースホルダ表示。
@@ -111,11 +112,6 @@ def _set_opacity(clip, o):
     return clip.with_opacity(o) if hasattr(clip, "with_opacity") else clip.set_opacity(o)
 
 
-def _resize_fn(clip, fn):
-    """時間関数 or 倍率/サイズで拡縮（1.x: resize / 2.x: resized）。"""
-    return clip.resized(fn) if hasattr(clip, "resized") else clip.resize(fn)
-
-
 def _vol(clip, factor):
     return clip.with_volume_scaled(factor) if hasattr(clip, "with_volume_scaled") \
         else clip.volumex(factor)
@@ -128,28 +124,26 @@ def _hx(c):
 
 # ── 背景: 本物の縦グラデ＋グロー＋ゆっくりズーム ──────────────────────
 def _gradient_array(colors):
+    """縦グラデ＋上部グローのW×H画像を1回だけ生成（毎フレーム計算しない＝軽い）。"""
     import numpy as np
     top = np.array(_hx(colors[0]), dtype=float)
     bot = np.array(_hx(colors[-1]), dtype=float)
-    ramp = np.linspace(0.0, 1.0, H)[:, None]            # H×1
+    ramp = np.linspace(0.0, 1.0, H)[:, None]                # H×1
     grad = top[None, :] * (1 - ramp) + bot[None, :] * ramp  # H×3
-    img = np.tile(grad[:, None, :], (1, W, 1))          # H×W×3
-    # 上部中央に淡いグロー（のっぺり防止）
-    yy, xx = np.mgrid[0:H, 0:W]
-    cx, cy = W * 0.5, H * 0.36
-    d = np.sqrt(((xx - cx) / W) ** 2 + ((yy - cy) / H) ** 2)
+    img = np.tile(grad[:, None, :], (1, W, 1))              # H×W×3
+    # 上部中央に淡いグロー（mgridを使わず外積ブロードキャストで省メモリ）。
+    ys = np.linspace(0.0, 1.0, H)[:, None]                  # H×1
+    xs = np.linspace(0.0, 1.0, W)[None, :]                  # 1×W
+    d = np.sqrt((xs - 0.5) ** 2 + (ys - 0.36) ** 2)         # H×W
     glow = np.clip(1.0 - d * 1.7, 0, 1)[:, :, None] * np.array([45, 32, 70])
     return np.clip(img + glow, 0, 255).astype("uint8")
 
 
 def _bg_clip(mpy, colors, duration):
-    """縦グラデの ImageClip にゆっくりズームをかけて“動いてる背景”にする。失敗時は単色。"""
+    """縦グラデの静止背景（W×Hぴったりで毎フレームの拡縮なし＝低スペックVPSでも軽い）。失敗時は単色。"""
     try:
         arr = _gradient_array(colors)
-        clip = _set_dur(mpy.ImageClip(arr), duration)
-        # 1.0→1.06 倍のKen Burns。中央寄せでCompositeがW×Hにクロップ。
-        clip = _resize_fn(clip, lambda t: 1.0 + 0.06 * (t / max(duration, 0.1)))
-        return _set_pos(clip, ("center", "center"))
+        return _set_dur(mpy.ImageClip(arr), duration)
     except Exception:
         avg = tuple((a + b) // 2 for a, b in zip(_hx(colors[0]), _hx(colors[-1])))
         return _set_dur(mpy.ColorClip(size=(W, H), color=avg), duration)
@@ -162,16 +156,6 @@ def _vignette(mpy, duration):
         v = _set_dur(mpy.ColorClip(size=(W, h), color=(0, 0, 0)), duration)
         v = _set_opacity(v, 0.45)
         return _set_pos(v, ("center", H - h))
-    except Exception:
-        return None
-
-
-def _progress_bar(mpy, duration):
-    """上部の進捗バー（0→満タン）。離脱抑制の定番。失敗時は省略。"""
-    try:
-        bar = _set_dur(mpy.ColorClip(size=(W, 10), color=_hx(ACCENT)), duration)
-        bar = _resize_fn(bar, lambda t: (max(1, int(W * t / max(duration, 0.1))), 10))
-        return _set_pos(bar, (0, 0))
     except Exception:
         return None
 
@@ -310,9 +294,6 @@ def render(storyboard: dict, narration_audio: str | None, out_path: str) -> dict
             layers.extend(_caption_layers(mpy, sc.get("text", ""), font, t0, seg,
                                           int(H * 0.60), 62))
 
-        bar = _progress_bar(mpy, duration)
-        if bar is not None:
-            layers.append(bar)
         flash = _hook_flash(mpy)
         if flash is not None:
             layers.append(flash)
