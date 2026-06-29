@@ -2,6 +2,7 @@
 # 本番VPSデプロイ（GitHub Actions から SSH 経由で実行される）。
 #   main を取得 → 変更されたサービスだけ再ビルドして反映。
 # 手元から手動で叩いてもよい:  bash scripts/deploy/remote_deploy.sh
+# Last triggered: 2026-06-29
 set -euo pipefail
 
 REPO="/opt/vocalcoach"
