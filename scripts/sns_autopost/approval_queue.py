@@ -72,9 +72,12 @@ def _write_all(rows: list[dict], path: str = QUEUE_PATH) -> None:
 
 
 def enqueue(pillar: str, slot: int, text: str, reply: str | None,
-            link: str | None, post_link: bool) -> dict:
+            link: str | None, post_link: bool,
+            status: str = "pending", expert_note: str = "") -> dict:
     """下書きを承認待ちとして追加し、作成したレコードを返す。
-    reply=自己返信に置く本体（2部構成）。診断導線など単発型は None。"""
+    reply=自己返信に置く本体（2部構成）。診断導線など単発型は None。
+    status: pending=LINE承認待ち / held=専門家ゲート未通過で保留（LINEに出さない）。
+    expert_note: 専門家レビューの判定（LINE本文の先頭に表示する）。"""
     rec = {
         "id": uuid.uuid4().hex[:12],
         "pillar": pillar,
@@ -83,7 +86,8 @@ def enqueue(pillar: str, slot: int, text: str, reply: str | None,
         "reply": reply,
         "link": link,
         "post_link": bool(post_link),
-        "status": "pending",
+        "status": status,
+        "expert_note": expert_note,
         "tweet_id": "",
         "info": "",
         "created_at": _now(),
