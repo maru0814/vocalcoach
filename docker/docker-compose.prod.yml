@@ -40,6 +40,12 @@ services:
       COACH_AUDIO_DIR: "/data/uploads/coach"
       REFERENCE_CACHE_DIR: "/data/uploads/reference"
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      # --- Stripe課金（docs/31）。値は docker/.env から注入 ---
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PRICE_ID_PREMIUM: ${STRIPE_PRICE_ID_PREMIUM:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
+      FRONTEND_BASE_URL: "https://${DOMAIN}"
     volumes:
       - app_data:/data
 
