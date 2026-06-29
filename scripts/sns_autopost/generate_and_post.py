@@ -146,6 +146,21 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         return post
 
 
+def _image_for(pillar: str) -> str | None:
+    """投稿に紐づく画像（あれば）。専門家ゲートが画像も審査するために渡す。
+    SNS_IMAGE_DIR か、既定でリポジトリの docs/marketing から型ごとの画像を探す。"""
+    d = os.getenv("SNS_IMAGE_DIR") or os.path.normpath(
+        os.path.join(_DIR, "..", "..", "docs", "marketing"))
+    mapping = {"voice_type": "x-8types.png", "self_type": "x-8types.png",
+               "visual": "x-header.png"}
+    fn = mapping.get(pillar)
+    if fn:
+        p = os.path.join(d, fn)
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def _x_session():
     keys = {k: os.getenv(k) for k in
             ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET")}
@@ -233,6 +248,24 @@ def main() -> int:
         print(f"\n[リンク] {link}  (POST_LINK={'ON→リプに付与' if post_link else 'OFF→プロフィール固定で誘導'})")
     print("─" * 48)
 
+    # 専門家ゲート（skill: sns-strategist）。文章＋画像を採点・改善し、基準を通らないと
+    # LINE承認に回さない（＝運用者の確認も入らない）。改善版が出たら本文/リプを差し替える。
+    import expert_review
+    image_path = _image_for(pillar)
+    gate = expert_review.review_and_gate(text, reply, pillar, image_path=image_path)
+    if gate.get("text"):
+        text = gate["text"]
+    reply = gate.get("reply", reply)
+    if text != post["text"] or reply != post.get("reply"):
+        print("【専門家が改善した版】")
+        print(text)
+        if reply:
+            print("— リプ —")
+            print(reply)
+    print(f"[専門家ゲート] {gate['report']}"
+          + (f"  / 審査画像: {os.path.basename(image_path)}" if image_path else "  / 画像なし"))
+    print("─" * 48)
+
     dry = args.dry_run or _truthy(os.getenv("DRY_RUN", "1"))  # 既定は安全側でドライラン
     if dry:
         print("DRY_RUN: 生成のみ。承認キュー・LINE・投稿はいずれもしていません。")
@@ -243,10 +276,18 @@ def main() -> int:
     if approval:
         import approval_queue as q
         import line_client
-        draft = q.enqueue(pillar, slot, text, reply, link, post_link)
+        # 専門家チェックを通過しなければ LINE には出さず保留（運用者の確認も入らない）。
+        if not gate["approved"]:
+            held = q.enqueue(pillar, slot, text, reply, link, post_link,
+                             status="held", expert_note=gate["report"])
+            print(f"⛔ 専門家チェック未通過のため LINE には送りません（保留 id={held['id']}）。")
+            print("   基準を満たす投稿になるまで保留します（held_queue で確認可）。")
+            return 0
+        draft = q.enqueue(pillar, slot, text, reply, link, post_link,
+                          expert_note=gate["report"])
         ok_line, info = line_client.push_approval(draft)
         if ok_line:
-            print(f"📨 承認待ちに送信しました（id={draft['id']}）。LINEで承認/却下してください。")
+            print(f"📨 専門家チェック通過 → 承認待ちに送信（id={draft['id']}）。LINEで承認/却下してください。")
             return 0
         print(f"⚠ キューには保存しましたが、LINE送信に失敗: {info}", file=sys.stderr)
         print(f"   id={draft['id']} pillar={pillar}（承認できる経路を確認してください）",
@@ -254,6 +295,10 @@ def main() -> int:
         return 1
 
     # --post-now / APPROVAL_MODE=0: 従来どおり生成して即投稿。
+    # 即投稿でも専門家チェックを通過していなければ出さない（ゲートは必須）。
+    if not gate["approved"]:
+        print("⛔ 専門家チェック未通過のため投稿しません（即投稿経路でもゲートは必須）。")
+        return 0
     ok_budget, why = _budget_check(post_has_link=post_link,
                                    post_has_reply=bool(reply), force=args.force)
     if args.force:

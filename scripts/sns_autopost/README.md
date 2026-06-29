@@ -28,6 +28,16 @@ cp .env.example .env      # 値を入れる（.env はGitに入らない）
 2. アプリの **User authentication settings** で権限を **Read and write** に
 3. **API Key/Secret**（Consumer）と **Access Token/Secret** を発行し `.env` に貼る
 
+## 専門家ゲート（出稿前レビュー / skill: sns-strategist）
+生成した投稿（本文＋自己リプ＋画像）は、**世界水準SNSマーケの採点ゲート**（`expert_review.py`）を
+通してから承認に進む。基準（既定80点）を満たさない投稿は**改善案を生成して再採点**し、
+最終的に基準未達なら **LINEに出さず保留**（`pending_queue` に `status=held`）＝運用者の確認も入らない。
+- 採点基準は `.claude/skills/sns-strategist/SKILL.md` の表（フック停止力・アルゴリズム適合・画像停止力 等）。
+- 通過した投稿のLINEには判定（例「✅ 専門家レビュー合格 86/80点」）が先頭に表示される。
+- 環境変数: `SNS_REVIEW_MODEL`(既定 gemini-2.5-flash／flash-liteは採点が雑なので非推奨)、
+  `EXPERT_REVIEW_MIN_SCORE`(既定80)、`EXPERT_REVIEW_ROUNDS`(既定2)、`SNS_IMAGE_DIR`(審査画像の場所)。
+- `GEMINI_API_KEY` 未設定や一時エラー時は「未レビュー」と明示してfail-open（運用を止めない）。
+
 ## 投稿前にLINEで承認するフロー（既定）
 
 ```
