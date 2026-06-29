@@ -233,9 +233,9 @@ def post_to_x(text: str, reply: str | None, link: str | None,
         if reply and last_id:                       # 大事な中身を自己リプに
             ok, rid, st = _reply(oauth, reply, last_id)
             if ok:
-                info, last_id = "本投稿+リプ本体", rid or last_id
+                info, last_id = "本投稿+リプ本体" + img_info, rid or last_id
             else:
-                info = f"本投稿OK/リプ本体失敗{st}"
+                info = f"本投稿OK/リプ本体失敗{st}" + img_info
         if post_link and link and last_id:          # 任意でURLリプ（$0.20課金）
             ok, _, st = _reply(oauth, f"▼ ここから無料で診断できます🎤\n{link}", last_id)
             info += " +link" if ok else f" +link失敗{st}"
