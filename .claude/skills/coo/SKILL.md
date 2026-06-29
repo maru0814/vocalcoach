@@ -27,6 +27,9 @@ Vocal Coach Inc. の実行を差配する。曖昧な依頼や複数役職をま
 | 集客・ローンチ（横断） | `marketer`（責任者・差配）→ `sns-specialist`／`digital-marketer`／`pr-specialist`／`content-marketer`／`growth-analyst`（必要な専門役職）（時期判断は `ceo`） |
 | 単発のマーケ成果物 | 該当専門役職を直接（SNS=`sns-specialist`／広告・SEO=`digital-marketer`／広報=`pr-specialist`／記事・LP=`content-marketer`／分析=`growth-analyst`） |
 | 評価ロジック・FB品質の改善 | `vocal-trainer`（品質基準）→ `pdm`（要件化）→ `backend-engineer`（`evaluation_service.py` 反映）→ `qa-engineer` |
+| 大きな技術選定・アーキ標準・インフラ/セキュリティ方針 | `cto`（最終承認）→ `architect`（個別設計）→ 実装役職 |
+| 価格・黒字化・資金繰り・コスト判断 | `cfo`（判断）→ `fpa`（数値）／`accountant`（実績）。価格は `marketer`/`growth-analyst` と整合 |
+| 課金（Stripe）導入 | `cfo`/`fpa`（財務要件）→ `pdm`（要件化）→ `backend-engineer`（実装）→ `qa-engineer` |
 | 優先順位・やる/やらない判断 | `ceo` |
 
 `docs/` に設計が未作成の新機能は、必ず上流（pdm → architect/designer）を通してから実装役職へ渡す（CLAUDE.md の方針に従う）。
