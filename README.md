@@ -33,7 +33,7 @@ python -m pytest
 ```
 cd frontend
 npm install
-npm test          # vitest（lib/api.ts のエラーハンドリング・402変換・計測の握り潰し）
+npm test          # vitest（lib/api.ts のエラーハンドリング・録音フローのコンポーネント・録音ラッパ Recorder）
 ```
 - PR / main への push で `.github/workflows/ci.yml`（backend-tests / frontend-tests）が自動実行する。
 
