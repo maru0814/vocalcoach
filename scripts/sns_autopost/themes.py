@@ -172,6 +172,70 @@ def template_post(pillar: str, day_index: int, app_url: str) -> dict:
             "reply": f"🎤 今日のボイトレメモ\n\n{tip}", "link": app_url}
 
 
+# --- 解説画像（イラスト/ビジュアル主体）の生成プロンプト -------------------
+# 方針: 文字を読ませる図解ではなく“スクロールを止めるブランドビジュアル”。
+# 生成AIは日本語テキストが崩れるので、画像内に文字は入れない（情報は投稿本文側）。
+# 画風は全投稿で統一（パステル＆手描き風）し、ソラ先生の世界観を一貫させる。
+_IMAGE_STYLE = (
+    "Soft pastel hand-drawn illustration, warm and friendly, gentle sky-blue "
+    "and cream color palette with soft light, clean minimal composition, "
+    "cohesive brand style for a calm AI vocal-coaching app named 'Sora'. "
+    "Square 1:1, social-media friendly. "
+    "ABSOLUTELY NO text, no letters, no words, no captions, no watermark, "
+    "no logo, no UI elements."
+)
+
+# 声タイプ → ビジュアルの雰囲気（色・ムード）。画像内に文字は出さず雰囲気で表現。
+_VOICE_TYPE_MOOD = {
+    "Rock":       "bold and powerful mood, warm crimson and amber glow, dynamic energy",
+    "Groovy":     "warm and groovy mood, amber and brown tones, mellow waves",
+    "Pop":        "bright and friendly mood, light yellow and sky-blue, airy and cheerful",
+    "Mysterious": "deep and mysterious mood, indigo and twilight purple, floating haze",
+    "Crystal":    "clear and sparkling mood, icy aqua and white, brilliant light",
+    "Dramatic":   "emotional and dramatic mood, deep rose and violet, expressive lighting",
+    "Whisper":    "soft and transparent mood, pale mint and white, gentle and tender",
+    "Moody":      "calm grown-up mood, deep navy and moonlit silver, soft and breathy",
+}
+
+
+def image_prompt(pillar: str, day_index: int) -> str:
+    """投稿の型(pillar)に合わせた画像生成プロンプト（英語）を返す。
+    本投稿に添付する1枚を想定。文字は入れず、雰囲気で目を引くイラストにする。"""
+    if pillar == "tip":
+        motif = (
+            "A person singing with relaxed shoulders and an open, easy posture, "
+            "soft glowing lines of breath flowing gently upward, a few light "
+            "musical notes rising softly. A calm, encouraging 'practice tip' feeling."
+        )
+    elif pillar == "contrarian":
+        motif = (
+            "A friendly 'aha moment' scene: a person with a soft glowing lightbulb "
+            "or a gentle thought bubble above, a subtle myth-busting feeling of "
+            "realizing the truth. Calm, reassuring, not aggressive."
+        )
+    elif pillar == "voice_type":
+        n, e, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
+        mood = _VOICE_TYPE_MOOD.get(n, "gentle and expressive mood")
+        motif = (
+            f"A single stylized character that embodies a singing voice persona, "
+            f"{mood}. The character is symbolic and abstract, evoking a distinctive "
+            f"vocal personality through color and atmosphere only."
+        )
+    elif pillar == "self_type":
+        motif = (
+            "A gentle lineup of several small symbolic singer characters in a row, "
+            "each with a slightly different color and mood, evoking a spectrum of "
+            "voice personalities — a 'which one are you?' feeling. Playful and inviting."
+        )
+    else:  # visual = 診断導線
+        motif = (
+            "A cute microphone with soft sparkles around it and a gentle 15-second "
+            "timer ring of light, evoking a quick, fun AI voice diagnosis. "
+            "Inviting and magical."
+        )
+    return f"{motif}\n\nStyle: {_IMAGE_STYLE}"
+
+
 def gemini_prompt(pillar: str, day_index: int, app_url: str) -> str:
     """Geminiに渡す生成指示。下敷きの主旨・情報量を保ったまま自然にリライト。"""
     base = template_post(pillar, day_index, app_url)["text"]

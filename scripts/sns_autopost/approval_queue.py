@@ -6,9 +6,10 @@ webhook.py が LINE のボタン操作を受けて status を approved/rejected 
 承認されたものだけ X に投稿する。posts_log.jsonl（計測用）とは別物。
 
 各レコード:
-  {id, pillar, slot, text, reply, link, post_link, status, tweet_id, info,
-   created_at, decided_at}
+  {id, pillar, slot, text, reply, link, post_link, image_path, status, tweet_id,
+   info, created_at, decided_at}
   reply: 2部構成の本体（自己返信に投稿する中身）。単発型は None。
+  image_path: 本投稿に添付する解説画像のパス（共有volume上）。無ければ ""。
   status: pending | posted | rejected | failed
 """
 import datetime
@@ -72,9 +73,11 @@ def _write_all(rows: list[dict], path: str = QUEUE_PATH) -> None:
 
 
 def enqueue(pillar: str, slot: int, text: str, reply: str | None,
-            link: str | None, post_link: bool) -> dict:
+            link: str | None, post_link: bool,
+            image_path: str | None = None) -> dict:
     """下書きを承認待ちとして追加し、作成したレコードを返す。
-    reply=自己返信に置く本体（2部構成）。診断導線など単発型は None。"""
+    reply=自己返信に置く本体（2部構成）。診断導線など単発型は None。
+    image_path=本投稿に添付する解説画像のパス（共有volume上）。無ければ None。"""
     rec = {
         "id": uuid.uuid4().hex[:12],
         "pillar": pillar,
@@ -83,6 +86,7 @@ def enqueue(pillar: str, slot: int, text: str, reply: str | None,
         "reply": reply,
         "link": link,
         "post_link": bool(post_link),
+        "image_path": image_path or "",
         "status": "pending",
         "tweet_id": "",
         "info": "",

@@ -50,16 +50,33 @@ def _headers() -> dict:
     }
 
 
+def _public_media_url(image_path: str | None) -> str | None:
+    """画像をLINEで表示するための公開HTTPS URLを組み立てる。
+    SNS_PUBLIC_BASE（例: https://<DOMAIN>）未設定なら None（プレビュー省略）。"""
+    base = os.getenv("SNS_PUBLIC_BASE", "").rstrip("/")
+    if not base or not image_path:
+        return None
+    return f"{base}/sns/media/{os.path.basename(image_path)}"
+
+
 def _approval_messages(draft: dict) -> list[dict]:
-    """下書き本文（＋2部構成ならリプ本体）＋ 承認/却下ボタンのメッセージ配列を組み立てる。"""
+    """下書き本文（＋2部構成ならリプ本体）＋ 承認/却下ボタンのメッセージ配列を組み立てる。
+    本投稿に添付する解説画像があれば、本文の直後にプレビュー表示する。"""
     text = draft.get("text", "")
     reply = draft.get("reply") or ""
     slot = draft.get("slot", "")
     pillar = draft.get("pillar", "")
     did = draft.get("id", "")
+    image_path = draft.get("image_path") or None
+    img_url = _public_media_url(image_path)
     header = f"📝 投稿の承認待ち（slot{slot} / {pillar}）\n投稿前に確認してください👇"
-    # 本投稿は1通目。2部構成ならリプ本体を2通目に分けて見せ、ボタンは最後。
+    if image_path and not img_url:
+        # 画像は付くがプレビューURL未設定。添付される旨だけ伝える。
+        header += "\n🖼 解説画像が本投稿に添付されます（SNS_PUBLIC_BASE未設定でプレビュー省略）"
+    # 本投稿は1通目。添付画像→（2部構成なら）リプ本体、の順で見せ、ボタンは最後。
     main_msg = {"type": "text", "text": f"{header}\n\n【本投稿】\n{'─' * 12}\n{text}"}
+    image_msg = ({"type": "image", "originalContentUrl": img_url,
+                  "previewImageUrl": img_url} if img_url else None)
     reply_msg = ({"type": "text", "text": f"【リプ＝大事な中身】\n{'─' * 12}\n{reply}"}
                  if reply else None)
     buttons = {
@@ -78,7 +95,7 @@ def _approval_messages(draft: dict) -> list[dict]:
             ],
         },
     }
-    return [m for m in (main_msg, reply_msg, buttons) if m]
+    return [m for m in (main_msg, image_msg, reply_msg, buttons) if m]
 
 
 def push_approval(draft: dict) -> tuple[bool, str]:

@@ -11,6 +11,7 @@
 - ✅ **Xへの自動投稿**（従量課金）。**2026年の単価: URLなし投稿 $0.015／URLあり投稿 $0.20／自分の投稿の読取 $0.001**。月額下限なし。
 - ✅ **インプレ計測**: `fetch_metrics.py` が投稿のインプレ/エンゲージを取得→型別に集計→**勝ち型に寄せる**。
 - ✅ 文面の自動生成（Gemini。無くてもテンプレ）。
+- 🖼 **解説イラストを本投稿に添付**（`POST_IMAGE=1`。型ごとに画風統一のイラストを1枚生成→**本投稿（1ツイート目）にだけ**添付。リプには付けない）。既定OFF。
 - 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日2投稿（`MAX_POSTS_PER_DAY=2`）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥450前後（投稿60件＋計測）。
 - 🚀 **X Premium（Web版が安い）** に入るとインプレ約6倍。これが最大の費用対効果（docs/29）。
 - ⚠️ Instagram/TikTok の完全自動投稿は制限が厳しく非推奨（半自動）。
@@ -85,6 +86,20 @@ DRY_RUN=0 python generate_and_post.py --pillar tip --post-now --force
 `generate_post()` が `{text, reply, link}` を返し、承認キュー（`enqueue`）→ LINEプレビュー（本投稿＋リプ本体を表示）→ `webhook.py` が承認時に **本投稿→リプ本体→(任意)URL** の順でスレッド投稿する。
 
 > **本文にもリプにもURLを入れない**のが既定（`POST_LINK=0`）。リンクは**プロフィール固定**で誘導（reach減＆$0.20課金を回避）。リプ本体はURLなしの中身なので $0.015。
+
+### 解説イラストの添付（`POST_IMAGE=1`）
+スクロールを止めるブランドビジュアルを**本投稿（1ツイート目）に1枚だけ**添付する（自己リプには付けない）。
+
+```bash
+DRY_RUN=1 POST_IMAGE=1 python generate_and_post.py --pillar tip   # 生成→ローカル保存→パス表示（投稿しない）
+```
+
+- 画風は `themes.py` の `image_prompt(pillar, day_index)` に集約（パステル＆手描き風で全投稿統一）。**画像内に日本語テキストは入れない**（生成AIは日本語が崩れるため。情報は投稿本文側に置く）。型ごとにモチーフを変える（tip=発声/呼吸、voice_type=8タイプの色/ムード、self_type/visual=診断のワクワク感、contrarian=“なるほど”の気づき）。
+- フロー: `generate_and_post.py` が `images/` に保存 → 承認キューに `image_path` を載せる → **LINEプレビューに画像も表示**（`SNS_PUBLIC_BASE` 設定時。webhook.py が `/sns/media/<file>` で配信）→ 承認時に `post_to_x()` が **本投稿にだけ** media を添付。
+- 失敗時は**画像なしでテキスト投稿を継続**（キー未設定・生成失敗・UL失敗でも落とさない）。
+- コスト: 画像生成の概算 `SNS_IMAGE_COST_USD`（既定$0.04）を `MONTHLY_COST_CAP_USD` の月間計算に加算。X側のメディア添付自体は追加課金なし（本投稿は同じ $0.015）。
+- 画像生成モデルは `SNS_IMAGE_MODEL`（既定 `gemini-2.5-flash-image`）。崩れる/未対応なら別モデル名に変更。
+- 本番（webhookと生成が別コンテナ）では `images/` を**共有volume**（`/data`）に置くこと（`SNS_DATA_DIR=/data`）。承認時にwebhook側が同じパスの画像を読んで添付するため。
 
 ## インプレ計測（改善ループ）
 ```bash

@@ -18,6 +18,7 @@ import sys
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Header, Request, Response
+from fastapi.responses import FileResponse
 
 try:
     from dotenv import load_dotenv
@@ -27,7 +28,7 @@ except Exception:
 
 import approval_queue as q
 import line_client
-from generate_and_post import _budget_check, _log_post, post_to_x
+from generate_and_post import IMAGES_DIR, _budget_check, _log_post, post_to_x
 
 app = FastAPI(title="sns-approval-webhook")
 
@@ -35,6 +36,16 @@ app = FastAPI(title="sns-approval-webhook")
 @app.get("/sns/healthz")
 def healthz() -> dict:
     return {"status": "ok", "line": line_client.enabled()}
+
+
+@app.get("/sns/media/{name}")
+def media(name: str):
+    """生成した解説画像を配信する（LINEプレビュー用にHTTPS公開URLが要るため）。
+    ベース名のみ許可してパストラバーサルを防ぐ。"""
+    path = os.path.join(IMAGES_DIR, os.path.basename(name))
+    if not os.path.isfile(path):
+        return Response(status_code=404, content="not found")
+    return FileResponse(path)
 
 
 def _handle_postback(data: str, reply_token: str) -> None:
@@ -64,17 +75,19 @@ def _handle_postback(data: str, reply_token: str) -> None:
     # --- 承認 → 予算ガードを通して実投稿（2部構成ならリプ本体も投稿）---
     post_link = bool(draft.get("post_link"))
     reply_body = draft.get("reply")
-    ok_budget, why = _budget_check(post_has_link=post_link,
-                                   post_has_reply=bool(reply_body), force=False)
+    image_path = draft.get("image_path") or None
+    ok_budget, why = _budget_check(post_has_link=post_link, post_has_reply=bool(reply_body),
+                                   post_has_image=bool(image_path), force=False)
     if not ok_budget:
         q.mark_decided(draft_id, "failed", info=why)
         line_client.reply(reply_token, f"⏸ 投稿を中止: {why}")
         return
 
     ok, tweet_id, info = post_to_x(draft.get("text", ""), reply_body,
-                                   draft.get("link"), post_link)
+                                   draft.get("link"), post_link, image_path)
     if ok:
-        _log_post(tweet_id, draft.get("pillar", ""), post_link, bool(reply_body))
+        _log_post(tweet_id, draft.get("pillar", ""), post_link, bool(reply_body),
+                  bool(image_path))
         q.mark_decided(draft_id, "posted", tweet_id=tweet_id, info=info)
         line_client.reply(reply_token, f"✅ 投稿しました！\nid={tweet_id}（{why}）")
     else:

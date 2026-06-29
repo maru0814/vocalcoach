@@ -7,6 +7,7 @@
      tip/contrarian は2部構成: 本投稿=好奇心フックで寸止め / リプ(自己返信)=手順・本体。
      リプを開かせてエンゲージを伸ばす設計（診断導線型は単発）。
   3) X API v2 に投稿: 本投稿→リプ本体→(任意)URL の順でスレッド化。
+     POST_IMAGE=1 なら解説イラストを生成し“本投稿”にだけ添付する（リプには付けない）。
      キー未設定 or DRY_RUN=1 なら本文を表示して終了。
 
 環境変数（.env または環境に設定。.env.example 参照）:
@@ -16,6 +17,9 @@
   GEMINI_API_KEY=...        … あれば文面をAI生成（無くてもテンプレで動く）
   X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_SECRET … X投稿用（OAuth1.0a）
   POST_LINK=0               … 1で自己リプにURLを付与。URL投稿は$0.20と高い＆reach減のため既定OFF
+  POST_IMAGE=0              … 1で解説イラストを“本投稿”に1枚添付（GEMINI_API_KEY必須）。既定OFF
+  SNS_IMAGE_MODEL=...       … 画像生成モデル（既定 gemini-2.5-flash-image）
+  SNS_PUBLIC_BASE=https://… … LINEで画像プレビューを出すための公開URLベース（任意）
   POST_SLOT=1               … 1=昼枠/2=夜枠。1日2投稿で別の型を出すため（--slot でも指定可）
   MAX_POSTS_PER_DAY=2       … 1日の投稿上限（予算ガード）
   MONTHLY_COST_CAP_USD=12   … 月間概算コスト上限（超えたら投稿停止）
@@ -55,10 +59,13 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.getenv("SNS_DATA_DIR", _DIR)
 os.makedirs(_DATA_DIR, exist_ok=True)
 POSTS_LOG = os.path.join(_DATA_DIR, "posts_log.jsonl")  # 投稿ID・型の記録（計測/予算用）
+IMAGES_DIR = os.path.join(_DATA_DIR, "images")          # 生成した解説画像の保存先（永続volume）
 
 # X API 概算単価（2026。URL投稿は高い→既定で避ける）
 COST_POST = 0.015      # URLなし投稿 $/件
 COST_POST_URL = 0.20   # URLあり投稿 $/件（自己リプにリンクを貼る場合も該当）
+# 解説画像1枚の生成概算（Gemini画像生成。X側のメディア添付自体は追加課金なし）。
+COST_IMAGE = float(os.getenv("SNS_IMAGE_COST_USD", "0.04"))
 
 
 def _truthy(v: str | None) -> bool:
@@ -79,21 +86,24 @@ def _read_jsonl(path: str) -> list:
     return rows
 
 
-def _log_post(tweet_id: str, pillar: str, had_link: bool, had_reply: bool = False) -> None:
+def _log_post(tweet_id: str, pillar: str, had_link: bool, had_reply: bool = False,
+              had_image: bool = False) -> None:
     rec = {"tweet_id": tweet_id, "pillar": pillar, "link": bool(had_link),
-           "reply": bool(had_reply),
+           "reply": bool(had_reply), "image": bool(had_image),
            "ts": datetime.datetime.now().isoformat(timespec="seconds")}
     with open(POSTS_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def _post_cost(has_link: bool, has_reply: bool) -> float:
-    """1投稿セットの概算コスト。本投稿＋（リプ本体）＋（URLリプ）。"""
-    return COST_POST + (COST_POST if has_reply else 0.0) + (COST_POST_URL if has_link else 0.0)
+def _post_cost(has_link: bool, has_reply: bool, has_image: bool = False) -> float:
+    """1投稿セットの概算コスト。本投稿＋（リプ本体）＋（URLリプ）＋（解説画像生成）。"""
+    return (COST_POST + (COST_POST if has_reply else 0.0)
+            + (COST_POST_URL if has_link else 0.0)
+            + (COST_IMAGE if has_image else 0.0))
 
 
 def _budget_check(post_has_link: bool, post_has_reply: bool = False,
-                  force: bool = False) -> tuple[bool, str]:
+                  post_has_image: bool = False, force: bool = False) -> tuple[bool, str]:
     """1日の投稿上限・月間概算コスト上限を超えていないか。超過なら投稿しない。
     force=True（手動 --force）のときは日次上限のみ無視する。月間コスト上限は安全弁として常に有効。"""
     posts = _read_jsonl(POSTS_LOG)
@@ -104,8 +114,8 @@ def _budget_check(post_has_link: bool, post_has_reply: bool = False,
     max_per_day = int(os.getenv("MAX_POSTS_PER_DAY", "1"))
     if not force and len(todays) >= max_per_day:
         return False, f"本日の投稿上限({max_per_day}件)に到達"
-    spent = sum(_post_cost(p.get("link"), p.get("reply")) for p in months)
-    after = spent + _post_cost(post_has_link, post_has_reply)
+    spent = sum(_post_cost(p.get("link"), p.get("reply"), p.get("image")) for p in months)
+    after = spent + _post_cost(post_has_link, post_has_reply, post_has_image)
     cap = float(os.getenv("MONTHLY_COST_CAP_USD", "12"))
     if after > cap:
         return False, f"月間概算コスト上限(${cap})に到達（今月概算${spent:.2f}）"
@@ -146,6 +156,50 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         return post
 
 
+def _extract_image_bytes(resp) -> bytes | None:
+    """Gemini画像生成レスポンスから最初の画像バイト列を取り出す。無ければNone。"""
+    try:
+        for cand in (resp.candidates or []):
+            for part in (getattr(cand.content, "parts", None) or []):
+                inline = getattr(part, "inline_data", None)
+                data = getattr(inline, "data", None) if inline else None
+                if not data:
+                    continue
+                if isinstance(data, str):  # 一部SDK版はbase64文字列で返す
+                    import base64
+                    return base64.b64decode(data)
+                return data
+    except Exception:
+        pass
+    return None
+
+
+def generate_image(pillar: str, day_index: int, dest_path: str) -> str | None:
+    """型に合わせた解説イラストを1枚生成して dest_path に保存。パス or None を返す。
+    失敗・キー未設定でも投稿は止めない（画像なしで続行）。"""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("[warn] GEMINI_API_KEY未設定 → 画像なしで投稿します", file=sys.stderr)
+        return None
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("SNS_IMAGE_MODEL", "gemini-2.5-flash-image")
+        resp = client.models.generate_content(
+            model=model, contents=themes.image_prompt(pillar, day_index))
+        data = _extract_image_bytes(resp)
+        if not data:
+            print("[warn] 画像データが返らず → 画像なしで投稿します", file=sys.stderr)
+            return None
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        with open(dest_path, "wb") as f:
+            f.write(data)
+        return dest_path
+    except Exception as e:
+        print(f"[warn] 画像生成に失敗 → 画像なしで投稿します: {e}", file=sys.stderr)
+        return None
+
+
 def _x_session():
     keys = {k: os.getenv(k) for k in
             ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET")}
@@ -159,6 +213,21 @@ def _x_session():
     )
 
 
+def _upload_media(oauth, image_path: str) -> str | None:
+    """画像を X(v1.1 media/upload) にアップロードして media_id を返す。失敗ならNone。"""
+    try:
+        with open(image_path, "rb") as f:
+            files = {"media": f.read()}
+        r = oauth.post("https://upload.twitter.com/1.1/media/upload.json",
+                       files=files, timeout=30)
+        if r.status_code in (200, 201):
+            return str(r.json().get("media_id_string", "")) or None
+        print(f"[warn] メディアUL失敗 HTTP {r.status_code}: {r.text[:200]}", file=sys.stderr)
+    except Exception as e:
+        print(f"[warn] メディアUL例外: {e}", file=sys.stderr)
+    return None
+
+
 def _reply(oauth, text: str, in_reply_to: str) -> tuple[bool, str, int]:
     """自己返信を1件投稿。(ok, new_id, status)。"""
     r = oauth.post("https://api.twitter.com/2/tweets",
@@ -169,19 +238,25 @@ def _reply(oauth, text: str, in_reply_to: str) -> tuple[bool, str, int]:
 
 
 def post_to_x(text: str, reply: str | None, link: str | None,
-              post_link: bool) -> tuple[bool, str, str]:
+              post_link: bool, image_path: str | None = None) -> tuple[bool, str, str]:
     """本投稿(text)→リプ本体(reply)→(任意)URL の順にスレッド投稿する。
+    解説画像(image_path)があれば“本投稿（1ツイート目）”にだけ添付する（リプには付けない）。
     reply に“大事な中身（手順）”を置いてリプを開かせる設計。link は POST_LINK=1 のときだけ。
     returns (ok, tweet_id, info)。"""
     oauth = _x_session()
     if oauth is None:
         return False, "", "X_KEYS_MISSING"
     try:
-        r = oauth.post("https://api.twitter.com/2/tweets", json={"text": text}, timeout=20)
+        body: dict = {"text": text}
+        # 画像は本投稿にのみ添付。UL失敗時は画像なしで投稿継続（落とさない）。
+        media_id = _upload_media(oauth, image_path) if image_path else None
+        if media_id:
+            body["media"] = {"media_ids": [media_id]}
+        r = oauth.post("https://api.twitter.com/2/tweets", json=body, timeout=20)
         if r.status_code not in (200, 201):
             return False, "", f"HTTP {r.status_code}: {r.text[:200]}"
         tweet_id = str(r.json().get("data", {}).get("id", ""))
-        info, last_id = "本投稿OK", tweet_id
+        info, last_id = ("本投稿OK+画像" if media_id else "本投稿OK"), tweet_id
         if reply and last_id:                       # 大事な中身を自己リプに
             ok, rid, st = _reply(oauth, reply, last_id)
             if ok:
@@ -222,6 +297,13 @@ def main() -> int:
     # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
     post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
 
+    # 解説画像（イラスト）を本投稿に添付。POST_IMAGE=1 のときだけ。既定OFFで従来挙動を維持。
+    image_path = None
+    if _truthy(os.getenv("POST_IMAGE", "0")):
+        import uuid
+        fname = f"{today.isoformat()}_slot{slot}_{pillar}_{uuid.uuid4().hex[:6]}.png"
+        image_path = generate_image(pillar, day_index, os.path.join(IMAGES_DIR, fname))
+
     print("─" * 48)
     print(f"[{today}] slot={slot} pillar={pillar}")
     print("【本投稿】")
@@ -229,6 +311,10 @@ def main() -> int:
     if reply:
         print("\n【リプ（自己返信）＝大事な中身】")
         print(reply)
+    if image_path:
+        print(f"\n[画像] 本投稿に添付: {image_path}")
+    elif _truthy(os.getenv("POST_IMAGE", "0")):
+        print("\n[画像] 生成できず → 画像なしで投稿（フォールバック）")
     if link:
         print(f"\n[リンク] {link}  (POST_LINK={'ON→リプに付与' if post_link else 'OFF→プロフィール固定で誘導'})")
     print("─" * 48)
@@ -243,7 +329,7 @@ def main() -> int:
     if approval:
         import approval_queue as q
         import line_client
-        draft = q.enqueue(pillar, slot, text, reply, link, post_link)
+        draft = q.enqueue(pillar, slot, text, reply, link, post_link, image_path)
         ok_line, info = line_client.push_approval(draft)
         if ok_line:
             print(f"📨 承認待ちに送信しました（id={draft['id']}）。LINEで承認/却下してください。")
@@ -254,17 +340,17 @@ def main() -> int:
         return 1
 
     # --post-now / APPROVAL_MODE=0: 従来どおり生成して即投稿。
-    ok_budget, why = _budget_check(post_has_link=post_link,
-                                   post_has_reply=bool(reply), force=args.force)
+    ok_budget, why = _budget_check(post_has_link=post_link, post_has_reply=bool(reply),
+                                   post_has_image=bool(image_path), force=args.force)
     if args.force:
         print("⚠ --force: 本日の投稿上限を無視して投稿します（月間コスト上限は維持）。")
     if not ok_budget:
         print(f"⏸ 予算/上限ガードで停止: {why}")
         return 0
 
-    ok, tweet_id, info = post_to_x(text, reply, link, post_link)
+    ok, tweet_id, info = post_to_x(text, reply, link, post_link, image_path)
     if ok:
-        _log_post(tweet_id, pillar, post_link, bool(reply))
+        _log_post(tweet_id, pillar, post_link, bool(reply), bool(image_path))
         print(f"✅ 投稿しました: id={tweet_id} ({info})  [{why}]")
         return 0
     print(f"❌ 投稿に失敗: {info}", file=sys.stderr)
