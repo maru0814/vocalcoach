@@ -28,7 +28,9 @@ Vocal Coach Inc. の実行を差配する。曖昧な依頼や複数役職をま
 | 単発のマーケ成果物 | 該当専門役職を直接（SNS=`sns-specialist`／広告・SEO=`digital-marketer`／広報=`pr-specialist`／記事・LP=`content-marketer`／分析=`growth-analyst`） |
 | 評価ロジック・FB品質の改善 | `vocal-trainer`（品質基準）→ `pdm`（要件化）→ `backend-engineer`（`evaluation_service.py` 反映）→ `qa-engineer` |
 | 大きな技術選定・アーキ標準・インフラ/セキュリティ方針 | `cto`（最終承認）→ `architect`（個別設計）→ 実装役職 |
+| サーバ構築・デプロイ・監視・運用・セキュリティ運用 | `cto`（方針）→ `sre`（構築・運用） |
 | 価格・黒字化・資金繰り・コスト判断 | `cfo`（判断）→ `fpa`（数値）／`accountant`（実績）。価格は `marketer`/`growth-analyst` と整合 |
+| 資金調達・補助金・投資家対応(IR) | `cfo`（方針）→ `fundraising-ir`（実務）。必要額は `fpa` から |
 | 課金（Stripe）導入 | `cfo`/`fpa`（財務要件）→ `pdm`（要件化）→ `backend-engineer`（実装）→ `qa-engineer` |
 | 優先順位・やる/やらない判断 | `ceo` |
 
