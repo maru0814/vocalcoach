@@ -6,9 +6,10 @@ webhook.py が LINE のボタン操作を受けて status を approved/rejected 
 承認されたものだけ X に投稿する。posts_log.jsonl（計測用）とは別物。
 
 各レコード:
-  {id, pillar, slot, text, reply, link, post_link, status, tweet_id, info,
+  {id, pillar, slot, text, reply, link, post_link, image, status, tweet_id, info,
    created_at, decided_at}
   reply: 2部構成の本体（自己返信に投稿する中身）。単発型は None。
+  image: 添付画像のローカルパス or None（生成できなかった場合）。
   status: pending | posted | rejected | failed
 """
 import datetime
@@ -72,10 +73,11 @@ def _write_all(rows: list[dict], path: str = QUEUE_PATH) -> None:
 
 
 def enqueue(pillar: str, slot: int, text: str, reply: str | None,
-            link: str | None, post_link: bool,
+            link: str | None, post_link: bool, image: str | None = None,
             status: str = "pending", expert_note: str = "") -> dict:
     """下書きを承認待ちとして追加し、作成したレコードを返す。
     reply=自己返信に置く本体（2部構成）。診断導線など単発型は None。
+    image=添付画像のローカルパス（無ければ None）。
     status: pending=LINE承認待ち / held=専門家ゲート未通過で保留（LINEに出さない）。
     expert_note: 専門家レビューの判定（LINE本文の先頭に表示する）。"""
     rec = {
@@ -86,6 +88,7 @@ def enqueue(pillar: str, slot: int, text: str, reply: str | None,
         "reply": reply,
         "link": link,
         "post_link": bool(post_link),
+        "image": image,
         "status": status,
         "expert_note": expert_note,
         "tweet_id": "",

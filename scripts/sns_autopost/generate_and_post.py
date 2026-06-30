@@ -41,7 +41,10 @@ import json
 import os
 import re
 import sys
+import uuid
 
+import images
+import infographic
 import themes
 
 try:
@@ -55,6 +58,7 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.getenv("SNS_DATA_DIR", _DIR)
 os.makedirs(_DATA_DIR, exist_ok=True)
 POSTS_LOG = os.path.join(_DATA_DIR, "posts_log.jsonl")  # 投稿ID・型の記録（計測/予算用）
+IMG_DIR = os.path.join(_DATA_DIR, "images")              # 添付画像の保存先
 
 # X API 概算単価（2026。URL投稿は高い→既定で避ける）
 COST_POST = 0.015      # URLなし投稿 $/件
@@ -146,18 +150,37 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         return post
 
 
-def _image_for(pillar: str) -> str | None:
-    """投稿に紐づく画像（あれば）。専門家ゲートが画像も審査するために渡す。
-    SNS_IMAGE_DIR か、既定でリポジトリの docs/marketing から型ごとの画像を探す。"""
-    d = os.getenv("SNS_IMAGE_DIR") or os.path.normpath(
-        os.path.join(_DIR, "..", "..", "docs", "marketing"))
-    mapping = {"voice_type": "x-8types.png", "self_type": "x-8types.png",
-               "visual": "x-header.png"}
-    fn = mapping.get(pillar)
-    if fn:
-        p = os.path.join(d, fn)
-        if os.path.exists(p):
+def build_image(pillar: str, slot: int, day_index: int, app_url: str) -> str | None:
+    """投稿に添付するブランド画像を生成してパスを返す（作れなければ None）。
+    - tip / contrarian: 図解インフォグラフィック（Playwright）。失敗時はカードにフォールバック。
+    - 診断導線（self_type/voice_type/visual）: 従来のカード（情報量が少なく図解に不向き）。"""
+    if not _truthy(os.getenv("SNS_IMAGE", "1")):
+        return None
+    name = (f"{datetime.date.today().isoformat()}_s{slot}_{pillar}_"
+            f"{uuid.uuid4().hex[:6]}.png")
+    out = os.path.join(IMG_DIR, name)
+    if pillar in ("tip", "contrarian"):
+        p = infographic.generate(pillar, day_index, app_url, out)
+        if p:
             return p
+        # 図解レンダリング不可（playwright未導入等）→ カードにフォールバック
+    base = themes.template_post(pillar, day_index, app_url)
+    headline = images.build_headline(pillar, base.get("text", ""), base.get("reply"))
+    return images.generate_image(pillar, headline, out)
+
+
+def _upload_media(oauth, image_path: str) -> str | None:
+    """画像を X にアップロードして media_id を返す（失敗なら None）。"""
+    try:
+        with open(image_path, "rb") as f:
+            r = oauth.post("https://upload.twitter.com/1.1/media/upload.json",
+                           files={"media": f}, timeout=60)
+        if r.status_code in (200, 201):
+            j = r.json()
+            return str(j.get("media_id_string") or j.get("media_id") or "") or None
+        print(f"[warn] 画像アップロード失敗 {r.status_code}: {r.text[:200]}", file=sys.stderr)
+    except Exception as e:
+        print(f"[warn] 画像アップロード例外: {e}", file=sys.stderr)
     return None
 
 
@@ -184,25 +207,35 @@ def _reply(oauth, text: str, in_reply_to: str) -> tuple[bool, str, int]:
 
 
 def post_to_x(text: str, reply: str | None, link: str | None,
-              post_link: bool) -> tuple[bool, str, str]:
+              post_link: bool, image_path: str | None = None) -> tuple[bool, str, str]:
     """本投稿(text)→リプ本体(reply)→(任意)URL の順にスレッド投稿する。
+    image_path があれば本投稿にブランド画像を添付する（アップロード失敗時は文字だけで続行）。
     reply に“大事な中身（手順）”を置いてリプを開かせる設計。link は POST_LINK=1 のときだけ。
     returns (ok, tweet_id, info)。"""
     oauth = _x_session()
     if oauth is None:
         return False, "", "X_KEYS_MISSING"
     try:
-        r = oauth.post("https://api.twitter.com/2/tweets", json={"text": text}, timeout=20)
+        payload: dict = {"text": text}
+        img_info = ""
+        if image_path and os.path.exists(image_path):
+            mid = _upload_media(oauth, image_path)
+            if mid:
+                payload["media"] = {"media_ids": [mid]}
+                img_info = "+画像"
+            else:
+                img_info = "/画像失敗"
+        r = oauth.post("https://api.twitter.com/2/tweets", json=payload, timeout=30)
         if r.status_code not in (200, 201):
             return False, "", f"HTTP {r.status_code}: {r.text[:200]}"
         tweet_id = str(r.json().get("data", {}).get("id", ""))
-        info, last_id = "本投稿OK", tweet_id
+        info, last_id = "本投稿OK" + img_info, tweet_id
         if reply and last_id:                       # 大事な中身を自己リプに
             ok, rid, st = _reply(oauth, reply, last_id)
             if ok:
-                info, last_id = "本投稿+リプ本体", rid or last_id
+                info, last_id = "本投稿+リプ本体" + img_info, rid or last_id
             else:
-                info = f"本投稿OK/リプ本体失敗{st}"
+                info = f"本投稿OK/リプ本体失敗{st}" + img_info
         if post_link and link and last_id:          # 任意でURLリプ（$0.20課金）
             ok, _, st = _reply(oauth, f"▼ ここから無料で診断できます🎤\n{link}", last_id)
             info += " +link" if ok else f" +link失敗{st}"
@@ -236,6 +269,8 @@ def main() -> int:
     text, reply, link = post["text"], post.get("reply"), post.get("link")
     # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
     post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
+    # 全投稿にブランド画像を添付（tip/contrarian=図解 / 診断導線=カード。SNS_IMAGE=0で無効）。
+    image_path = build_image(pillar, slot, day_index, app_url)
 
     print("─" * 48)
     print(f"[{today}] slot={slot} pillar={pillar}")
@@ -246,12 +281,13 @@ def main() -> int:
         print(reply)
     if link:
         print(f"\n[リンク] {link}  (POST_LINK={'ON→リプに付与' if post_link else 'OFF→プロフィール固定で誘導'})")
+    print(f"[画像] {image_path or '生成なし（SNS_IMAGE=0 or 失敗）'}")
     print("─" * 48)
 
     # 専門家ゲート（skill: sns-strategist）。文章＋画像を採点・改善し、基準を通らないと
     # LINE承認に回さない（＝運用者の確認も入らない）。改善版が出たら本文/リプを差し替える。
+    # 専門家ゲートは、上で生成した実際の投稿画像（build_image）を審査する。
     import expert_review
-    image_path = _image_for(pillar)
     gate = expert_review.review_and_gate(text, reply, pillar, image_path=image_path)
     if gate.get("text"):
         text = gate["text"]
@@ -279,12 +315,12 @@ def main() -> int:
         # 専門家チェックを通過しなければ LINE には出さず保留（運用者の確認も入らない）。
         if not gate["approved"]:
             held = q.enqueue(pillar, slot, text, reply, link, post_link,
-                             status="held", expert_note=gate["report"])
+                             image_path, status="held", expert_note=gate["report"])
             print(f"⛔ 専門家チェック未通過のため LINE には送りません（保留 id={held['id']}）。")
             print("   基準を満たす投稿になるまで保留します（held_queue で確認可）。")
             return 0
         draft = q.enqueue(pillar, slot, text, reply, link, post_link,
-                          expert_note=gate["report"])
+                          image_path, expert_note=gate["report"])
         ok_line, info = line_client.push_approval(draft)
         if ok_line:
             print(f"📨 専門家チェック通過 → 承認待ちに送信（id={draft['id']}）。LINEで承認/却下してください。")
@@ -307,7 +343,7 @@ def main() -> int:
         print(f"⏸ 予算/上限ガードで停止: {why}")
         return 0
 
-    ok, tweet_id, info = post_to_x(text, reply, link, post_link)
+    ok, tweet_id, info = post_to_x(text, reply, link, post_link, image_path)
     if ok:
         _log_post(tweet_id, pillar, post_link, bool(reply))
         print(f"✅ 投稿しました: id={tweet_id} ({info})  [{why}]")

@@ -2,10 +2,24 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# 日本語フォント: Pillowカード用に Noto CJK、図解(HTML)用に丸ゴシック(Zen Maru Gothic)。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pillow が拾えるよう、CJKフォントのパスを既定で指す（.env で上書き可）。
+ENV SNS_FONT_PATH=/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 図解レンダラ用に Chromium 本体とOS依存ライブラリを導入。
+RUN python -m playwright install --with-deps chromium
+
 COPY . .
+
+# Zen Maru Gothic は assets/fonts/ に同梱（infographic.py がローカル@font-faceで参照）。
+# 未同梱でもオンライン時はGoogle Fontsにフォールバックする。
 
 EXPOSE 8088
 

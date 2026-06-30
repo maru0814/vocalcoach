@@ -50,16 +50,32 @@ def _headers() -> dict:
     }
 
 
+def _image_message(draft: dict) -> dict | None:
+    """生成画像を公開URLで指すLINE imageメッセージ。SNS_PUBLIC_BASE_URL未設定なら None。
+    （LINEはバイト添付不可＝公開HTTPS URLが必須。webhookの /sns/img/{name} が配信する）"""
+    image = draft.get("image")
+    base = (os.getenv("SNS_PUBLIC_BASE_URL") or "").rstrip("/")
+    if not image or not base:
+        return None
+    url = f"{base}/sns/img/{os.path.basename(image)}"
+    return {"type": "image", "originalContentUrl": url, "previewImageUrl": url}
+
+
 def _approval_messages(draft: dict) -> list[dict]:
-    """下書き本文（＋2部構成ならリプ本体）＋ 承認/却下ボタンのメッセージ配列を組み立てる。"""
+    """下書き本文（＋2部構成ならリプ本体）＋ 承認/却下ボタンのメッセージ配列を組み立てる。
+    公開URLが設定済みなら、先頭に投稿画像のプレビューも付ける。"""
     text = draft.get("text", "")
     reply = draft.get("reply") or ""
     slot = draft.get("slot", "")
     pillar = draft.get("pillar", "")
     did = draft.get("id", "")
-    expert = (draft.get("expert_note") or "").strip()
-    header = f"📝 投稿の承認待ち（slot{slot} / {pillar}）\n投稿前に確認してください👇"
+    image_msg = _image_message(draft)
+    # 画像URLを出せない時だけテキストで添付を明記（出せる時は実物を見せるので不要）
+    img_note = "（🖼 ブランド画像を添付）" if (draft.get("image") and not image_msg) else ""
+    header = (f"📝 投稿の承認待ち（slot{slot} / {pillar}）{img_note}\n"
+              "投稿前に確認してください👇")
     # 専門家ゲートの判定を先頭に表示（この承認は専門家チェックを通過したものだけ届く）。
+    expert = (draft.get("expert_note") or "").strip()
     if expert:
         header = f"{expert}\n\n{header}"
     # 本投稿は1通目。2部構成ならリプ本体を2通目に分けて見せ、ボタンは最後。
@@ -82,7 +98,8 @@ def _approval_messages(draft: dict) -> list[dict]:
             ],
         },
     }
-    return [m for m in (main_msg, reply_msg, buttons) if m]
+    # 画像→本投稿→(リプ本体)→ボタン の順。LINEは1pushで最大5メッセージ。
+    return [m for m in (image_msg, main_msg, reply_msg, buttons) if m]
 
 
 def push_approval(draft: dict) -> tuple[bool, str]:

@@ -11,6 +11,10 @@
 - ✅ **Xへの自動投稿**（従量課金）。**2026年の単価: URLなし投稿 $0.015／URLあり投稿 $0.20／自分の投稿の読取 $0.001**。月額下限なし。
 - ✅ **インプレ計測**: `fetch_metrics.py` が投稿のインプレ/エンゲージを取得→型別に集計→**勝ち型に寄せる**。
 - ✅ 文面の自動生成（Gemini。無くてもテンプレ）。
+- ✅ **ブランド画像を全投稿に自動添付**。日本語は全てコード描画＝崩れ・誤字なし。`SNS_IMAGE=0` で無効。
+  - **tip / contrarian → 図解インフォグラフィック**（16:9）。`themes.py` の手順を自動構造化し `templates/infographic.html` をPlaywrightでPNG化。ソラ先生キャラ（`assets/characters/sora/`）を合成。Playwright未導入/失敗時はカードに自動フォールバック。
+  - **診断導線（self_type/voice_type/visual）→ カード**（縦4:5）。背景はGemini(Imagen 4)→失敗/キー無しでPillowグラデにフォールバック（`SNS_IMAGE_AI=0` でグラデ固定）。Imagen単価 約$0.04/枚。
+  - 設計: `docs/46_デザイン仕様_X投稿インフォグラフィック.md`
 - 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日2投稿（`MAX_POSTS_PER_DAY=2`）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥450前後（投稿60件＋計測）。
 - 🚀 **X Premium（Web版が安い）** に入るとインプレ約6倍。これが最大の費用対効果（docs/29）。
 - ⚠️ Instagram/TikTok の完全自動投稿は制限が厳しく非推奨（半自動）。
@@ -22,6 +26,11 @@ python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env      # 値を入れる（.env はGitに入らない）
 ```
+> 画像の日本語見出し用に**CJKフォント**が要る。mac は自動検出（ヒラギノ丸ゴ）、Docker は Noto CJK 同梱済み。
+> その他の環境は `.env` の `SNS_FONT_PATH` でフォントを指定する（未設定だとカード画像は文字なしで出る）。
+
+> **図解(tip/contrarian)はPlaywright必須**: ローカルは `python -m playwright install chromium` を実行（Dockerはビルド時に導入済み）。未導入でもカードに自動フォールバックして投稿は止まらない。
+> 図解の丸ゴシックはオンライン時 Google Fonts を使う。オフライン運用は Zen Maru Gothic の TTF を `assets/fonts/` に置けばローカル`@font-face`に自動切替。
 
 ### Xのキー発行
 1. https://developer.x.com で開発者登録 → アプリ作成
@@ -48,12 +57,14 @@ cp .env.example .env      # 値を入れる（.env はGitに入らない）
 
 ```
 generate_and_post.py（cron）
-   └─ 生成 → pending_queue.jsonl に保存 → LINEに本文＋[承認][却下]ボタンをpush
+   └─ 生成 → pending_queue.jsonl に保存 → LINEに【画像プレビュー＋本文】＋[承認][却下]ボタンをpush
                                                    │
 LINEであなたが [✅承認して投稿] を押す ──────────────┘
    └─ webhook.py が postback を受信（署名検証）→ 予算ガード → X に投稿 → LINEに結果返信
       [🗑却下] を押すと破棄（投稿しない）
 ```
+
+> **承認時に投稿画像も表示**: `.env` の `SNS_PUBLIC_BASE_URL`（例 `https://sora-vocal-ai.duckdns.org`）を設定すると、LINEの承認メッセージ先頭に生成画像のプレビューが出る。webhookの `GET /sns/img/{name}` が画像を配信する（Caddyで `/sns/*` を webhook へ通している前提）。LINEのimageメッセージは公開HTTPS URLが必須のため。未設定ならテキストの添付注記のみ（動作は止まらない）。
 
 - **生成（cron）**と**Webhook常駐（webhook.py）**の2プロセス構成。
 - 投稿は承認時に初めて実行され、`posts_log.jsonl` に記録される（計測はそのまま動く）。
