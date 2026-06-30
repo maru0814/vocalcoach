@@ -160,15 +160,26 @@ def parse_diagnosis(pillar: str, day_index: int) -> dict:
     voice_type=1タイプをヒーロー画像でスポットライト / self_type・visual=8タイプの画像ギャラリー。"""
     if pillar == "voice_type":
         name, _emoji, desc = themes.VOICE_TYPES[day_index % len(themes.VOICE_TYPES)]
+        a = themes.ARTISTS_BY_ID.get(name.lower(), {})
+        artists = ""
+        if a:
+            artists = (f"声質が近い例：♀ {'・'.join(a['female'])}"
+                       f" ／ ♂ {'・'.join(a['male'])}")
         return {
             "type": "diagnosis",
             "title": f"【声タイプ図鑑】{name}",
             "subtitle": "",
-            "spotlight": {"image": _voice_image_data_uri(name), "desc": f"{desc}。あなたもこのタイプかも？"},
+            "spotlight": {"image": _voice_image_data_uri(name),
+                          "desc": f"{desc}。あなたもこのタイプかも？", "artists": artists},
             "cta": {"main": "あなたは何タイプ？プロフィールから無料で診断🎤", "sub": ""},
         }
-    # self_type / visual: 8タイプ全部をギャラリーで
-    types = [{"name": name, "image": _voice_image_data_uri(name), "featured": False}
+    # self_type / visual: 8タイプ全部をギャラリーで（各タイプに近い例を♀1＋♂1で短く）
+    def _short_artists(type_id: str) -> str:
+        a = themes.ARTISTS_BY_ID.get(type_id, {})
+        picks = [a.get("female", [""])[0], a.get("male", [""])[0]]
+        return "・".join(p for p in picks if p)
+    types = [{"name": name, "image": _voice_image_data_uri(name), "featured": False,
+              "artists": _short_artists(name.lower())}
              for name, _e, _d in themes.VOICE_TYPES]
     if pillar == "visual":
         title = "あなたの声は、どのタイプ？15秒で診断"
