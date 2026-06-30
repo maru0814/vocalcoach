@@ -136,5 +136,44 @@ class ConversationalFBContract(unittest.TestCase):
         self.assertIn("うまく言葉が出せませんでした", text)
 
 
+class TextReplyPromptFraming(unittest.TestCase):
+    """テキスト質問のプロンプト構築（_build_contents）の契約。
+
+    フォローアップの質問が「録音を解析したFB」テンプレで返る不具合の回帰ガード。
+    LLM自体は叩かず、Gemini へ渡す contents の組み立てだけを検証する（hermetic）。
+    """
+
+    def _last_text(self, contents):
+        return contents[-1].parts[0].text
+
+    def test_followup_turn_marked_not_new_recording(self):
+        # 録音解析済み(last_analysis あり)の状態でテキスト質問が来た場面。
+        st = _state(phase="practice", current_task="pitch_wobble",
+                    last_analysis=ANALYSIS_ISSUE, baseline_analysis=ANALYSIS_ISSUE)
+        contents = llm._build_contents(st, "具体的にどう練習すればいいの？", [])
+        last = self._last_text(contents)
+        # 今回は新しい録音が来ていない、と明示している
+        self.assertIn("新しく届いた録音ではない", last)
+        # 講評の書き出しで始めない、という指示が入っている
+        self.assertIn("録音を送ってくれてありがとう", last)
+        self.assertIn("始めないこと", last)
+        # ユーザーの発言はちゃんと載っている
+        self.assertIn("具体的にどう練習すればいいの？", last)
+
+    def test_history_preserved_before_question(self):
+        st = _state(phase="practice", current_task="pitch_wobble",
+                    last_analysis=ANALYSIS_ISSUE, baseline_analysis=ANALYSIS_ISSUE)
+        history = [
+            {"role": "user", "content": "ボーカルフライって何ですか？"},
+            {"role": "assistant", "content": "ガラガラ声を作る練習です。"},
+        ]
+        contents = llm._build_contents(st, "次はどうする？", history)
+        # 履歴が会話ターンとして渡る（user 始まりが保証される）
+        joined = "\n".join(c.parts[0].text for c in contents)
+        self.assertIn("ボーカルフライって何ですか？", joined)
+        self.assertIn("ガラガラ声を作る練習です。", joined)
+        self.assertEqual(contents[0].role, "user")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

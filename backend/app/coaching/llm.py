@@ -504,7 +504,16 @@ def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
 
     context = build_session_context(state)
     final_text = (
-        f"# 現在のレッスン状況（システムからの参考情報）\n{context}\n\n# ユーザーの発言\n{user_text}"
+        "# このターンについて\n"
+        "これは会話の続きで、ユーザーがテキストで話しかけてきた場面です。"
+        "今回あらたに録音は送られていません。下の『現在のレッスン状況』は、"
+        "前に送られた録音の解析を背景情報として再掲したものです（新しく届いた録音ではない）。\n"
+        "会話履歴といま聞かれた発言をふまえ、続きの会話として自然に・簡潔に答えてください。"
+        "録音を受け取った時のあいさつや講評の書き出し（「録音を送ってくれてありがとう」"
+        "「解析結果を見ると…」のような、いま新しく録音を解析したかのような言い回し）で"
+        "始めないこと。すでに伝えた内容は繰り返さず、聞かれたことに答える。\n\n"
+        f"# 現在のレッスン状況（背景情報。新しく届いた録音ではない）\n{context}\n\n"
+        f"# ユーザーの発言\n{user_text}"
     )
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=final_text)]))
     return contents
