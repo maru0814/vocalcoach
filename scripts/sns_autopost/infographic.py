@@ -25,6 +25,7 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 _TEMPLATE = os.path.join(_DIR, "templates", "infographic.html")
 _CHAR_DIR = os.path.join(_DIR, "assets", "characters", "sora")
 _FONT_DIR = os.path.join(_DIR, "assets", "fonts")
+_VOICE_DIR = os.path.join(_DIR, "assets", "voice_types")  # 各声タイプの実画像 {id}.jpg
 
 _NUM_RE = re.compile(r"^[①-⑳]\s*")
 _QUOTE_RE = re.compile(r"[「『“”\"]([^「『”\"」』]{1,16})[」』”\"]")
@@ -145,6 +146,42 @@ def parse_contrarian(hook: str, body: str) -> dict:
             "hashtags": "#ボイトレ #高音"}
 
 
+def _voice_image_data_uri(type_id: str) -> str:
+    """assets/voice_types/{id}.jpg を data URI に。無ければ空文字（HTML側はlabelのみ表示）。"""
+    path = os.path.join(_VOICE_DIR, f"{type_id.lower()}.jpg")
+    if not os.path.exists(path):
+        return ""
+    with open(path, "rb") as f:
+        return "data:image/jpeg;base64," + base64.b64encode(f.read()).decode("ascii")
+
+
+def parse_diagnosis(pillar: str, day_index: int) -> dict:
+    """声タイプ診断導線（voice_type/self_type/visual）→ 各タイプの実画像を使う図解データ。
+    voice_type=1タイプをヒーロー画像でスポットライト / self_type・visual=8タイプの画像ギャラリー。"""
+    if pillar == "voice_type":
+        name, _emoji, desc = themes.VOICE_TYPES[day_index % len(themes.VOICE_TYPES)]
+        return {
+            "type": "diagnosis",
+            "title": f"【声タイプ図鑑】{name}",
+            "subtitle": "",
+            "spotlight": {"image": _voice_image_data_uri(name), "desc": f"{desc}。あなたもこのタイプかも？"},
+            "cta": {"main": "あなたは何タイプ？プロフィールから無料で診断🎤", "sub": ""},
+        }
+    # self_type / visual: 8タイプ全部をギャラリーで
+    types = [{"name": name, "image": _voice_image_data_uri(name), "featured": False}
+             for name, _e, _d in themes.VOICE_TYPES]
+    if pillar == "visual":
+        title = "あなたの声は、どのタイプ？15秒で診断"
+        subtitle = "15秒歌うだけで、AIが8タイプ＋似た声質の歌手まで診断"
+        cta = {"main": "プロフィールのリンクから無料で診断🎤", "sub": "結果はそのままシェアOK"}
+    else:  # self_type
+        title = "あなたの声は、実はこの8タイプのどれか"
+        subtitle = "直感でどれっぽい？プロフィールから無料で診断できます"
+        cta = {"main": "プロフィールのリンクから無料で診断🎤", "sub": "15秒歌うだけ"}
+    return {"type": "diagnosis", "title": title, "subtitle": subtitle,
+            "types": types, "cta": cta}
+
+
 # ---- キャラ / フォント ----
 
 def _char_data_uri(pose: str) -> str:
@@ -211,8 +248,10 @@ def render(data: dict, out_path: str) -> str | None:
 
 
 def generate(pillar: str, day_index: int, app_url: str, out_path: str) -> str | None:
-    """pillar に応じてコンテンツを構造化→キャラ添付→レンダリング。失敗で None。"""
-    if pillar == "contrarian":
+    """pillar に応じてコンテンツを構造化→（tip/contrarianはキャラ添付）→レンダリング。失敗で None。"""
+    if pillar in ("voice_type", "self_type", "visual"):
+        data = parse_diagnosis(pillar, day_index)  # 各タイプの実画像を使う図鑑（キャラは無し）
+    elif pillar == "contrarian":
         hook, body = themes.CONTRARIAN[day_index % len(themes.CONTRARIAN)]
         data = parse_contrarian(hook, body)
         data["character"] = _char_data_uri("explain")

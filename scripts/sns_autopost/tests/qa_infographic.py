@@ -59,20 +59,42 @@ d = ig.parse_contrarian("誤解タイトル\n↑ウソ", "引用記号のない�
 check("TC-IG03f 引用なしcontrarian", len(d["reasons"]) == 2 and d["highlight"] in d["summary"],
       f"r1={d['reasons'][0]['title']}")
 
-# ---- ③ 振り分け（build_image: 寸法で判定）----
+# ---- 診断導線パーサ（新仕様: 各タイプの実画像を使う図解）----
+# voice_type = spotlight に image(data URI) と desc、title「【声タイプ図鑑】{Name}」
+dv = ig.parse_diagnosis("voice_type", 5)  # 5 = Dramatic
+check("TC-IG30 voice_type spotlight", dv["type"] == "diagnosis"
+      and dv.get("spotlight", {}).get("image", "").startswith("data:image/jpeg")
+      and "【声タイプ図鑑】" in dv["title"], f"title={dv['title']}")
+# self_type / visual = types 8件・各 image 付き
+for pl in ("self_type", "visual"):
+    dd = ig.parse_diagnosis(pl, 0)
+    ok = (len(dd.get("types", [])) == 8
+          and all(t["image"].startswith("data:image/jpeg") for t in dd["types"]))
+    check(f"TC-IG31 {pl} 8タイプ画像", ok, f"types={len(dd.get('types', []))}")
+# 8タイプ画像が assets/voice_types に存在し data URI 化できる
+ids = [n.lower() for n, _e, _d in themes.VOICE_TYPES]
+check("TC-IG32 8画像 data URI化", all(ig._voice_image_data_uri(i).startswith("data:image/jpeg") for i in ids),
+      f"ids={ids}")
+# 画像欠損でも types は返る（image=""）でクラッシュしない
+saved_dir = ig._VOICE_DIR
+ig._VOICE_DIR = "/nonexistent"
+dmiss = ig.parse_diagnosis("self_type", 0)
+check("TC-IG33 画像欠損でも継続", len(dmiss["types"]) == 8
+      and all(t["image"] == "" for t in dmiss["types"]), "")
+ig._VOICE_DIR = saved_dir
+
+# ---- ③ 振り分け（build_image: 全ピラー→図解1600×900）----
 import generate_and_post as gp
 importlib.reload(gp)
 os.environ["SNS_DATA_DIR"] = "/tmp/qa_ig"
-os.environ["SNS_IMAGE_AI"] = "0"   # カードはグラデ（AI課金回避）
+os.environ["SNS_IMAGE_AI"] = "0"   # フォールバック時のカードはグラデ（AI課金回避）
 gp.IMG_DIR = "/tmp/qa_ig/images"
 try:
     from PIL import Image
-    routing = {"tip": (1600, 900), "contrarian": (1600, 900),
-               "self_type": (1080, 1350), "visual": (1080, 1350)}
-    for pl, exp in routing.items():
+    for pl in ("tip", "contrarian", "voice_type", "self_type", "visual"):
         p = gp.build_image(pl, 1, 5, "https://x.test")
         sz = Image.open(p).size
-        check(f"TC-IG04 振り分け {pl}", sz == exp, f"{sz} exp={exp}")
+        check(f"TC-IG04 全ピラー図解 {pl}", sz == (1600, 900), f"{sz}")
 except Exception as e:
     check("TC-IG04 振り分け", False, f"EXC {e}")
 
