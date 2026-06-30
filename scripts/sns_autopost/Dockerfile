@@ -1,20 +1,22 @@
-FROM python:3.12-slim
+# Debian bookworm を明示（slim 既定の trixie は Playwright 非対応で
+# `playwright install --with-deps` が失敗するため）。
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
-
-# 日本語フォント: Pillowカード用に Noto CJK、図解(HTML)用に丸ゴシック(Zen Maru Gothic)。
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/*
-
-# Pillow が拾えるよう、CJKフォントのパスを既定で指す（.env で上書き可）。
-ENV SNS_FONT_PATH=/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 図解レンダラ用に Chromium 本体とOS依存ライブラリを導入。
-RUN python -m playwright install --with-deps chromium
+# 日本語フォント(Noto CJK)＋図解レンダラ用 Chromium 本体とOS依存ライブラリ。
+# apt のインデックスは playwright の依存導入が終わるまで残す
+# （先に消すと --with-deps の apt-get install が対象を見つけられず失敗する）。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk \
+    && python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pillow が拾えるよう、CJKフォントのパスを既定で指す（.env で上書き可）。
+ENV SNS_FONT_PATH=/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
 
 COPY . .
 
