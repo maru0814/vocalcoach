@@ -14,7 +14,7 @@
 - ✅ **ブランド画像を全投稿に自動添付**。日本語は全てコード描画＝崩れ・誤字なし。`SNS_IMAGE=0` で無効。
   - **tip / contrarian → 図解インフォグラフィック**（16:9）。`themes.py` の手順を自動構造化し `templates/infographic.html` をPlaywrightでPNG化。ソラ先生キャラ（`assets/characters/sora/`）を合成。Playwright未導入/失敗時はカードに自動フォールバック。
   - **診断導線（self_type/voice_type/visual）→ カード**（縦4:5）。背景はGemini(Imagen 4)→失敗/キー無しでPillowグラデにフォールバック（`SNS_IMAGE_AI=0` でグラデ固定）。Imagen単価 約$0.04/枚。
-  - 設計: `docs/43_デザイン仕様_X投稿インフォグラフィック.md`
+  - 設計: `docs/46_デザイン仕様_X投稿インフォグラフィック.md`
 - 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日2投稿（`MAX_POSTS_PER_DAY=2`）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥450前後（投稿60件＋計測）。
 - 🚀 **X Premium（Web版が安い）** に入るとインプレ約6倍。これが最大の費用対効果（docs/29）。
 - ⚠️ Instagram/TikTok の完全自動投稿は制限が厳しく非推奨（半自動）。
