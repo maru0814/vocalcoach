@@ -25,6 +25,11 @@ from app.schemas.coaching import (
     SessionSummary,
     UpdateSessionRequest,
 )
+from app.services.evaluation_service import (
+    AnalysisLimitReachedError,
+    NoCoachAudioError,
+    promote_coach_recording,
+)
 from app.storage.files import ensure_dir
 
 router = APIRouter(prefix="/api/v1/coach", tags=["coach"])
@@ -322,6 +327,27 @@ def create_session(db: Session = Depends(get_db), user=Depends(get_current_user)
     for r in rows:
         db.refresh(r)
     return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+
+
+@router.post("/sessions/{session_id}/promote-recording")
+def promote_recording(
+    session_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)
+) -> dict:
+    """このレッスンの最新録音を Recording に昇格し、詳細添削レポートへ繋ぐ（docs/50 T-2）。
+
+    返した recording_id で `/recordings/{id}/report` を開く。冪等（同録音は同 recording_id）。
+    """
+    session = _get_owned_session(db, session_id, user)
+    try:
+        recording = promote_coach_recording(db, session, user.id)
+    except NoCoachAudioError:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NO_AUDIO", "message": "このレッスンにはまだ録音がありません🎤"},
+        )
+    except AnalysisLimitReachedError:
+        raise HTTPException(status_code=402, detail={"code": "LIMIT_REACHED"})
+    return {"recording_id": recording.id, "status": recording.status}
 
 
 @router.get("/sessions", response_model=list[SessionSummary])

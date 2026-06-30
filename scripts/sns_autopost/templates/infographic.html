@@ -147,6 +147,37 @@
   .reason h3 { font-size: 30px; font-weight: 700; }
   .reason.r1 h3 { color: var(--v); } .reason.r2 h3 { color: var(--p); }
   .reason p { font-size: 26px; color: var(--slate); margin-top: 8px; line-height: 1.45; }
+
+  /* ===== diagnosis（声タイプ図鑑 / 8タイプ。各タイプの実画像を使う） ===== */
+  /* voice_type: 1タイプを大きなヒーロー画像で */
+  .hero { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 14px; }
+  .hero-img { width: 100%; flex: 1; min-height: 0; object-fit: cover;
+    border-radius: 20px; border: 3px solid #fff; box-shadow: 0 10px 30px -12px rgba(124,58,237,.3); }
+  .hero-cap { font-size: 30px; font-weight: 500; color: var(--slate); line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .hero-artists { font-size: 26px; font-weight: 500; color: var(--v); line-height: 1.4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* self_type / visual: 8タイプを 4×2 の画像ギャラリーで */
+  .gallery { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr);
+    gap: 14px; flex: 1; min-height: 0; }
+  .gcell { position: relative; border-radius: 16px; overflow: hidden;
+    border: 3px solid transparent; background: #f3efff; }
+  .gcell.feat { border-color: var(--p); }
+  .gcell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gcell .glabel { position: absolute; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,.65)); color: #fff;
+    font-size: 22px; font-weight: 700; padding: 22px 12px 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gcell .gartist { display: block; font-size: 18px; font-weight: 400; color: rgba(255,255,255,.9);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* CTA帯 */
+  .cta {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    background: linear-gradient(120deg, var(--v), var(--p));
+    border-radius: 20px; padding: 18px 28px; margin-top: 16px;
+  }
+  .cta-main { color: #fff; font-weight: 700; font-size: 30px; }
+  .cta-sub { color: #fff; font-weight: 500; font-size: 24px; opacity: .92; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -245,11 +276,46 @@ function renderContrarian(d) {
     + summaryHTML(d);
 }
 
+function renderDiagnosis(d) {
+  // src は data URI（base64は安全な文字のみ）なので esc しない。
+  let body = "";
+  if (d.spotlight && d.spotlight.image) {            // voice_type: 1タイプのヒーロー画像
+    const s = d.spotlight;
+    body = '<div class="hero">'
+      + '<img class="hero-img" src="' + s.image + '" alt="">'
+      + (s.desc ? '<div class="hero-cap">' + esc(s.desc) + '</div>' : '')
+      + (s.artists ? '<div class="hero-artists">' + esc(s.artists) + '</div>' : '')
+      + '</div>';
+  } else {                                           // self_type / visual: 8タイプの画像ギャラリー
+    const cells = (d.types || []).slice(0, 8).map((t) =>
+      '<div class="gcell' + (t.featured ? ' feat' : '') + '">'
+      + (t.image ? '<img src="' + t.image + '" alt="">' : '')
+      + '<span class="glabel">' + esc(t.name)
+      +   (t.artists ? '<span class="gartist">' + esc(t.artists) + '</span>' : '')
+      + '</span></div>').join("");
+    body = '<div class="gallery">' + cells + '</div>';
+  }
+  const cta = d.cta || {};
+  return '<div class="title">' + esc(d.title) + '</div>'
+    + (d.subtitle ? '<div class="subtitle">' + esc(d.subtitle) + '</div>' : '')
+    + body
+    + '<div class="cta">'
+    +   '<span class="cta-main">' + esc(cta.main || "プロフィールのリンクから無料で診断") + '</span>'
+    +   (cta.sub ? '<span class="cta-sub">' + esc(cta.sub) + '</span>' : '')
+    + '</div>';
+}
+
+function renderContent(d) {
+  if (d.type === "contrarian") return renderContrarian(d);
+  if (d.type === "diagnosis") return renderDiagnosis(d);
+  return renderTip(d);
+}
+
 (function () {
   const d = (typeof window !== "undefined" && window.__DATA__) ? window.__DATA__ : SAMPLE;
   const card = document.getElementById("card");
   const content = document.getElementById("content");
-  content.innerHTML = d.type === "contrarian" ? renderContrarian(d) : renderTip(d);
+  content.innerHTML = renderContent(d);
   if (d.character) {
     const col = document.createElement("div");
     col.className = "char-col";

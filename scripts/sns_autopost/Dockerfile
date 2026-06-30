@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # apt のインデックスは playwright の依存導入が終わるまで残す
 # （先に消すと --with-deps の apt-get install が対象を見つけられず失敗する）。
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-noto-cjk \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto-color-emoji \
     && python -m playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 

@@ -69,3 +69,9 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - **修正(PR#105)**: ベースを `python:3.12-slim-bookworm` に固定し、フォント＋`playwright install --with-deps chromium` を同一レイヤーにまとめ apt インデックスは導入後に削除。ローカル `docker build` 成功(2.6GB)＋コンテナ内で図解レンダリング・日本語表示を確認。
 - **教訓**: Playwright 同梱イメージは**ベースのDebianコードネームを固定**する（slim既定はtestingに動くことがある）。`--with-deps` を使うレイヤーでは apt インデックスを残す。
 - **LINE画像プレビュー有効化**: VPS `scripts/sns_autopost/.env` に `SNS_PUBLIC_BASE_URL=https://sora-vocal-ai.duckdns.org` を追記 → `docker compose ... up -d --force-recreate sns`。Caddyの `/sns/*` が `GET /sns/img/{name}` も配信（公開URLで取得 200 image/png 確認済み）。
+
+## 事例: 声タイプ診断導線の実画像図解 デプロイ（2026-06-30）
+- 変更: 診断導線(voice_type/self_type/visual)をカードから **type=diagnosis 図解**（各タイプの実画像 `assets/voice_types/{id}.jpg`）へ。`build_image` は全ピラー→infographic。Dockerに `fonts-noto-color-emoji` 追加（CTAの🎤等）。
+- 検証: ローカル `docker build` 再検証OK → コンテナ内で voice_type/self_type 描画（絵文字・タイプ画像・日本語OK）。PR#108 マージ → 自動デプロイ green。
+- 本番実証: 本番コンテナで voice_type 図解を生成 → `/sns/img` 公開URLで **200 image/png(1.3MB)**、Dramaticバナーの図鑑が出ることを確認。
+- 教訓: 図解で絵文字を使うなら Chromium に `fonts-noto-color-emoji` が要る（無いと豆腐）。タイプ別の作り込み画像は既存frontendアセットを sns ビルドコンテキストに同梱して使い回すのが安定（AI生成不要・日本語崩れ無し）。

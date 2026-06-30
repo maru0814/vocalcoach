@@ -7,7 +7,7 @@
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,7 @@ from app.coaching import scoring, voice_coach
 from app.core.config import settings
 from app.core.ratelimit import check_rate_limit
 from app.db.session import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user_optional
 from app.models.voice_type import VoiceTypeDiagnosis
 from app.storage.files import ensure_dir
 
@@ -31,14 +31,21 @@ _TYPE_ORDER = [v["id"] for v in voice_coach.VOICE_TYPES.values()]
 
 @router.post("/analyze")
 def analyze_voice_type(
+    request: Request,
     audio_file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(get_current_user_optional),
 ) -> dict:
-    """録音1本から声タイプ（8種）を判定して返す。"""
-    # --- rate limit（解析はCPU負荷が高いので悪用防止）---
+    """録音1本から声タイプ（8種）を判定して返す。
+
+    認証は任意。未登録（user=None）でも「お試し1回」として診断できる
+    （docs/35 課題1: アハ体験を登録の前に出す）。シェア/保存はフロント側で
+    登録に誘導する。レート制限はログイン時はユーザー単位、未登録時はIP単位。
+    """
+    # --- rate limit（解析はCPU負荷が高いので悪用防止。未登録はIP単位で絞る）---
+    rl_key = f"voicetype:{user.id}" if user else f"voicetype:ip:{request.client.host if request.client else 'unknown'}"
     if not check_rate_limit(
-        f"voicetype:{user.id}", settings.rate_limit_max_audio, settings.rate_limit_window_sec
+        rl_key, settings.rate_limit_max_audio, settings.rate_limit_window_sec
     ):
         raise HTTPException(
             status_code=429,

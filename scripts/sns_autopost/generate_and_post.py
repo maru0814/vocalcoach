@@ -162,18 +162,18 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
 
 def build_image(pillar: str, slot: int, day_index: int, app_url: str) -> str | None:
     """投稿に添付するブランド画像を生成してパスを返す（作れなければ None）。
-    - tip / contrarian: 図解インフォグラフィック（Playwright）。失敗時はカードにフォールバック。
-    - 診断導線（self_type/voice_type/visual）: 従来のカード（情報量が少なく図解に不向き）。"""
+    - 全ピラーを図解インフォグラフィック（Playwright）で生成。
+      tip/contrarian=手順図解＋キャラ、診断導線=各タイプの実画像を使う声タイプ図鑑。
+    - 図解レンダリング不可（playwright未導入等）のときのみ、従来のカードにフォールバック。"""
     if not _truthy(os.getenv("SNS_IMAGE", "1")):
         return None
     name = (f"{datetime.date.today().isoformat()}_s{slot}_{pillar}_"
             f"{uuid.uuid4().hex[:6]}.png")
     out = os.path.join(IMG_DIR, name)
-    if pillar in ("tip", "contrarian"):
-        p = infographic.generate(pillar, day_index, app_url, out)
-        if p:
-            return p
-        # 図解レンダリング不可（playwright未導入等）→ カードにフォールバック
+    p = infographic.generate(pillar, day_index, app_url, out)
+    if p:
+        return p
+    # 図解不可 → カードにフォールバック（必ず画像は出す）
     base = themes.template_post(pillar, day_index, app_url)
     headline = images.build_headline(pillar, base.get("text", ""), base.get("reply"))
     return images.generate_image(pillar, headline, out)

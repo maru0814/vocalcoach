@@ -20,8 +20,8 @@ export default function VoiceTypePage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<VoiceTypeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [needLogin, setNeedLogin] = useState(false);
-  // 認証ゲート: 未ログインなら録音させず、登録に誘導する
+  // 認証状態。未ログインでも診断は1回完走できる（docs/35 課題1: アハ→登録）。
+  // 結果は未ログインだとぼかして提示し、シェア/保存の瞬間に登録へ誘導する。
   const [auth, setAuth] = useState<"checking" | "in" | "out">("checking");
 
   const recorderRef = useRef<Recorder | null>(null);
@@ -37,7 +37,6 @@ export default function VoiceTypePage() {
 
   async function runAnalyze(blob: Blob, filename: string) {
     setError(null);
-    setNeedLogin(false);
     setResult(null);
     setLoading(true);
     try {
@@ -45,11 +44,7 @@ export default function VoiceTypePage() {
       setResult(res);
     } catch (e: unknown) {
       const err = e as Error & { status?: number };
-      if (err.status === 401) {
-        setNeedLogin(true);
-      } else {
-        setError(err.message || "診断に失敗しました。もう一度お試しください。");
-      }
+      setError(err.message || "診断に失敗しました。もう一度お試しください。");
     } finally {
       setLoading(false);
     }
@@ -157,22 +152,6 @@ export default function VoiceTypePage() {
                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-500" />
                 <p className="text-sm font-bold text-slate-600">準備しています…</p>
               </div>
-            ) : auth === "out" || needLogin ? (
-              <div className="space-y-3 text-center">
-                <p className="text-sm font-bold text-slate-700">まずは無料登録（30秒）から🎤</p>
-                <p className="text-xs leading-relaxed text-slate-500">
-                  声タイプ診断は、AIボイストレーナー「ソラ先生」の入口です。
-                  登録すると、診断も・声に合わせた発声レッスンも、ぜんぶ無料。
-                  録音はあなた専用に安全に扱われます。
-                </p>
-                <Link
-                  href={LOGIN_URL}
-                  className="inline-flex items-center justify-center rounded-full bg-brand-gradient px-6 py-3 font-bold text-white shadow-soft transition active:scale-95"
-                >
-                  無料登録して診断する →
-                </Link>
-                <p className="text-[11px] text-slate-400">登録済みの方は、そのまま診断に進めます</p>
-              </div>
             ) : loading ? (
               <div className="flex flex-col items-center gap-3 py-6">
                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-500" />
@@ -217,7 +196,7 @@ export default function VoiceTypePage() {
         )}
 
         {/* 結果カード */}
-        {result && (
+        {result && auth === "in" && (
           <section className="space-y-3">
             <div className="rounded-3xl bg-white/90 p-4 shadow-card">
               <div ref={shareRef} className="space-y-0">
@@ -242,6 +221,43 @@ export default function VoiceTypePage() {
                 🎤 レッスンを受ける
               </Link>
             </div>
+            <p className="px-1 text-center text-[11px] text-slate-400">
+              声タイプは「傾向」の推定です。録音の歌い方や録音環境で変わることがあります。
+            </p>
+          </section>
+        )}
+
+        {/* 未登録の結果: アハ→登録（docs/35 課題1）。結果をぼかして提示し、
+            「見る・シェアする」瞬間に無料登録へ誘導する。 */}
+        {result && auth !== "in" && (
+          <section className="space-y-3">
+            <div className="relative overflow-hidden rounded-3xl bg-white/90 p-4 shadow-card">
+              <div className="pointer-events-none select-none blur-[7px]" aria-hidden="true">
+                <VoiceTypeBlock vt={result.voice_type} score={result.score} />
+              </div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/45 px-6 text-center backdrop-blur-[2px]">
+                <span className="text-3xl">🎉</span>
+                <p className="text-base font-black text-slate-800">あなたの声タイプが出ました！</p>
+                <p className="text-xs leading-relaxed text-slate-600">
+                  無料登録すると、結果カード（似た声のアーティスト・スコア）が見られて、
+                  そのままシェアもできます。声に合わせた発声レッスンもぜんぶ無料です😊
+                </p>
+                <Link
+                  href={LOGIN_URL}
+                  className="inline-flex items-center justify-center rounded-full bg-brand-gradient px-6 py-3 font-bold text-white shadow-soft transition active:scale-95"
+                >
+                  無料登録して結果を見る →
+                </Link>
+                <p className="text-[11px] text-slate-400">登録済みの方は、ログインすると結果が開きます</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => { setResult(null); setError(null); }}
+              className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 transition active:scale-95"
+            >
+              🔁 もう一度ためす
+            </button>
             <p className="px-1 text-center text-[11px] text-slate-400">
               声タイプは「傾向」の推定です。録音の歌い方や録音環境で変わることがあります。
             </p>

@@ -28,20 +28,30 @@ cases = {
         "reasons": [{"title": "鍵1" + "x" * 10, "body": LONG}, {"title": "鍵2", "body": LONG}],
         "summary": LONG, "highlight": LONG[:8], "hashtags": "#ボイトレ #高音",
         "character": CHAR},
+    # 診断導線（キャラ無し・画像ベース）。横溢れせず描画されること。
+    "diagnosis_hero": {"type": "diagnosis", "title": "【声タイプ図鑑】Dramatic",
+        "spotlight": {"image": CHAR, "desc": LONG, "artists": "声質が近い例：♀ " + LONG + " ／ ♂ " + LONG},
+        "cta": {"main": "あなたは何タイプ？プロフィールから無料で診断🎤", "sub": ""}},
+    "diagnosis_gallery": {"type": "diagnosis", "title": LONG, "subtitle": LONG,
+        "types": [{"name": "Mysterious" + str(i), "image": CHAR, "featured": i == 5,
+                   "artists": LONG} for i in range(8)],
+        "cta": {"main": "プロフィールのリンクから無料で診断🎤", "sub": "15秒歌うだけ"}},
 }
 
 MEASURE = """() => {
+  const card = document.querySelector('.card');
+  const scrollW = card.scrollWidth;
+  const rendered = document.querySelector('.content').children.length;
   const col = document.querySelector('.char-col');
-  if (!col) return { noChar: true };
+  if (!col) return { noChar: true, overflowRight: scrollW, rendered };
   const colLeft = col.getBoundingClientRect().left;
   let maxRight = 0, worst = '';
   document.querySelectorAll('.content, .content *').forEach(el => {
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.right > maxRight) { maxRight = r.right; worst = el.className || el.tagName; }
   });
-  const card = document.querySelector('.card').getBoundingClientRect();
   return { colLeft, maxRight, worst, gap: Math.round(colLeft - maxRight),
-           cardW: card.width, overflowRight: document.querySelector('.card').scrollWidth };
+           cardW: card.getBoundingClientRect().width, overflowRight: scrollW, rendered };
 }"""
 
 fails = 0
@@ -56,9 +66,13 @@ with sync_playwright() as pw:
         page.set_content(html, wait_until="networkidle")
         page.wait_for_timeout(150)
         m = page.evaluate(MEASURE)
-        if "maxRight" not in m:
-            print(f"[FAIL] LAYOUT {name}: 測定不可 m={m} errs={errs[:2]}")
-            fails += 1
+        if m.get("noChar"):
+            # 診断導線（キャラ無し）: 描画されており横溢れしないこと。
+            ok = (m["rendered"] >= 2) and (m["overflowRight"] <= 1601) and not errs
+            print(f"[{'PASS' if ok else 'FAIL'}] LAYOUT {name} (no-char): "
+                  f"rendered={m['rendered']} scrollW={m['overflowRight']} errs={errs[:1]}")
+            if not ok:
+                fails += 1
             page.close()
             continue
         # 不変条件: 本文の最右端 ≤ キャラ列の左端（重なりゼロ）。さらにcardは横にあふれない。

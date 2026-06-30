@@ -107,6 +107,23 @@ export async function getRecording(id: string | number) {
   return request<RecordingDetail>(`/api/v1/recordings/${id}`);
 }
 
+/**
+ * coachレッスンの最新録音を Recording に昇格し、詳細添削レポートへ繋ぐ（docs/50 T-2）。
+ * 返り値 recording_id で `/recordings/{id}/report` を開く。402は上限到達。
+ */
+export async function promoteCoachRecording(sessionId: string | number) {
+  try {
+    return await request<{ recording_id: number; status: string }>(
+      `/api/v1/coach/sessions/${sessionId}/promote-recording`,
+      { method: "POST" },
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("LIMIT_REACHED")) throw new LimitReachedError("LIMIT_REACHED");
+    throw err;
+  }
+}
+
 // ---------- Coach (chat) ----------
 export const COACH_API_BASE = API_BASE;
 
