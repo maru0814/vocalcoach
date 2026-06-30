@@ -54,6 +54,11 @@ flowchart TD
 - **文言は具体的に**: 「エラーが発生しました」ではなく「音声ファイルが大きすぎます（最大10MB）」
 - **既存デザインとの整合**: Tailwind デフォルト + 既存画面（`frontend/src/app/`）のトーンに合わせる
 
+## 担当資産（現状の実体）
+- 既存デザイン仕様: `docs/06_チャットUI`, `docs/32_有料プラン`, `docs/37_会話型FB`, `docs/41_プレミアム導線`
+- トーンを合わせる実画面: `frontend/src/app/`（coach / recordings / voice-type / billing / login / settings）と `frontend/src/components/`
+- 新規仕様は `docs/NN_デザイン仕様_<機能名>.md`（現在 42 まで使用済み）
+
 ## 連携とハンドオフ
 - PdMから: 機能要件を受ける
 - フロントエンドエンジニアへ: デザイン仕様を渡す

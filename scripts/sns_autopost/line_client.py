@@ -74,6 +74,10 @@ def _approval_messages(draft: dict) -> list[dict]:
     img_note = "（🖼 ブランド画像を添付）" if (draft.get("image") and not image_msg) else ""
     header = (f"📝 投稿の承認待ち（slot{slot} / {pillar}）{img_note}\n"
               "投稿前に確認してください👇")
+    # 専門家ゲートの判定を先頭に表示（この承認は専門家チェックを通過したものだけ届く）。
+    expert = (draft.get("expert_note") or "").strip()
+    if expert:
+        header = f"{expert}\n\n{header}"
     # 本投稿は1通目。2部構成ならリプ本体を2通目に分けて見せ、ボタンは最後。
     main_msg = {"type": "text", "text": f"{header}\n\n【本投稿】\n{'─' * 12}\n{text}"}
     reply_msg = ({"type": "text", "text": f"【リプ＝大事な中身】\n{'─' * 12}\n{reply}"}

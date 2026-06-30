@@ -37,6 +37,22 @@ cp .env.example .env      # 値を入れる（.env はGitに入らない）
 2. アプリの **User authentication settings** で権限を **Read and write** に
 3. **API Key/Secret**（Consumer）と **Access Token/Secret** を発行し `.env` に貼る
 
+## 専門家ゲート（出稿前レビュー / skill: sns-strategist）
+生成した投稿（本文＋自己リプ＋画像）は、**世界水準SNSマーケの採点ゲート**（`expert_review.py`）を
+通してから承認に進む。採点は**項目別**（フック停止力・アルゴリズム適合・画像停止力 等）で行い、
+合計はコード側で算出する（モデルが中間点に丸めるのを防ぐ）。
+- **受かるまで再提出**: 基準（既定80点）未満なら専門家が改善版を作って再採点…を**合格するまで繰り返す**。
+  暴走防止に安全上限 `EXPERT_REVIEW_MAX_ATTEMPTS`(既定6) と“スコア頭打ち”検出あり。
+- **上限まで改善しても未達なら、その中の“いちばん良かった版”をLINEに送る**（⚠️未達と最高点・残る改善点を明示。
+  人間が最終判断）。※ただし本文/リプにURLが残る版だけは方針違反のため送らず保留（`status=held`）。
+- 通過した投稿のLINEには判定（例「✅ 合格 84/80点（3回目で通過）」＋項目別内訳）、
+  未達送付なら「⚠️ 未達 最高75/80点」が先頭に表示される。
+- 採点基準のSSOTは `.claude/skills/sns-strategist/SKILL.md`。
+- 環境変数: `SNS_REVIEW_MODEL`(既定 gemini-2.5-flash／flash-liteは採点が雑なので非推奨。503時はpro等へ自動フォールバック)、
+  `EXPERT_REVIEW_MIN_SCORE`(既定80)、`EXPERT_REVIEW_MAX_ATTEMPTS`(既定6)、`SNS_IMAGE_DIR`(審査画像の場所)。
+- `GEMINI_API_KEY` 未設定や一時エラー時は「未レビュー」と明示してfail-open（運用を止めない）。
+- 本文/リプにURLがあれば即失格（ハード失格）。
+
 ## 投稿前にLINEで承認するフロー（既定）
 
 ```

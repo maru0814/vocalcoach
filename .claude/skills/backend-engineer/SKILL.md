@@ -47,6 +47,14 @@ backend/app/
 - マイグレーションファイル
 - 動作確認手順（README または PR本文に記載）
 
+## 担当資産（主要モジュール）
+- コーチング中核: `backend/app/coaching/`（llm.py / rule_engine.py / taxonomy.py / feedback_builder.py / voice_coach.py / scoring.py）
+- 音声解析: `backend/app/audio/`（analyzer.py / alignment.py / separation.py / voice_lab.py / convert.py / reference.py）
+- API: `backend/app/api/v1/endpoints/`（auth / recordings / coach / billing / voice_type）
+- 課金: `backend/app/services/`（billing_service / stripe_service / report_service）
+- テスト: `backend/tests/`（例: test_conversational_fb.py）
+- ⚠️ FB文面（llm.py の SYSTEM_PROMPT）に関わる変更は `docs/42_FB品質基準_単一ソース.md` に従い、skill版と揃える
+
 ## 連携とハンドオフ
 - アーキテクトから: 設計書を受ける
 - フロントエンドエンジニアへ: API仕様（OpenAPI / 実例）を共有

@@ -791,11 +791,34 @@ def send_audio(
     else:
         s.last_analysis = user_analysis
 
+    # ゼロベース個人最適FB（docs/43）。フラグONの時だけ、強モデル＋生音声＋実測証拠で
+    # “聴いて推論した”講評を生成する。失敗時は下のルールベースFBにフォールバック。
+    # 月次コスト上限（¥2000）に達しそうなら呼ばず、ルールベースFBに切り替える。
+    zero_base_reply = None
+    if settings.enable_zero_base_fb and settings.llm_enabled:
+        from app.core import llm_budget
+        _est = settings.llm_analysis_est_jpy_per_call
+        if llm_budget.would_exceed(_est):  # 上限到達 → 当月1回だけ通知してルールベースFBへ
+            llm_budget.notify_budget_reached_once()
+        else:  # 当月概算+今回 が上限を超えないときだけ呼ぶ
+            try:
+                _uw = open(wav_path, "rb").read()
+                _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
+                zero_base_reply = llm.generate_feedback(_session_state(s), user_wav=_uw, ref_wav=_rw)
+            except Exception:
+                zero_base_reply = None
+            if zero_base_reply:
+                llm_budget.record(_est)  # 成功した呼び出しだけ当月コストに積む
+
     msgs, updates = rule_engine.handle_audio(
         _session_state(s), user_analysis, compare_data, kind, history=history,
         user_comment=user_comment,
     )
     _apply_updates(s, updates)
+    # 状態遷移(updates)はルールベースのまま使い、ユーザーに見せるFB本文だけ
+    # ゼロベース講評（会話文）に差し替える（カード/採点は出さない＝docs/42）。
+    if zero_base_reply:
+        msgs = [{"role": "coach", "type": "text", "text": zero_base_reply}]
     # 原曲URLを貼ってくれたのに取得できなかった時は、黙って単体FBにせず一言ことわる
     # （URLを貼った＝聴き比べを期待しているので、比較できなかった事実を隠さない）。
     if ref_fetch_failed and not compare_data:
