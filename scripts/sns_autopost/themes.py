@@ -23,6 +23,19 @@ VOICE_TYPES = [
     ("Moody",      "🌙", "息まじりの深い裏声。しっとり包み込む大人の声"),
 ]
 
+# 診断導線の3型（“似てる歌手フック＋8タイプ早見リプ”の2部構成で回す）。
+DIAGNOSIS_PILLARS = ("self_type", "voice_type", "visual")
+
+
+def cheatsheet_reply() -> str:
+    """診断導線の自己リプに置く“8タイプ早見”。VOICE_TYPES から生成して正本とズレない。
+    最大の答え（似てる歌手＝結果）はあえて伏せ、好奇心ギャップを残して診断へ送る。"""
+    lines = "\n".join(f"{e}{n} {d}" for n, e, d in VOICE_TYPES)
+    return ("🎤 声タイプは全8種（あなたはどれっぽい？）\n\n"
+            f"{lines}\n\n"
+            "でも“似てる歌手”は、歌ってみないと出ません。\n"
+            "プロフィールから15秒 → 結果はそのままシェアできます。")
+
 # 実践Tips（高音・ミックス中心の“保存される長文”）。番号付きの手順で再現性を持たせる。
 # これ自体が完成形に近い下敷き。Geminiはこのトーンと情報量を保ったままリライトする。
 TIPS = [
@@ -146,21 +159,27 @@ NUDGE = "\n\n👇 具体的な手順（大事なとこ）はリプに置きま�
 def template_post(pillar: str, day_index: int, app_url: str) -> dict:
     """Geminiを使わない場合のフォールバック。{text, reply, link} を返す。
     text=本投稿 / reply=自己返信に置く“本体” or None（短文の診断導線型は単発）/ link=リプ用URL。"""
+    # 診断導線（self_type / voice_type / visual）= “似てる歌手の正体当て”フック＋8タイプ早見リプの2部構成。
+    # ラベル陳列（旧「【声タイプ図鑑】◯◯」）はやめ、好奇心ギャップで止めて診断に送る。
     if pillar == "self_type":
-        types = " / ".join(f"{e}{n}" for n, e, _ in VOICE_TYPES)
-        return {"text": ("あなたの歌声、実はこの8タイプのどれかです。\n\n"
-                         f"{types}\n\n直感でどれっぽい？（プロフィールから無料で診断できます🎤）"),
-                "reply": None, "link": _diagnose_link(app_url)}
+        return {"text": ("あなたの声、歌手なら誰に似てる？🎤\n\n"
+                         "自分の声って、自分が一番わかってない。\n"
+                         "15秒歌うだけで、AIが「似てる歌手」と“声タイプ”を当てます。意外な結果、けっこう出ます。\n\n"
+                         "👇 どんなタイプがあるかはリプに置きました。"),
+                "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "voice_type":
         n, e, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
-        return {"text": (f"【声タイプ図鑑】{n} {e}\n{d}。\n\n"
-                         "あなたは何タイプ？プロフィールのリンクから診断できます🎤"),
-                "reply": None, "link": _diagnose_link(app_url)}
+        return {"text": ("あなたの声、歌手だと誰に似てる？🎤\n\n"
+                         f"たとえば「{d}」——これは診断だと【{n}{e}】タイプ。\n"
+                         "あなたは8つのうちどれ？ AIが似てる歌手まで当てます。\n\n"
+                         "👇 全8タイプの早見はリプに置きました。"),
+                "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "visual":
         return {"text": ("あなたの声は、どのタイプ？🎤\n\n"
-                         "15秒歌うだけで、AIが8タイプ＋似た声質の歌手まで診断。\n"
-                         "結果はそのままシェアできます。\n\n（プロフィールのリンクから無料で🎤）"),
-                "reply": None, "link": _diagnose_link(app_url)}
+                         "15秒歌うだけで、AIが8つの声タイプと「似てる歌手」を診断。\n"
+                         "自分でも気づかない声の個性が見つかります。\n\n"
+                         "👇 8タイプの早見はリプに。結果はそのままシェアできます。"),
+                "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "contrarian":
         # 本投稿=誤解を1行で否定して止める / リプ本体=なぜ違うかの根拠解説
         hook, body = CONTRARIAN[day_index % len(CONTRARIAN)]
@@ -241,4 +260,30 @@ def gemini_twopart_prompt(pillar: str, day_index: int, app_url: str) -> str:
         "下敷き（主旨・情報量・トーンを保つ。より自然に人を惹きつける文に）:\n"
         f"hookの素材: {hook0}\n"
         f"bodyの素材:\n{body0}\n"
+    )
+
+
+def gemini_diagnosis_hook_prompt(pillar: str, day_index: int, app_url: str) -> str:
+    """診断導線（self_type/voice_type/visual）の“本投稿フックだけ”を生成させる指示。
+    早見リプ(cheatsheet_reply)は正本なのでGeminiに触らせず、入口のワクワクだけ磨く。"""
+    base = template_post(pillar, day_index, app_url)["text"]
+    extra = ""
+    if pillar == "voice_type":
+        n, _, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
+        extra = (f"\n今日の主役タイプは【{n}】=「{d}」。この声の“あるある”を一言で描いてから"
+                 "『歌手だと誰だろう？』に繋げると刺さる。タイプ名は出してよいが、図鑑的な陳列にしない。")
+    return (
+        "あなたはAIボイストレーナー『ソラ先生』のSNS担当（人間味のある“中の人”）です。"
+        "X(旧Twitter)の【声タイプ診断】への導線ポストの、**本投稿（フック）だけ**を書きます。\n"
+        "鉄則:\n"
+        "- 1行目は『あなたの声、歌手なら誰に似てる？』のような“自分の正体を知りたくなる問い”で止める"
+        "（好奇心ギャップ＝診断したくなるワクワク）。ラベル陳列・カタログ説明で始めない。\n"
+        "- 最大の答え（似てる歌手＝診断結果）は**見せない**。歌ってみないと分からない、と引っぱる。\n"
+        "- 『15秒歌うだけ』『8タイプ＋似てる歌手を当てる』『結果はシェアできる』のどれかでベネフィットを一言。\n"
+        "- 末尾に『8タイプの早見はリプに置いた』と分かる一文（👇可）。読者にリプを促すのは禁止。\n"
+        "- **URL・リンクは絶対に入れない**（誘導はプロフィール固定）。誇張NG。絵文字1〜3個。全角90〜160字。"
+        f"{extra}\n\n"
+        "下敷き（この主旨・トーンを保ち、より自然で人を惹きつける文に）:\n"
+        f"{base}\n"
+        "出力は本投稿の本文のみ。前置き・説明・URL・ハッシュタグの羅列は不要。"
     )

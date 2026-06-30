@@ -118,7 +118,8 @@ def _budget_check(post_has_link: bool, post_has_reply: bool = False,
 
 def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
     """{text, reply, link} を返す。text=本投稿、reply=リプに置く本体 or None。
-    reply を持つ型（tip/contrarian）は2部構成で生成。無ければテンプレ。"""
+    tip/contrarian は2部構成（フック＋手順本体）で生成。診断導線(self_type/voice_type/visual)は
+    フックだけ生成し早見リプはテンプレ固定。GEMINI_API_KEY 無しなら全型テンプレ。"""
     post = themes.template_post(pillar, day_index, app_url)  # {text, reply, link}
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -127,6 +128,15 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         from google import genai
         client = genai.Client(api_key=api_key)
         model = os.getenv("SNS_LLM_MODEL", "gemini-flash-lite-latest")
+        if pillar in themes.DIAGNOSIS_PILLARS:
+            # 診断導線: フックだけGeminiでワクワク重視にリライト。早見リプ(8タイプの正本)は
+            # テンプレ固定でGeminiに触らせない（型名・並びが診断ページとズレるのを防ぐ）。
+            resp = client.models.generate_content(
+                model=model, contents=themes.gemini_diagnosis_hook_prompt(pillar, day_index, app_url))
+            hook = (resp.text or "").strip()
+            if len(hook) >= 20 and "http" not in hook:
+                return {"text": hook, "reply": post.get("reply"), "link": post.get("link")}
+            return post
         if post.get("reply"):  # 2部構成（本投稿フック＋リプ本体）
             resp = client.models.generate_content(
                 model=model, contents=themes.gemini_twopart_prompt(pillar, day_index, app_url))
