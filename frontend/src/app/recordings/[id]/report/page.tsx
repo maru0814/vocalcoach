@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailedReport, getReport, startReport } from "@/lib/api";
 import UpgradeModal from "@/components/UpgradeModal";
+import { AppHeader } from "@/components/AppHeader";
 
 type Props = { params: { id: string } };
 
@@ -92,117 +93,147 @@ export default function ReportPage({ params }: Props) {
   }, [status, load]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">詳細添削レポート</h1>
-        <Link className="text-blue-700 underline" href={`/recordings/${params.id}`}>
-          評価詳細へ戻る
-        </Link>
-      </div>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-      {status === "loading" || status === "generating" ? (
-        <div className="space-y-3 rounded bg-white p-5 shadow">
-          <p className="text-sm text-gray-700">
-            ソラ先生が聴き込んでいます…（最大3分ほどお待ちください）🎧
-          </p>
-          <div className="h-4 w-3/4 animate-pulse rounded bg-gray-200" />
-          <div className="h-4 w-2/3 animate-pulse rounded bg-gray-200" />
-          <div className="h-4 w-1/2 animate-pulse rounded bg-gray-200" />
+    <div className="bg-studio min-h-[100dvh]">
+      <AppHeader />
+      <div className="mx-auto max-w-2xl space-y-4 px-5 py-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-black text-slate-800">詳細添削レポート</h1>
+          <Link className="text-sm font-medium text-slate-500 hover:text-brand-600" href={`/recordings/${params.id}`}>
+            ← 評価へ戻る
+          </Link>
         </div>
-      ) : null}
+        {error ? (
+          <div className="glass space-y-3 rounded-3xl p-5 shadow-card">
+            <p className="text-sm text-rose-700">{error}</p>
+            <button
+              className="rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
+              onClick={load}
+            >
+              再試行する
+            </button>
+          </div>
+        ) : null}
 
-      {status === "failed" ? (
-        <div className="space-y-3 rounded bg-white p-5 shadow">
-          <p className="text-sm text-gray-700">
-            レポートの生成に時間がかかっています。少し時間をおいて、もう一度お試しください。
-          </p>
-          <button
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white"
-            onClick={generate}
-          >
-            再試行する
-          </button>
-        </div>
-      ) : null}
+        {status === "loading" || status === "generating" ? (
+          <div className="glass space-y-3 rounded-3xl p-5 shadow-card">
+            <p className="text-sm text-slate-700">
+              ソラ先生が聴き込んでいます…（最大3分ほどお待ちください）🎧
+            </p>
+            <div className="h-4 w-3/4 animate-pulse rounded bg-slate-200" />
+            <div className="h-4 w-2/3 animate-pulse rounded bg-slate-200" />
+            <div className="h-4 w-1/2 animate-pulse rounded bg-slate-200" />
+          </div>
+        ) : null}
 
-      {status === "forbidden" ? (
-        <div className="space-y-4 rounded bg-white p-5 shadow">
-          {/* S-03 ロックカード: レポートの見出しだけ薄く見せる */}
-          <div className="relative">
-            <ul className="space-y-2 text-sm text-gray-300">
-              <li>🎯 まずはここから（最優先ポイント）</li>
-              <li>📍 箇所別の指摘</li>
-              <li>🗓 7日間練習メニュー（1日10分）</li>
-              <li>✅ 次の録音でチェックすること</li>
-            </ul>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-2xl">🔒</span>
+        {status === "failed" ? (
+          <div className="glass space-y-3 rounded-3xl p-5 shadow-card">
+            <p className="text-sm text-slate-700">
+              レポートの生成に時間がかかっています。少し時間をおいて、もう一度お試しください。
+            </p>
+            <div className="flex gap-2">
+              <button
+                className="rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
+                onClick={generate}
+              >
+                再試行する
+              </button>
+              <Link
+                className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 transition active:scale-95"
+                href={`/recordings/${params.id}`}
+              >
+                評価に戻る
+              </Link>
             </div>
           </div>
-          <p className="text-sm text-gray-700">
-            詳細添削レポートはプレミアムの機能です。録音ごとに「どこで・何を・どう直すか」を確認できます。
-          </p>
-          <button
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white"
-            onClick={() => setShowUpgrade(true)}
-          >
-            プレミアムで添削を見る
-          </button>
-        </div>
-      ) : null}
+        ) : null}
 
-      {showUpgrade ? <UpgradeModal source="report" onClose={() => setShowUpgrade(false)} /> : null}
-
-      {status === "ready" && report ? (
-        <div className="space-y-4">
-          <section className="space-y-2 rounded bg-white p-5 shadow">
-            <h2 className="font-semibold">🎯 まずはここから（最優先ポイント）</h2>
-            <p className="rounded bg-amber-50 p-4 text-sm leading-relaxed">{report.priority}</p>
-          </section>
-
-          <section className="space-y-2 rounded bg-white p-5 shadow">
-            <h2 className="font-semibold">📍 箇所別の指摘</h2>
-            {report.issues.map((issue, i) => (
-              <div key={i} className="rounded border border-gray-200 p-3 text-sm">
-                {issue.time ? <p className="font-mono text-xs text-gray-500">{issue.time}</p> : null}
-                <p>{issue.observation}</p>
-                <p className="mt-1 text-gray-600">{issue.cause}</p>
+        {status === "forbidden" ? (
+          <div className="glass space-y-4 rounded-3xl p-5 shadow-card">
+            {/* S-03 ロックカード: レポートの見出しだけ薄く見せる */}
+            <div className="relative">
+              <ul className="space-y-2 text-sm text-slate-300">
+                <li>🎯 まずはここから（最優先ポイント）</li>
+                <li>📍 箇所別の指摘</li>
+                <li>🗓 7日間練習メニュー（1日10分）</li>
+                <li>✅ 次の録音でチェックすること</li>
+              </ul>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-2xl">🔒</span>
               </div>
-            ))}
-          </section>
+            </div>
+            <p className="text-sm text-slate-700">
+              詳細添削レポートはプレミアムの機能です。録音ごとに「どこで・何を・どう直すか」を確認できます。
+            </p>
+            {/* 行き止まりにしない: アップグレードと「戻る」を両方出す（docs/35 課題3） */}
+            <div className="flex gap-2">
+              <button
+                className="rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
+                onClick={() => setShowUpgrade(true)}
+              >
+                プレミアムで添削を見る
+              </button>
+              <Link
+                className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 transition active:scale-95"
+                href={`/recordings/${params.id}`}
+              >
+                評価に戻る
+              </Link>
+            </div>
+          </div>
+        ) : null}
 
-          <section className="space-y-2 rounded bg-white p-5 shadow">
-            <h2 className="font-semibold">🗓 7日間練習メニュー（1日10分）</h2>
-            <ul className="space-y-2">
-              {report.practice_menu.map((day, i) => (
-                <li key={day.day} className="flex items-start gap-3 text-sm">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={checks[i] ?? false}
-                    onChange={() => toggle(i)}
-                    aria-label={`Day${day.day} を完了にする`}
-                  />
-                  <div className={checks[i] ? "text-gray-400 line-through" : ""}>
-                    <p className="font-medium">Day{day.day}: {day.title}</p>
-                    <p className="text-gray-600">{day.steps}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
+        {showUpgrade ? <UpgradeModal source="report" onClose={() => setShowUpgrade(false)} /> : null}
 
-          <section className="space-y-2 rounded bg-white p-5 shadow">
-            <h2 className="font-semibold">✅ 次の録音でチェックすること</h2>
-            <ul className="list-inside list-disc text-sm">
-              {report.next_checks.map((c, i) => (
-                <li key={i}>{c}</li>
+        {status === "ready" && report ? (
+          <div className="space-y-4">
+            <section className="glass space-y-2 rounded-3xl p-5 shadow-card">
+              <h2 className="font-bold text-slate-800">🎯 まずはここから（最優先ポイント）</h2>
+              <p className="rounded-2xl bg-amber-50 p-4 text-sm leading-relaxed text-slate-700">{report.priority}</p>
+            </section>
+
+            <section className="glass space-y-2 rounded-3xl p-5 shadow-card">
+              <h2 className="font-bold text-slate-800">📍 箇所別の指摘</h2>
+              {report.issues.map((issue, i) => (
+                <div key={i} className="rounded-2xl border border-slate-200 p-3 text-sm">
+                  {issue.time ? <p className="font-mono text-xs text-slate-400">{issue.time}</p> : null}
+                  <p className="text-slate-700">{issue.observation}</p>
+                  <p className="mt-1 text-slate-500">{issue.cause}</p>
+                </div>
               ))}
-            </ul>
-          </section>
-        </div>
-      ) : null}
+            </section>
+
+            <section className="glass space-y-2 rounded-3xl p-5 shadow-card">
+              <h2 className="font-bold text-slate-800">🗓 7日間練習メニュー（1日10分）</h2>
+              <ul className="space-y-2">
+                {report.practice_menu.map((day, i) => (
+                  <li key={day.day} className="flex items-start gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={checks[i] ?? false}
+                      onChange={() => toggle(i)}
+                      aria-label={`Day${day.day} を完了にする`}
+                    />
+                    <div className={checks[i] ? "text-slate-400 line-through" : "text-slate-700"}>
+                      <p className="font-bold">Day{day.day}: {day.title}</p>
+                      <p className="text-slate-500">{day.steps}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="glass space-y-2 rounded-3xl p-5 shadow-card">
+              <h2 className="font-bold text-slate-800">✅ 次の録音でチェックすること</h2>
+              <ul className="list-inside list-disc text-sm text-slate-700">
+                {report.next_checks.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </section>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
