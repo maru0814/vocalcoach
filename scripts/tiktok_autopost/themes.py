@@ -148,7 +148,15 @@ def hook_pattern(hook: str) -> str:
 
 
 def _select_tip_index(day_index: int) -> int:
-    """実績があれば autotune が勝ちパターンのネタを選ぶ。無ければ曜日ローテに自動フォールバック。"""
+    """実績があれば autotune が勝ちパターンのネタを選ぶ。無ければ曜日ローテに自動フォールバック。
+
+    A/Bテスト等でネタを固定したい時は環境変数 TIKTOK_TIP_INDEX=<番号> で上書きできる
+    （例: TIKTOK_TIP_INDEX=0 で TIPS[0]=高音の力み を必ず選ぶ）。
+    """
+    import os
+    ov = os.getenv("TIKTOK_TIP_INDEX")
+    if ov is not None and ov.strip().lstrip("-").isdigit():
+        return int(ov) % len(TIPS)
     try:
         import autotune
         idx = autotune.pick_tip_index(day_index)
