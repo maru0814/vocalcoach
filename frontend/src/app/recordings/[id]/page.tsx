@@ -45,7 +45,7 @@ export default function RecordingDetailPage({ params }: Props) {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-black text-slate-800">評価詳細</h1>
           <Link className="text-sm font-medium text-slate-500 hover:text-brand-600" href="/recordings">
-            ← 一覧へ戻る
+            ← 評価アーカイブへ
           </Link>
         </div>
 

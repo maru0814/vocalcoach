@@ -44,14 +44,30 @@ export default function RecordingsPage() {
       <AppHeader />
       <div className="mx-auto max-w-3xl space-y-5 px-5 py-6">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-xl font-black text-slate-800">評価履歴</h1>
+          <h1 className="text-xl font-black text-slate-800">評価アーカイブ</h1>
+          {/* 単発アップロードは残すが補助に格下げ（主役は coach・docs/49 SCR-IA-3） */}
           <Link
-            className="rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 transition active:scale-95"
             href="/recordings/new"
           >
-            ＋ 新規アップロード
+            ＋ 単発アップロード
           </Link>
         </div>
+
+        {/* coach 誘導バナー（圧の弱い補助導線・docs/49） */}
+        <Link
+          href="/coach"
+          className="glass flex items-center gap-3 rounded-2xl p-4 shadow-card ring-1 ring-brand-100 transition hover:shadow-soft"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-gradient text-2xl text-white shadow-soft">
+            🎤
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold text-slate-800">録音は「レッスン」からどうぞ</div>
+            <div className="text-xs text-slate-500">会話しながらFBをもらえます。ここは過去の評価を見返す場所です。</div>
+          </div>
+          <span className="text-lg font-bold text-brand-600">→</span>
+        </Link>
 
         {/* loading */}
         {status === "loading" && (
@@ -84,13 +100,13 @@ export default function RecordingsPage() {
             <div className="animate-floaty mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-gradient text-3xl shadow-soft">
               🎶
             </div>
-            <p className="font-bold text-slate-700">まだ録音がありません</p>
-            <p className="mt-1 text-sm text-slate-500">歌の録音をアップロードすると、ここに評価が並びます。</p>
+            <p className="font-bold text-slate-700">まだ評価がありません</p>
+            <p className="mt-1 text-sm text-slate-500">まずは「レッスン」で1曲歌うと、ここに評価が並びます。</p>
             <Link
-              href="/recordings/new"
+              href="/coach"
               className="mt-4 inline-flex rounded-full bg-brand-gradient px-6 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
             >
-              最初の録音をアップロード →
+              レッスンを始める →
             </Link>
           </div>
         )}
