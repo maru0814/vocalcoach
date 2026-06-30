@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PREMIUM_PRICE_LEGAL } from "@/lib/pricing";
 
 export const metadata: Metadata = {
   title: "特定商取引法に基づく表記",
@@ -54,7 +55,7 @@ export default function TokushohoPage() {
         </Row>
 
         <Row label="販売価格">
-          プレミアムプラン: 月額 800円（消費税込）
+          プレミアムプラン: {PREMIUM_PRICE_LEGAL}
           <br />
           無料プランは0円でご利用いただけます。
         </Row>

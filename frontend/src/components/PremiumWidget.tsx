@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { BillingMe, getBillingMe } from "@/lib/api";
 import UpgradeModal from "@/components/UpgradeModal";
+import { PREMIUM_PRICE_JPY, PREMIUM_PRICE_LABEL } from "@/lib/pricing";
 
 /**
  * プレミアム導線ウィジェット（ヘッダー右側に置く想定）。
- * - 無料ユーザー: 残り回数バッジ ＋「プレミアム ¥800/月」ボタン
+ * - 無料ユーザー: 残り回数バッジ ＋「プレミアム {PREMIUM_PRICE_LABEL}」ボタン
  * - プレミアム: 「✓ プレミアム」バッジのみ
  * - billing無効 / 取得失敗: 何も出さない（ちらつき・誤表示を防ぐ）
  */
@@ -56,9 +57,9 @@ export function PremiumWidget() {
         <button
           className="rounded-full bg-brand-gradient px-4 py-1.5 text-sm font-bold text-white shadow-soft transition hover:opacity-95 active:scale-95"
           onClick={() => setShowUpgrade(true)}
-          aria-label="プレミアムプランにアップグレード（月額800円）"
+          aria-label={`プレミアムプランにアップグレード（月額${PREMIUM_PRICE_JPY}円）`}
         >
-          プレミアム <span className="opacity-90">¥800/月</span>
+          プレミアム <span className="opacity-90">{PREMIUM_PRICE_LABEL}</span>
         </button>
       </div>
 
