@@ -35,7 +35,7 @@ C_PINK = (236, 72, 153)     # #ec4899
 _EYEBROW = {
     "tip": "今日のボイトレ",
     "contrarian": "ボイトレの誤解",
-    "voice_type": "声タイプ図鑑",
+    "voice_type": "声タイプ診断",
     "self_type": "声タイプ診断",
     "visual": "声タイプ診断",
 }
