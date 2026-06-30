@@ -3,9 +3,18 @@ import time
 
 from sqlalchemy.orm import Session
 
+from app.models.coaching import ChatMessage, ChatSession
 from app.models.evaluation import Evaluation
 from app.models.recording import Recording
-from app.services.billing_service import increment_analysis_count
+from app.services.billing_service import analysis_allowed, increment_analysis_count
+
+
+class NoCoachAudioError(Exception):
+    """昇格対象の音声メッセージがレッスンに無い（409 NO_AUDIO）。"""
+
+
+class AnalysisLimitReachedError(Exception):
+    """無料プランの月次解析上限に達している（402 LIMIT_REACHED）。"""
 
 
 def compute_scores_deterministically(recording_id: int) -> dict[str, int]:
@@ -88,4 +97,53 @@ def evaluate_recording(db: Session, recording_id: int) -> None:
     recording.status = "failed"
     db.add(recording)
     db.commit()
+
+
+def promote_coach_recording(db: Session, session: ChatSession, user_id: int) -> Recording:
+    """coachレッスンの最新録音を Recording に昇格し、評価まで作る（docs/50 T-2）。
+
+    既存の評価→詳細添削レポートのパイプラインに乗せるための橋渡し。
+    冪等: 同じ音声メッセージ由来の Recording があればそれを返す（二重作成・上限二重消費を防ぐ）。
+    """
+    last_audio = (
+        db.query(ChatMessage)
+        .filter(
+            ChatMessage.session_id == session.id,
+            ChatMessage.type == "audio",
+            ChatMessage.audio_path.isnot(None),
+        )
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    if last_audio is None or not last_audio.audio_path:
+        raise NoCoachAudioError()
+
+    # 冪等: 既に昇格済みならそのまま返す。
+    existing = (
+        db.query(Recording).filter(Recording.source_message_id == last_audio.id).first()
+    )
+    if existing is not None:
+        return existing
+
+    # 新規昇格は1解析としてカウント対象（上限ゲート）。
+    if not analysis_allowed(db, user_id):
+        raise AnalysisLimitReachedError()
+
+    recording = Recording(
+        user_id=user_id,
+        title=session.song_title or f"レッスン #{session.id} の録音",
+        note=None,
+        audio_path=last_audio.audio_path,
+        status="uploaded",
+        source_session_id=session.id,
+        source_message_id=last_audio.id,
+    )
+    db.add(recording)
+    db.commit()
+    db.refresh(recording)
+
+    # 決定論的評価（既存パイプライン再利用）。完了後 status=completed / 上限カウント。
+    evaluate_recording(db, recording.id)
+    db.refresh(recording)
+    return recording
 
