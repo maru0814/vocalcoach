@@ -3,57 +3,99 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getRecording, RecordingDetail } from "@/lib/api";
+import { AppHeader } from "@/components/AppHeader";
 
 type Props = { params: { id: string } };
 
+function ScoreRow({ label, value }: { label: string; value: number | null | undefined }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2">
+      <span className="text-sm text-slate-500">{label}</span>
+      <span className="font-black text-slate-800">{value ?? "—"}</span>
+    </div>
+  );
+}
+
 export default function RecordingDetailPage({ params }: Props) {
   const [data, setData] = useState<RecordingDetail | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRecording(params.id);
-        setData(res);
+        setData(await getRecording(params.id));
+        setStatus("ready");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "詳細取得に失敗しました");
+        const msg = err instanceof Error ? err.message : "";
+        setError(
+          !msg || /failed to fetch|networkerror/i.test(msg)
+            ? "評価を読み込めませんでした。通信状態を確かめて、もう一度お試しください。"
+            : msg,
+        );
+        setStatus("error");
       }
     })();
   }, [params.id]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">評価詳細</h1>
-        <Link className="text-blue-700 underline" href="/recordings">
-          一覧へ戻る
-        </Link>
-      </div>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {data ? (
-        <div className="space-y-3 rounded bg-white p-5 shadow">
-          <p className="font-semibold">{data.title}</p>
-          <p className="text-sm text-gray-600">ステータス: {data.status}</p>
-          <p className="text-sm text-gray-600">メモ: {data.note || "-"}</p>
-          {data.evaluation ? (
-            <div className="space-y-1">
-              <p>音程: {data.evaluation.pitch_score}</p>
-              <p>リズム: {data.evaluation.rhythm_score}</p>
-              <p>表現: {data.evaluation.expression_score}</p>
-              <p>総合: {data.evaluation.total_score}</p>
-              <p className="rounded bg-gray-100 p-3 text-sm">{data.evaluation.feedback_text}</p>
-              <Link
-                className="inline-block rounded bg-blue-600 px-4 py-2 text-sm text-white"
-                href={`/recordings/${params.id}/report`}
-              >
-                詳細添削を見る
-              </Link>
-            </div>
-          ) : (
-            <p>まだ評価が完了していません。</p>
-          )}
+    <div className="bg-studio min-h-[100dvh]">
+      <AppHeader />
+      <div className="mx-auto max-w-2xl space-y-4 px-5 py-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-black text-slate-800">評価詳細</h1>
+          <Link className="text-sm font-medium text-slate-500 hover:text-brand-600" href="/recordings">
+            ← 一覧へ戻る
+          </Link>
         </div>
-      ) : null}
+
+        {status === "loading" && <div className="shimmer h-48 rounded-3xl bg-white/60" />}
+
+        {status === "error" && (
+          <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>
+        )}
+
+        {status === "ready" && data && (
+          <div className="glass space-y-4 rounded-3xl p-5 shadow-card">
+            <div>
+              <p className="text-lg font-black text-slate-800">{data.title}</p>
+              <p className="text-xs text-slate-400">メモ: {data.note || "—"}</p>
+            </div>
+
+            {data.evaluation ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <ScoreRow label="音程" value={data.evaluation.pitch_score} />
+                  <ScoreRow label="リズム" value={data.evaluation.rhythm_score} />
+                  <ScoreRow label="表現" value={data.evaluation.expression_score} />
+                  <ScoreRow label="総合" value={data.evaluation.total_score} />
+                </div>
+                <p className="rounded-2xl bg-brand-50 p-4 text-sm leading-relaxed text-slate-700">
+                  {data.evaluation.feedback_text}
+                </p>
+
+                {/* FB直後（感情のピーク・US-02）に「次にできること」を出す（docs/35 課題3） */}
+                <div className="rounded-2xl border border-brand-100 bg-white/70 p-4">
+                  <p className="text-sm font-bold text-slate-700">次にできること 🎯</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    この録音について「どこで・何を・どう直すか」を、7日間の練習メニューつきで詳しく見られます。
+                  </p>
+                  <Link
+                    className="mt-3 inline-flex rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
+                    href={`/recordings/${params.id}/report`}
+                  >
+                    詳細添削レポートを見る →
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                まだ評価が完了していません。少し待ってから開き直してください。
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
