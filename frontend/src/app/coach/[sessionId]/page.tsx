@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   CoachMessage,
   getCoachSession,
+  LimitReachedError,
+  promoteCoachRecording,
   renameCoachSession,
   sendCoachAction,
   sendCoachAudio,
@@ -16,6 +18,7 @@ import { MessageBubble } from "@/components/coach/Bubbles";
 import { PhaseStepper } from "@/components/coach/PhaseStepper";
 import { Composer } from "@/components/coach/Composer";
 import { CoachAvatar, COACH_NAME, COACH_ROLE } from "@/components/character/Coach";
+import UpgradeModal from "@/components/UpgradeModal";
 
 export default function CoachChatPage() {
   const params = useParams();
@@ -29,8 +32,14 @@ export default function CoachChatPage() {
   const [busyLabel, setBusyLabel] = useState("考えています");
   const [error, setError] = useState<string | null>(null);
   const [hasReference, setHasReference] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const refInputRef = useRef<HTMLInputElement | null>(null);
+  const router = useRouter();
+
+  // この録音を詳細添削（課金資産）へ繋ぐ導線は、歌の録音が1つ以上あるときだけ出す（docs/50 T-2）。
+  const hasRecording = messages.some((m) => m.role === "user" && m.type === "audio");
 
   useEffect(() => {
     (async () => {
@@ -137,6 +146,22 @@ export default function CoachChatPage() {
     }
   }
 
+  async function handleDetailedReport() {
+    setPromoting(true);
+    setError(null);
+    try {
+      const res = await promoteCoachRecording(sessionId);
+      router.push(`/recordings/${res.recording_id}/report`);
+    } catch (e) {
+      setPromoting(false);
+      if (e instanceof LimitReachedError) {
+        setShowUpgrade(true); // 上限到達 → アップグレード導線
+      } else {
+        setError(parseError(e));
+      }
+    }
+  }
+
   if (loading) {
     return (
       <div className="bg-studio flex h-[100dvh] items-center justify-center">
@@ -192,6 +217,21 @@ export default function CoachChatPage() {
         />
       </div>
 
+      {/* 詳細添削（課金資産）への導線。歌の録音があるときだけ（docs/50 T-2） */}
+      {hasRecording && (
+        <div className="flex items-center gap-2 border-b border-white/40 bg-white/40 px-3 py-1.5">
+          <span className="text-xs text-slate-500">🎧 この録音を「どこで・何を・どう直すか」まで詳しく</span>
+          <button
+            type="button"
+            disabled={promoting}
+            onClick={handleDetailedReport}
+            className="ml-auto shrink-0 rounded-full bg-brand-gradient px-3 py-1.5 text-[11px] font-bold text-white shadow-soft transition active:scale-95 disabled:opacity-50"
+          >
+            {promoting ? "準備中…" : "詳細添削する（プレミアム）"}
+          </button>
+        </div>
+      )}
+
       {/* メッセージ */}
       <div className="scroll-soft flex-1 space-y-4 overflow-y-auto px-3 py-4">
         {messages.map((m, i) => (
@@ -239,6 +279,8 @@ export default function CoachChatPage() {
         onSendText={handleText}
         onSendAudio={handleAudio}
       />
+
+      {showUpgrade && <UpgradeModal source="report" onClose={() => setShowUpgrade(false)} />}
     </div>
   );
 }
