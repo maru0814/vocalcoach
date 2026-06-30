@@ -23,6 +23,20 @@ VOICE_TYPES = [
     ("Moody",      "🌙", "息まじりの深い裏声。しっとり包み込む大人の声"),
 ]
 
+# 各タイプの「声質が近い例」アーティスト。
+# 正本: backend/app/coaching/voice_coach.py の VOICE_TYPES[].artists。
+# snsは独立コンテナでbackendをimportしないためここにミラー。**変更時は両方を更新する**。
+ARTISTS_BY_ID = {
+    "rock":       {"female": ["LiSA", "YUKI"],            "male": ["稲葉浩志(B'z)", "優里"]},
+    "groovy":     {"female": ["Superfly", "あいみょん"],   "male": ["玉置浩二", "鈴木雅之"]},
+    "pop":        {"female": ["aiko", "いきものがかり"],   "male": ["北村匠海", "マカロニえんぴつ"]},
+    "mysterious": {"female": ["宇多田ヒカル", "MISIA"],    "male": ["米津玄師", "藤井風"]},
+    "crystal":    {"female": ["西野カナ", "ACAね(ずとまよ)"], "male": ["藤原聡(髭男)", "Taka(ONE OK ROCK)"]},
+    "dramatic":   {"female": ["Aimer", "ヨルシカ(suis)"],  "male": ["星野源", "菅田将暉"]},
+    "whisper":    {"female": ["幾田りら", "miwa"],         "male": ["小田和正", "三浦大知"]},
+    "moody":      {"female": ["Uru", "中島美嘉"],          "male": ["平井堅", "秦基博"]},
+}
+
 # 実践Tips（高音・ミックス中心の“保存される長文”）。番号付きの手順で再現性を持たせる。
 # これ自体が完成形に近い下敷き。Geminiはこのトーンと情報量を保ったままリライトする。
 TIPS = [

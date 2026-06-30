@@ -30,11 +30,11 @@ cases = {
         "character": CHAR},
     # 診断導線（キャラ無し・画像ベース）。横溢れせず描画されること。
     "diagnosis_hero": {"type": "diagnosis", "title": "【声タイプ図鑑】Dramatic",
-        "spotlight": {"image": CHAR, "desc": LONG},
+        "spotlight": {"image": CHAR, "desc": LONG, "artists": "声質が近い例：♀ " + LONG + " ／ ♂ " + LONG},
         "cta": {"main": "あなたは何タイプ？プロフィールから無料で診断🎤", "sub": ""}},
     "diagnosis_gallery": {"type": "diagnosis", "title": LONG, "subtitle": LONG,
-        "types": [{"name": "Mysterious" + str(i), "image": CHAR, "featured": i == 5}
-                  for i in range(8)],
+        "types": [{"name": "Mysterious" + str(i), "image": CHAR, "featured": i == 5,
+                   "artists": LONG} for i in range(8)],
         "cta": {"main": "プロフィールのリンクから無料で診断🎤", "sub": "15秒歌うだけ"}},
 }
 
