@@ -62,3 +62,10 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   docker compose -f docker-compose.prod.yml --env-file .env exec -T sns sh -c "tail -3 /data/pending_queue.jsonl"
   ```
 
+
+## 事例: 図解画像対応のデプロイ失敗と復旧（2026-06-30）
+- **症状**: PR#103 マージ後の自動デプロイ（Deploy to VPS）が失敗。`set -e` で sns ビルド段階(remote_deploy.sh L31)で停止し、backend/frontend は再ビルドされず旧 sns コンテナが稼働継続＝**本番は無停止**（`/sns/healthz` 200 のまま）。
+- **原因**: sns Dockerfile の `RUN python -m playwright install --with-deps chromium` が exit 100。① `python:3.12-slim` の既定が Debian **trixie**（Playwright非対応）でOS依存解決が ubuntu20.04 にフォールバックして失敗。② 直前に `rm -rf /var/lib/apt/lists/*` 済みで apt インデックスが無く `apt-get install` が対象を見つけられない。
+- **修正(PR#105)**: ベースを `python:3.12-slim-bookworm` に固定し、フォント＋`playwright install --with-deps chromium` を同一レイヤーにまとめ apt インデックスは導入後に削除。ローカル `docker build` 成功(2.6GB)＋コンテナ内で図解レンダリング・日本語表示を確認。
+- **教訓**: Playwright 同梱イメージは**ベースのDebianコードネームを固定**する（slim既定はtestingに動くことがある）。`--with-deps` を使うレイヤーでは apt インデックスを残す。
+- **LINE画像プレビュー有効化**: VPS `scripts/sns_autopost/.env` に `SNS_PUBLIC_BASE_URL=https://sora-vocal-ai.duckdns.org` を追記 → `docker compose ... up -d --force-recreate sns`。Caddyの `/sns/*` が `GET /sns/img/{name}` も配信（公開URLで取得 200 image/png 確認済み）。
