@@ -75,3 +75,29 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - 検証: ローカル `docker build` 再検証OK → コンテナ内で voice_type/self_type 描画（絵文字・タイプ画像・日本語OK）。PR#108 マージ → 自動デプロイ green。
 - 本番実証: 本番コンテナで voice_type 図解を生成 → `/sns/img` 公開URLで **200 image/png(1.3MB)**、Dramaticバナーの図鑑が出ることを確認。
 - 教訓: 図解で絵文字を使うなら Chromium に `fonts-noto-color-emoji` が要る（無いと豆腐）。タイプ別の作り込み画像は既存frontendアセットを sns ビルドコンテキストに同梱して使い回すのが安定（AI生成不要・日本語崩れ無し）。
+
+## DBマイグレーションのデプロイ（スキーマ変更を含むPRの段取り）
+**結論: スキーマ変更は自動で適用される。手動 alembic は不要。**
+- 仕組み: `backend/Dockerfile.prod` の CMD が `alembic upgrade head && uvicorn ...`。
+  `remote_deploy.sh` は migration を直接叩かないが、`backend/` が変わると `up -d --build backend`
+  で**コンテナ再起動時に upgrade head が走る**。本番DBは永続ボリュームの SQLite（`/data/app.db`）。
+- **失敗時の挙動**: migration が失敗すると CMD が落ちて uvicorn が起動せず、backend が上がらない＝
+  **サイト/API が 502**。つまり「デプロイ後に 200 が返る」こと自体が migration 成功の証拠。
+- **デプロイ後の必須確認**（スキーマ変更PR時）:
+  ```bash
+  curl -sI https://sora-vocal-ai.duckdns.org/ | head -1              # 200
+  curl -s -o /dev/null -w "%{http_code}\n" https://sora-vocal-ai.duckdns.org/api/v1/voice-type/stats  # 200 = backend起動OK=migration適用済
+  ```
+- **事前の備え**: migration は手元で **本番と同じ SQLite** に対し `alembic upgrade head` →
+  `downgrade -1` → 再 `upgrade` の往復を通しておく（add_column＋unique index は SQLite ALTER
+  制約に注意。FK列直add不可なので素のInteger＋unique indexで張る）。
+
+## 事例: デザイン課題1〜4＋coach昇格(T-2) のデプロイ（2026-06-30）
+- 変更: PR#107(課題1〜4・UI)→ green。PR#111(T-2: recordings に `source_session_id/source_message_id`
+  追加＝**スキーマ変更**, migration `c7d8e9f0a1b2`)→ backend再ビルドで起動時に upgrade head 適用。
+  PR#113 はドキュメントのみ（`paths-ignore` でデプロイ非対象＝正常）。
+- 本番実証: マージ→自動デプロイ green。`/`=200、`/api/v1/voice-type/stats`=200（=migration成功）、
+  新規 `POST /coach/sessions/{id}/promote-recording`（無認証）=**401**（404でない＝新ルート反映）、
+  `POST /voice-type/analyze`（無認証）=**400**（401でない＝匿名トライアル稼働）。
+- 教訓: スキーマ変更PRでも段取りは「マージ→自動デプロイ→上記curlで200を確認」で完結。手動SSHは
+  502になった時だけ（その場合 `docker compose ... logs backend` で alembic のエラーを見る）。
