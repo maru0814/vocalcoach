@@ -204,5 +204,38 @@ class VideoTopicRouting(unittest.TestCase):
         self.assertIn("http", text)
 
 
+class CoachToolsAndScrub(unittest.TestCase):
+    """ソラ先生ツール化（docs/44）の決定論部分の契約（LLM非依存）。"""
+
+    def test_find_reference_video_maps_edge_to_closure(self):
+        from app.coaching import tools
+        for topic in ["エッジボイス", "ボーカルフライ", "声帯の閉じ"]:
+            r = tools.find_reference_video(topic)
+            self.assertTrue(r["found"], topic)
+            self.assertIn("声帯の閉じ", r["task_label"])
+            self.assertTrue(r["video_url"].startswith("http"))
+            self.assertIn(r["video_url"], tools.CATALOG_VIDEO_URLS)
+
+    def test_find_reference_video_unmapped_is_found_false(self):
+        from app.coaching import tools
+        self.assertEqual(tools.find_reference_video("宇宙人の言語xyz"), {"found": False})
+
+    def test_scrub_foreign_urls_keeps_catalog_removes_fake(self):
+        from app.coaching import tools
+        real = next(iter(tools.CATALOG_VIDEO_URLS))
+        text = f"本物 {real} と 偽物 https://youtu.be/FAKE99999 です"
+        out = llm._scrub_foreign_urls(text)
+        self.assertIn(real, out)
+        self.assertNotIn("FAKE99999", out)
+
+    def test_wants_reference_detection(self):
+        # 参考例を求める言い回しは True
+        for t in ["良いお手本ない？", "良い例ある？", "参考になる動画は？", "見本が欲しい"]:
+            self.assertTrue(llm._wants_reference(t), t)
+        # 普通の質問・原曲URLは False
+        for t in ["具体的にどう練習すればいいの？", "https://youtu.be/abc これが原曲です"]:
+            self.assertFalse(llm._wants_reference(t), t)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

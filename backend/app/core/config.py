@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     # 直近何件の会話履歴を文脈として渡すか
     llm_history_turns: int = 12
 
+    # --- ソラ先生ツール化（docs/44）。ONでチャット返答を function calling 経由にし、
+    # 動画リンク等の"事実"はカタログの実データだけをツールで供給する（捏造防止＋自然会話）。
+    coach_tools_enabled: bool = True
+    # ツール往復の最大回数（暴走・レイテンシ防止）
+    coach_tool_loop_max: int = 2
+
     # --- ゼロベース個人最適FB（docs/43）。既定OFF。ONにするまで本番挙動は不変 ---
     # 録音FBを「カタログ選択」から「証拠＋生音声を聴いて推論生成」へ切替える経路の有効化。
     enable_zero_base_fb: bool = False

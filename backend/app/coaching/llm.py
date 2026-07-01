@@ -603,6 +603,125 @@ def _complete(contents, timeout_sec: Optional[float] = None,
         return None
 
 
+# 「お手本／見本／動画／参考／実演／良い例」など"参考例が欲しい"の広めの検出。
+# ここに引っかかったら find_reference_video を強制呼び出しさせる（flash-lite は
+# 自発的なツール呼び出しが弱く「動画を探しますね」と言うだけで終わる事故があるため）。
+_REFERENCE_HINTS = [
+    "動画", "ビデオ", "見本", "手本", "お手本", "実演", "やり方の映像",
+    "参考", "良い例", "いい例", "例ある", "例はある", "例が欲", "例が知",
+    "聴きたい", "聴かせ", "聞きたい", "聞かせ", "どんな声", "どんな感じの声",
+]
+
+
+def _wants_reference(text: str) -> bool:
+    """参考例（動画・お手本）を求めていそうなら True（ツール強制呼び出しの判定）。
+
+    URL（原曲リンク）を含む場合は原曲指定なので対象外。誤検出しても実害は小さい
+    （ツールが found:false を返すだけで、モデルは自然文で答える）。
+    """
+    if "http://" in text or "https://" in text:
+        return False
+    return any(k in text for k in _REFERENCE_HINTS)
+
+
+def _complete_with_tools(contents, force_tool: bool = False) -> Optional[str]:
+    """ツール（function calling）を許可して Gemini を呼び、最終テキストを返す（docs/44）。
+
+    force_tool=True の初回は mode=ANY で find_reference_video を必ず呼ばせる。
+    モデルがツールを要求したら実行して結果を返し、テキストが得られるまで最大
+    settings.coach_tool_loop_max 回まわす。失敗・SDK未導入・キー未設定時は None。
+    """
+    if not settings.llm_enabled:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception:  # pragma: no cover - SDK 未導入環境
+        return None
+    from app.coaching import tools as coach_tools
+    try:
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.llm_timeout_sec * 1000)),
+        )
+        tool = types.Tool(function_declarations=[
+            types.FunctionDeclaration(**coach_tools.FIND_REFERENCE_VIDEO_DECL)
+        ])
+
+        def _config(mode: Optional[str]):
+            tool_config = None
+            if mode:
+                tool_config = types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(
+                        mode=mode, allowed_function_names=["find_reference_video"],
+                    )
+                )
+            return types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                max_output_tokens=settings.llm_max_tokens,
+                temperature=0.3,
+                tools=[tool],
+                tool_config=tool_config,
+            )
+
+        convo = list(contents)
+        last_text = None
+        found_video_url = None  # ツールが返した実在動画URL（本文に確実に載せるため保持）
+        for _i in range(max(1, settings.coach_tool_loop_max)):
+            # 初回だけ強制（ANY）。以降は AUTO に戻して自然文を生成させる。
+            cfg = _config("ANY") if (force_tool and _i == 0) else _config(None)
+            resp = client.models.generate_content(
+                model=settings.llm_model, contents=convo, config=cfg,
+            )
+            calls = list(getattr(resp, "function_calls", None) or [])
+            last_text = (resp.text or "").strip() or last_text
+            if not calls:
+                break
+            # モデルのツール要求と、その実行結果を会話に積んで再度問い合わせる
+            cand = resp.candidates[0].content
+            convo.append(cand)
+            parts = []
+            for fc in calls:
+                result = coach_tools.dispatch(fc.name, dict(fc.args or {}))
+                if result.get("found") and result.get("video_url"):
+                    found_video_url = result["video_url"]
+                parts.append(types.Part.from_function_response(name=fc.name, response=result))
+            convo.append(types.Content(role="user", parts=parts))
+        # モデルは「動画を用意しました」と言うだけでURLを省く事故があるため、
+        # ツールが実URLを返していて本文に無ければ、確定的に1行添える（リンク到達を保証）。
+        if found_video_url and last_text and found_video_url not in last_text:
+            last_text = last_text.rstrip() + f"\n（参考動画 → {found_video_url}）"
+        return last_text or None
+    except Exception as e:  # API エラー・ネットワーク・レート制限など
+        logger.warning("ツール付きLLM応答に失敗（ツール無しにフォールバック）: %s", e)
+        return None
+
+
+_URL_RE = re.compile(r"https?://[^\s　）\)】\]」』]+")
+
+
+def _scrub_foreign_urls(text: Optional[str]) -> Optional[str]:
+    """カタログ（taxonomy）に無い URL を除去する（捏造リンク防止の最終ガード）。
+
+    ツール経由で得た実在URLだけが残る。存在しない YouTube リンクをでっち上げても、
+    ここでユーザーに届く前に消える。
+    """
+    if not text:
+        return text
+    from app.coaching.tools import CATALOG_VIDEO_URLS
+
+    def repl(m: "re.Match") -> str:
+        raw = m.group(0)
+        cleaned = raw.rstrip("。、,.！!？?")
+        return raw if cleaned in CATALOG_VIDEO_URLS else ""
+
+    out = _URL_RE.sub(repl, text)
+    # URL 除去で生じた「→ 」「（参考に … ）」の抜け殻や連続空白を軽く整える
+    out = re.sub(r"[（(][^（()]*→\s*[)）]", "", out)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    return re.sub(r"\n{3,}", "\n\n", out).strip() or None
+
+
 _CARD_PROMISE_RE = re.compile(
     r"[^。!?！？\n]*(?:この後の|下の|次の)?カード[^。!?！？\n]*"
     r"(?:手順|動画|実演|のせ|載せ|表示)[^。!?！？\n]*[。!?！？✨😊🎤]*"
@@ -627,15 +746,21 @@ def generate_reply(
     """ユーザーのテキストに対するソラ先生の自然言語返答を生成する。"""
     context = build_session_context(state)
     contents = _build_contents(state, user_text, history)
-    reply = _complete(contents)
+    # ツール化ON時は function calling 経由（動画等の"事実"は実データをツールで供給）。
+    if settings.llm_enabled and settings.coach_tools_enabled:
+        reply = _complete_with_tools(contents, force_tool=_wants_reference(user_text))
+    else:
+        reply = _complete(contents)
     if not reply and settings.llm_enabled:
-        # 一過性の失敗（タイムアウト/過負荷）で定型に落ちないよう、1回だけ再試行する。
+        # 一過性の失敗（タイムアウト/過負荷）で定型に落ちないよう、1回だけ再試行する（ツール無し）。
         reply = _complete(contents)
     if reply:
         # facts / 状況 / ユーザー発言 に無い秒数は伏せる（捏造防止の最終ガード）
         reply = _scrub_invented_seconds(reply, _allowed_seconds(context, user_text))
         # チャット返信はカードを伴わないので、カードを出す約束文を消す
         reply = scrub_card_promise(reply)
+        # カタログに無い URL（でっち上げリンク）を除去する
+        reply = _scrub_foreign_urls(reply)
     return reply
 
 

@@ -450,7 +450,9 @@ def send_message(
 
     # 「動画ある？／見本が欲しい」等は、話題に合う実際の練習カード（動画つき）を確定的に返す。
     # LLM任せだと「動画カードを用意しました」と言うだけでカードが出ない事故が起きるため。
-    if rule_engine.is_video_request(body.text):
+    # ツール化ON（docs/44）時はこの短絡を使わず、LLMが find_reference_video を呼んで
+    # 自然文＋実URLで返す。OFF時（LLM不可含む）は従来どおりの確定経路をフォールバックに使う。
+    if not settings.coach_tools_enabled and rule_engine.is_video_request(body.text):
         msgs = rule_engine.handle_video_request(_session_state(s), body.text, history=history)
         rows = _persist_coach_messages(db, s.id, msgs)
         db.commit()
