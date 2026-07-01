@@ -237,5 +237,47 @@ class CoachToolsAndScrub(unittest.TestCase):
             self.assertFalse(llm._wants_reference(t), t)
 
 
+class RecordingIntentRouting(unittest.TestCase):
+    """勧めた基礎練の実演が「曲の歌い直し」と誤認される不具合の回帰ガード。
+
+    5秒のボーカルフライ実演を送ったのに『音程が8.6cents改善』と講評された事象。
+    録音の中身＋文脈から practice と判定し、_audio_recheck(歌い直し)へ流さない。
+    """
+
+    # 5秒・狭い音域＝基礎練らしい実演
+    FRY_LIKE = {
+        "duration_sec": 5.0, "rms_mean": 0.03, "voiced_ratio": 0.8,
+        "f0_median_hz": 130.0, "f0_jitter_cents": 20.0, "h1h2_db": 6.0,
+        "timeline": {"sustained_segments": [], "per_window": [
+            {"f0_mean_hz": 130.0}, {"f0_mean_hz": 135.0}, {"f0_mean_hz": 130.0}]},
+    }
+
+    def test_resolve_kind_overrides_default_song_to_practice(self):
+        st = _state(phase="practice", current_task="breathy_closure",
+                    baseline_analysis=ANALYSIS_ISSUE)
+        # クライアントが既定の "song" を送っても、課題練習中の短い基礎練実演は practice
+        self.assertEqual(rule_engine.resolve_kind(st, self.FRY_LIKE, "song"), "practice")
+
+    def test_resolve_kind_respects_explicit_practice(self):
+        st = _state(current_task="breathy_closure")
+        self.assertEqual(rule_engine.resolve_kind(st, ANALYSIS_GOOD, "practice"), "practice")
+
+    def test_resolve_kind_song_stays_song_without_task(self):
+        # 課題が無い初回は上書きしない（song は song のまま＝診断へ）
+        st = _state(current_task=None)
+        self.assertEqual(rule_engine.resolve_kind(st, self.FRY_LIKE, "song"), "song")
+
+    def test_fry_during_lesson_not_routed_to_recheck(self):
+        # 既定 "song" で送っても、_audio_recheck（歌い直し改善判定）に化けない
+        st = _state(phase="practice", current_task="breathy_closure",
+                    baseline_analysis=ANALYSIS_ISSUE, last_analysis=self.FRY_LIKE)
+        kind = rule_engine.resolve_kind(st, self.FRY_LIKE, "song")
+        msgs, _ = rule_engine.handle_audio(st, self.FRY_LIKE, None, kind)
+        text = " ".join(m.get("text") or "" for m in msgs if m["role"] == "coach")
+        self._no_score = BAD_SCORE.search(text)
+        self.assertIsNone(self._no_score, "点数/記号は出さない")
+        self.assertNotIn("歌い直しの結果", text, "曲の歌い直し講評に化けてはいけない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

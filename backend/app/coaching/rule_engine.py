@@ -377,6 +377,33 @@ def classify_kind(analysis: dict) -> str:
     return "song"
 
 
+# 基礎練とみなしてよい録音の長さ上限（秒）。曲の歌い直しは普通これより長い。
+_PRACTICE_MAX_SEC = 10.0
+
+
+def resolve_kind(state: dict, analysis: dict, client_kind: str) -> str:
+    """録音が「曲(song)」か「基礎練(practice)」かを、指定・中身・文脈から自律的に確定する。
+
+    クライアントの kind は既定 "song" で当てにならないため、録音の中身(classify_kind)と
+    会話文脈(いま課題練習中か)で上書きする。狙いは「勧めた基礎練の実演」を「曲の歌い直し」と
+    誤認して的外れな講評（例: 5秒のボーカルフライに『音程が8.6cents改善』）を返さないこと。
+
+    - 明示 "practice"（ユーザーが基礎練ボタンで送信）は尊重。
+    - "auto" は録音の中身で判定。
+    - "song"/未指定でも、課題練習中(current_task)で、中身が基礎練らしい or 十分短いなら
+      practice に寄せる（歌い直し＝_audio_recheck ではなく、その課題の達成判定へ回す）。
+    """
+    if client_kind == "practice":
+        return "practice"
+    content = classify_kind(analysis)
+    dur = analysis.get("duration_sec") or 0
+    if state.get("current_task") and (content == "practice" or 0 < dur <= _PRACTICE_MAX_SEC):
+        return "practice"
+    if client_kind == "auto":
+        return content
+    return "song"
+
+
 def _projection_note(analysis: dict) -> Optional[str]:
     """張りどころ（曲の山）で声を張れているかを、コメント用の事実文にする。"""
     pp = projection_point(analysis)

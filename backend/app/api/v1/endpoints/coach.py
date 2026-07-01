@@ -809,9 +809,10 @@ def send_audio(
         return ChatResponse(phase=s.phase, current_task=s.current_task,
                             messages=[_msg_out(r) for r in rows])
 
-    # 種類が明示されていなければ（"auto"）、音声から曲/基礎練を自動判定する
-    if kind not in ("song", "practice"):
-        kind = rule_engine.classify_kind(user_analysis)
+    # 録音の中身と会話文脈から「曲/基礎練」を自律的に確定する。
+    # クライアントの kind は既定 "song" で当てにならないため、勧めた基礎練の実演を
+    # 「曲の歌い直し」と誤認しないよう、中身(classify_kind)＋課題文脈で上書きする。
+    kind = rule_engine.resolve_kind(_session_state(s), user_analysis, kind)
     # 最新の録音の解析を保持（会話の文脈は常に最新録音を参照する）。
     # 原曲との比較結果(in-tune/リズム)も埋め込み、後続のチャットがカードと矛盾しないようにする。
     if compare_data:
