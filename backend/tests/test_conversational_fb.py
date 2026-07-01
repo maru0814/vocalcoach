@@ -136,5 +136,163 @@ class ConversationalFBContract(unittest.TestCase):
         self.assertIn("うまく言葉が出せませんでした", text)
 
 
+class TextReplyPromptFraming(unittest.TestCase):
+    """テキスト質問のプロンプト構築（_build_contents）の契約。
+
+    フォローアップの質問が「録音を解析したFB」テンプレで返る不具合の回帰ガード。
+    LLM自体は叩かず、Gemini へ渡す contents の組み立てだけを検証する（hermetic）。
+    """
+
+    def _last_text(self, contents):
+        return contents[-1].parts[0].text
+
+    def test_followup_turn_marked_not_new_recording(self):
+        # 録音解析済み(last_analysis あり)の状態でテキスト質問が来た場面。
+        st = _state(phase="practice", current_task="pitch_wobble",
+                    last_analysis=ANALYSIS_ISSUE, baseline_analysis=ANALYSIS_ISSUE)
+        contents = llm._build_contents(st, "具体的にどう練習すればいいの？", [])
+        last = self._last_text(contents)
+        # 今回は新しい録音が来ていない、と明示している
+        self.assertIn("新しく届いた録音ではない", last)
+        # 講評の書き出しで始めない、という指示が入っている
+        self.assertIn("録音を送ってくれてありがとう", last)
+        self.assertIn("始めないこと", last)
+        # ユーザーの発言はちゃんと載っている
+        self.assertIn("具体的にどう練習すればいいの？", last)
+
+    def test_history_preserved_before_question(self):
+        st = _state(phase="practice", current_task="pitch_wobble",
+                    last_analysis=ANALYSIS_ISSUE, baseline_analysis=ANALYSIS_ISSUE)
+        history = [
+            {"role": "user", "content": "ボーカルフライって何ですか？"},
+            {"role": "assistant", "content": "ガラガラ声を作る練習です。"},
+        ]
+        contents = llm._build_contents(st, "次はどうする？", history)
+        # 履歴が会話ターンとして渡る（user 始まりが保証される）
+        joined = "\n".join(c.parts[0].text for c in contents)
+        self.assertIn("ボーカルフライって何ですか？", joined)
+        self.assertIn("ガラガラ声を作る練習です。", joined)
+        self.assertEqual(contents[0].role, "user")
+
+
+class VideoTopicRouting(unittest.TestCase):
+    """「（エッジボイスの）お手本ない？」が今の課題の動画に化ける不具合の回帰ガード。
+
+    エッジボイス／ボーカルフライは声帯の閉じ（breathy_closure）の話題。
+    話題語がTOPIC_KEYWORDSに無いと current_task にフォールバックし、
+    見当違いの動画（例: 喉の力み）を返してしまう。
+    """
+
+    def test_edge_voice_maps_to_closure_not_current_task(self):
+        # 今の課題は喉の力み。エッジボイスの手本を尋ねる。
+        for text in ["エッジボイスの良いお手本ない？", "ボーカルフライのお手本が聴きたい",
+                     "エッジボイスの見本ある？"]:
+            self.assertTrue(rule_engine.is_video_request(text), f"動画要求と判定されるべき: {text}")
+            topic = rule_engine.detect_topic_task(text, [], fallback="throat_tension")
+            self.assertEqual(topic, "breathy_closure",
+                             f"エッジ/フライは声帯の閉じに写像すべき（現状: {topic}）: {text}")
+
+    def test_edge_voice_video_reply_is_on_topic(self):
+        st = _state(phase="practice", current_task="throat_tension",
+                    last_analysis=ANALYSIS_ISSUE, baseline_analysis=ANALYSIS_ISSUE)
+        msgs = rule_engine.handle_video_request(st, "エッジボイスの良いお手本ない？", history=[])
+        text = " ".join(m.get("text") or "" for m in msgs)
+        # 声帯の閉じ（＝エッジ/フライの話題）が返り、喉の力みには化けない
+        self.assertIn("声帯の閉じ", text)
+        self.assertNotIn("喉の力み", text)
+        # 参考動画リンクが1行添えられている（FR-03）
+        self.assertIn("http", text)
+
+
+class CoachToolsAndScrub(unittest.TestCase):
+    """ソラ先生ツール化（docs/44）の決定論部分の契約（LLM非依存）。"""
+
+    def test_find_reference_video_maps_edge_to_closure(self):
+        from app.coaching import tools
+        for topic in ["エッジボイス", "ボーカルフライ", "声帯の閉じ"]:
+            r = tools.find_reference_video(topic)
+            self.assertTrue(r["found"], topic)
+            self.assertIn("声帯の閉じ", r["task_label"])
+            self.assertTrue(r["video_url"].startswith("http"))
+            self.assertIn(r["video_url"], tools.CATALOG_VIDEO_URLS)
+
+    def test_find_reference_video_unmapped_is_found_false(self):
+        from app.coaching import tools
+        self.assertEqual(tools.find_reference_video("宇宙人の言語xyz"), {"found": False})
+
+    def test_scrub_foreign_urls_keeps_catalog_removes_fake(self):
+        from app.coaching import tools
+        real = next(iter(tools.CATALOG_VIDEO_URLS))
+        text = f"本物 {real} と 偽物 https://youtu.be/FAKE99999 です"
+        out = llm._scrub_foreign_urls(text)
+        self.assertIn(real, out)
+        self.assertNotIn("FAKE99999", out)
+
+    def test_wants_reference_detection(self):
+        # 参考例を求める言い回しは True
+        for t in ["良いお手本ない？", "良い例ある？", "参考になる動画は？", "見本が欲しい"]:
+            self.assertTrue(llm._wants_reference(t), t)
+        # 普通の質問・原曲URLは False
+        for t in ["具体的にどう練習すればいいの？", "https://youtu.be/abc これが原曲です"]:
+            self.assertFalse(llm._wants_reference(t), t)
+
+
+class RecordingIntentRouting(unittest.TestCase):
+    """勧めた基礎練の実演が「曲の歌い直し」と誤認される不具合の回帰ガード。
+
+    5秒のボーカルフライ実演を送ったのに『音程が8.6cents改善』と講評された事象。
+    録音の中身＋文脈から practice と判定し、_audio_recheck(歌い直し)へ流さない。
+    """
+
+    # 5秒・狭い音域＝基礎練らしい実演
+    FRY_LIKE = {
+        "duration_sec": 5.0, "rms_mean": 0.03, "voiced_ratio": 0.8,
+        "f0_median_hz": 130.0, "f0_jitter_cents": 20.0, "h1h2_db": 6.0,
+        "timeline": {"sustained_segments": [], "per_window": [
+            {"f0_mean_hz": 130.0}, {"f0_mean_hz": 135.0}, {"f0_mean_hz": 130.0}]},
+    }
+
+    def test_resolve_kind_overrides_default_song_to_practice(self):
+        st = _state(phase="practice", current_task="breathy_closure",
+                    baseline_analysis=ANALYSIS_ISSUE)
+        # クライアントが既定の "song" を送っても、課題練習中の短い基礎練実演は practice
+        self.assertEqual(rule_engine.resolve_kind(st, self.FRY_LIKE, "song"), "practice")
+
+    def test_resolve_kind_respects_explicit_practice(self):
+        st = _state(current_task="breathy_closure")
+        self.assertEqual(rule_engine.resolve_kind(st, ANALYSIS_GOOD, "practice"), "practice")
+
+    def test_resolve_kind_song_stays_song_without_task(self):
+        # 課題が無い初回は上書きしない（song は song のまま＝診断へ）
+        st = _state(current_task=None)
+        self.assertEqual(rule_engine.resolve_kind(st, self.FRY_LIKE, "song"), "song")
+
+    # 境界値(TC-33): レッスン中でも、メロディのある歌い直しは practice に化けない
+    MELODIC_RESING = {
+        "duration_sec": 9.0, "f0_median_hz": 260.0,
+        "timeline": {"sustained_segments": [], "per_window": [
+            {"f0_mean_hz": 220.0}, {"f0_mean_hz": 262.0}, {"f0_mean_hz": 294.0},
+            {"f0_mean_hz": 330.0}, {"f0_mean_hz": 294.0}, {"f0_mean_hz": 247.0}]},
+    }
+
+    def test_resolve_kind_melodic_resing_stays_song_in_lesson(self):
+        st = _state(phase="practice", current_task="breathy_closure",
+                    baseline_analysis=ANALYSIS_ISSUE)
+        # 音域が広くメロディがある＝classify_kind は song。課題中でも song のまま歌い直し判定へ。
+        self.assertEqual(rule_engine.classify_kind(self.MELODIC_RESING), "song")
+        self.assertEqual(rule_engine.resolve_kind(st, self.MELODIC_RESING, "song"), "song")
+
+    def test_fry_during_lesson_not_routed_to_recheck(self):
+        # 既定 "song" で送っても、_audio_recheck（歌い直し改善判定）に化けない
+        st = _state(phase="practice", current_task="breathy_closure",
+                    baseline_analysis=ANALYSIS_ISSUE, last_analysis=self.FRY_LIKE)
+        kind = rule_engine.resolve_kind(st, self.FRY_LIKE, "song")
+        msgs, _ = rule_engine.handle_audio(st, self.FRY_LIKE, None, kind)
+        text = " ".join(m.get("text") or "" for m in msgs if m["role"] == "coach")
+        self._no_score = BAD_SCORE.search(text)
+        self.assertIsNone(self._no_score, "点数/記号は出さない")
+        self.assertNotIn("歌い直しの結果", text, "曲の歌い直し講評に化けてはいけない")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

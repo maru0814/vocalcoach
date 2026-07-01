@@ -450,7 +450,9 @@ def send_message(
 
     # 「動画ある？／見本が欲しい」等は、話題に合う実際の練習カード（動画つき）を確定的に返す。
     # LLM任せだと「動画カードを用意しました」と言うだけでカードが出ない事故が起きるため。
-    if rule_engine.is_video_request(body.text):
+    # ツール化ON（docs/44）時はこの短絡を使わず、LLMが find_reference_video を呼んで
+    # 自然文＋実URLで返す。OFF時（LLM不可含む）は従来どおりの確定経路をフォールバックに使う。
+    if not settings.coach_tools_enabled and rule_engine.is_video_request(body.text):
         msgs = rule_engine.handle_video_request(_session_state(s), body.text, history=history)
         rows = _persist_coach_messages(db, s.id, msgs)
         db.commit()
@@ -807,9 +809,10 @@ def send_audio(
         return ChatResponse(phase=s.phase, current_task=s.current_task,
                             messages=[_msg_out(r) for r in rows])
 
-    # 種類が明示されていなければ（"auto"）、音声から曲/基礎練を自動判定する
-    if kind not in ("song", "practice"):
-        kind = rule_engine.classify_kind(user_analysis)
+    # 録音の中身と会話文脈から「曲/基礎練」を自律的に確定する。
+    # クライアントの kind は既定 "song" で当てにならないため、勧めた基礎練の実演を
+    # 「曲の歌い直し」と誤認しないよう、中身(classify_kind)＋課題文脈で上書きする。
+    kind = rule_engine.resolve_kind(_session_state(s), user_analysis, kind)
     # 最新の録音の解析を保持（会話の文脈は常に最新録音を参照する）。
     # 原曲との比較結果(in-tune/リズム)も埋め込み、後続のチャットがカードと矛盾しないようにする。
     if compare_data:

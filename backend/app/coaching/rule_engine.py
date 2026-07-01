@@ -276,7 +276,12 @@ def is_rediagnose_request(text: str) -> bool:
 # 注: 原曲URL（YouTubeリンク）はお手本の指定なので動画リクエストではない → "youtube"等は入れない。
 VIDEO_KW = ["動画", "ビデオ", "見本", "手本", "やり方の映像", "実演"]
 # 話題キーワード → 課題ID（複数一致時は先頭の語が出た順で判定）
+# 注: エッジボイス／ボーカルフライは「声帯の閉じ（内転）」の話題なので breathy_closure に写像する。
+# 明示された話題を優先したいので、汎用語（高音→mixed 等）より前に置く。
 TOPIC_KEYWORDS: list[tuple[str, str]] = [
+    ("エッジボイス", "breathy_closure"), ("ボーカルフライ", "breathy_closure"),
+    ("エッジ", "breathy_closure"), ("フライ", "breathy_closure"),
+    ("息漏れ", "breathy_closure"), ("声帯の閉じ", "breathy_closure"), ("声帯閉鎖", "breathy_closure"),
     ("ミックスボイス", "mixed_voice"), ("ミックス", "mixed_voice"), ("ミドルボイス", "mixed_voice"),
     ("高音", "mixed_voice"), ("高い声", "mixed_voice"), ("裏声", "mixed_voice"),
     ("ビブラート", "no_vibrato"), ("ゆらし", "no_vibrato"), ("揺らし", "no_vibrato"),
@@ -369,6 +374,29 @@ def classify_kind(analysis: dict) -> str:
     # 明確に単純（異なる音が3つ以下 かつ 音域が4半音以下）なときだけ基礎練。
     if distinct <= 3 and span <= 4:
         return "practice"
+    return "song"
+
+
+def resolve_kind(state: dict, analysis: dict, client_kind: str) -> str:
+    """録音が「曲(song)」か「基礎練(practice)」かを、指定・中身・文脈から自律的に確定する。
+
+    クライアントの kind は既定 "song" で当てにならないため、録音の中身(classify_kind)と
+    会話文脈(いま課題練習中か)で上書きする。狙いは「勧めた基礎練の実演」を「曲の歌い直し」と
+    誤認して的外れな講評（例: 5秒のボーカルフライに『音程が8.6cents改善』）を返さないこと。
+
+    - 明示 "practice"（ユーザーが基礎練ボタンで送信）は尊重。
+    - "auto" は録音の中身で判定。
+    - "song"/未指定でも、課題練習中(current_task)で中身が基礎練らしい（音数が少なく音域が狭い）
+      なら practice に寄せる（歌い直し＝_audio_recheck ではなく、その課題の達成判定へ回す）。
+      ※ メロディのある歌い直しは classify_kind が song を返すので、そのまま歌い直し判定に残る。
+    """
+    if client_kind == "practice":
+        return "practice"
+    content = classify_kind(analysis)
+    if content == "practice" and state.get("current_task"):
+        return "practice"
+    if client_kind == "auto":
+        return content
     return "song"
 
 
