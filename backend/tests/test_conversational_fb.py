@@ -267,6 +267,21 @@ class RecordingIntentRouting(unittest.TestCase):
         st = _state(current_task=None)
         self.assertEqual(rule_engine.resolve_kind(st, self.FRY_LIKE, "song"), "song")
 
+    # 境界値(TC-33): レッスン中でも、メロディのある歌い直しは practice に化けない
+    MELODIC_RESING = {
+        "duration_sec": 9.0, "f0_median_hz": 260.0,
+        "timeline": {"sustained_segments": [], "per_window": [
+            {"f0_mean_hz": 220.0}, {"f0_mean_hz": 262.0}, {"f0_mean_hz": 294.0},
+            {"f0_mean_hz": 330.0}, {"f0_mean_hz": 294.0}, {"f0_mean_hz": 247.0}]},
+    }
+
+    def test_resolve_kind_melodic_resing_stays_song_in_lesson(self):
+        st = _state(phase="practice", current_task="breathy_closure",
+                    baseline_analysis=ANALYSIS_ISSUE)
+        # 音域が広くメロディがある＝classify_kind は song。課題中でも song のまま歌い直し判定へ。
+        self.assertEqual(rule_engine.classify_kind(self.MELODIC_RESING), "song")
+        self.assertEqual(rule_engine.resolve_kind(st, self.MELODIC_RESING, "song"), "song")
+
     def test_fry_during_lesson_not_routed_to_recheck(self):
         # 既定 "song" で送っても、_audio_recheck（歌い直し改善判定）に化けない
         st = _state(phase="practice", current_task="breathy_closure",

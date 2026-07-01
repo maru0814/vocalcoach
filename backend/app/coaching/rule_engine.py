@@ -377,10 +377,6 @@ def classify_kind(analysis: dict) -> str:
     return "song"
 
 
-# 基礎練とみなしてよい録音の長さ上限（秒）。曲の歌い直しは普通これより長い。
-_PRACTICE_MAX_SEC = 10.0
-
-
 def resolve_kind(state: dict, analysis: dict, client_kind: str) -> str:
     """録音が「曲(song)」か「基礎練(practice)」かを、指定・中身・文脈から自律的に確定する。
 
@@ -390,14 +386,14 @@ def resolve_kind(state: dict, analysis: dict, client_kind: str) -> str:
 
     - 明示 "practice"（ユーザーが基礎練ボタンで送信）は尊重。
     - "auto" は録音の中身で判定。
-    - "song"/未指定でも、課題練習中(current_task)で、中身が基礎練らしい or 十分短いなら
-      practice に寄せる（歌い直し＝_audio_recheck ではなく、その課題の達成判定へ回す）。
+    - "song"/未指定でも、課題練習中(current_task)で中身が基礎練らしい（音数が少なく音域が狭い）
+      なら practice に寄せる（歌い直し＝_audio_recheck ではなく、その課題の達成判定へ回す）。
+      ※ メロディのある歌い直しは classify_kind が song を返すので、そのまま歌い直し判定に残る。
     """
     if client_kind == "practice":
         return "practice"
     content = classify_kind(analysis)
-    dur = analysis.get("duration_sec") or 0
-    if state.get("current_task") and (content == "practice" or 0 < dur <= _PRACTICE_MAX_SEC):
+    if content == "practice" and state.get("current_task"):
         return "practice"
     if client_kind == "auto":
         return content
