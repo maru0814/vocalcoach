@@ -14,6 +14,7 @@ import {
   sendCoachText,
   uploadCoachReference,
 } from "@/lib/api";
+import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import { MessageBubble } from "@/components/coach/Bubbles";
 import { PhaseStepper } from "@/components/coach/PhaseStepper";
 import { Composer } from "@/components/coach/Composer";
@@ -49,13 +50,14 @@ export default function CoachChatPage() {
         setPhase(s.phase);
         setSongTitle(s.song_title || s.song_ref_url);
         setHasReference(Boolean(s.has_reference));
-      } catch {
-        setError("セッションの読み込みに失敗しました。ログインを確認してください。");
+      } catch (err) {
+        if (redirectToLoginIfAuthError(err, router)) return;
+        setError("セッションの読み込みに失敗しました。通信状態を確認して、もう一度お試しください。");
       } finally {
         setLoading(false);
       }
     })();
-  }, [sessionId]);
+  }, [sessionId, router]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

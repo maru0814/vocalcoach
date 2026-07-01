@@ -23,6 +23,20 @@ export type RecordingDetail = {
   } | null;
 };
 
+/** APIエラー。message は従来どおりレスポンス本文、status でHTTPステータスを判別できる。 */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** 未ログイン・セッション切れ（401）による失敗かどうか。 */
+export function isAuthError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -31,7 +45,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    throw new ApiError(text || `Request failed: ${response.status}`, response.status);
   }
   return (await response.json()) as T;
 }
