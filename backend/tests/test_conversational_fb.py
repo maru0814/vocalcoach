@@ -175,5 +175,34 @@ class TextReplyPromptFraming(unittest.TestCase):
         self.assertEqual(contents[0].role, "user")
 
 
+class VideoTopicRouting(unittest.TestCase):
+    """「（エッジボイスの）お手本ない？」が今の課題の動画に化ける不具合の回帰ガード。
+
+    エッジボイス／ボーカルフライは声帯の閉じ（breathy_closure）の話題。
+    話題語がTOPIC_KEYWORDSに無いと current_task にフォールバックし、
+    見当違いの動画（例: 喉の力み）を返してしまう。
+    """
+
+    def test_edge_voice_maps_to_closure_not_current_task(self):
+        # 今の課題は喉の力み。エッジボイスの手本を尋ねる。
+        for text in ["エッジボイスの良いお手本ない？", "ボーカルフライのお手本が聴きたい",
+                     "エッジボイスの見本ある？"]:
+            self.assertTrue(rule_engine.is_video_request(text), f"動画要求と判定されるべき: {text}")
+            topic = rule_engine.detect_topic_task(text, [], fallback="throat_tension")
+            self.assertEqual(topic, "breathy_closure",
+                             f"エッジ/フライは声帯の閉じに写像すべき（現状: {topic}）: {text}")
+
+    def test_edge_voice_video_reply_is_on_topic(self):
+        st = _state(phase="practice", current_task="throat_tension",
+                    last_analysis=ANALYSIS_ISSUE, baseline_analysis=ANALYSIS_ISSUE)
+        msgs = rule_engine.handle_video_request(st, "エッジボイスの良いお手本ない？", history=[])
+        text = " ".join(m.get("text") or "" for m in msgs)
+        # 声帯の閉じ（＝エッジ/フライの話題）が返り、喉の力みには化けない
+        self.assertIn("声帯の閉じ", text)
+        self.assertNotIn("喉の力み", text)
+        # 参考動画リンクが1行添えられている（FR-03）
+        self.assertIn("http", text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

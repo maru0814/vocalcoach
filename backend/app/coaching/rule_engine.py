@@ -276,7 +276,12 @@ def is_rediagnose_request(text: str) -> bool:
 # 注: 原曲URL（YouTubeリンク）はお手本の指定なので動画リクエストではない → "youtube"等は入れない。
 VIDEO_KW = ["動画", "ビデオ", "見本", "手本", "やり方の映像", "実演"]
 # 話題キーワード → 課題ID（複数一致時は先頭の語が出た順で判定）
+# 注: エッジボイス／ボーカルフライは「声帯の閉じ（内転）」の話題なので breathy_closure に写像する。
+# 明示された話題を優先したいので、汎用語（高音→mixed 等）より前に置く。
 TOPIC_KEYWORDS: list[tuple[str, str]] = [
+    ("エッジボイス", "breathy_closure"), ("ボーカルフライ", "breathy_closure"),
+    ("エッジ", "breathy_closure"), ("フライ", "breathy_closure"),
+    ("息漏れ", "breathy_closure"), ("声帯の閉じ", "breathy_closure"), ("声帯閉鎖", "breathy_closure"),
     ("ミックスボイス", "mixed_voice"), ("ミックス", "mixed_voice"), ("ミドルボイス", "mixed_voice"),
     ("高音", "mixed_voice"), ("高い声", "mixed_voice"), ("裏声", "mixed_voice"),
     ("ビブラート", "no_vibrato"), ("ゆらし", "no_vibrato"), ("揺らし", "no_vibrato"),
