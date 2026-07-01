@@ -61,6 +61,13 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   ```bash
   docker compose -f docker-compose.prod.yml --env-file .env exec -T sns sh -c "tail -3 /data/pending_queue.jsonl"
   ```
+- **デプロイ直後だけ `/api/*` が 502**: backend を再ビルドするデプロイでは、旧コンテナ停止→新コンテナ起動の数十秒だけ Caddy が upstream に届かず `/api/*` が **502** になる（frontendトップは 200 のまま）。**正常な過渡状態**なので、起動完了まで待って再確認する。切り分け: `docker compose -f docker-compose.prod.yml ps`（backend が `Up` で `Restarting` でない）＋ `logs backend` に `Application startup complete`。回復後は 502 でなく 404（＝到達はしている・ルート無し）になる。数分たっても 502 のままなら起動失敗を疑い `logs backend` のトレースバックを見る。
+
+  ```bash
+  cd /opt/vocalcoach/docker
+  docker compose -f docker-compose.prod.yml ps        # backend が Up か
+  docker compose -f docker-compose.prod.yml logs --tail=25 backend | grep -iE "startup complete|error|traceback"
+  ```
 
 
 ## 事例: 図解画像対応のデプロイ失敗と復旧（2026-06-30）
