@@ -26,6 +26,9 @@ class ChatSession(Base):
     baseline_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     last_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     d_retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 主観問診（docs/53 FR-03）: このセッションで聞いた回数と、回答待ちの問診種別
+    checkin_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    awaiting_checkin: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(

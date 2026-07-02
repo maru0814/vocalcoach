@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # 直近何件の会話履歴を文脈として渡すか
     llm_history_turns: int = 12
 
+    # --- 生徒カルテと主観問診（docs/53/54）。falseで全フック無効＝現行動作（即ロールバック） ---
+    enable_student_karte: bool = True
+
     # --- ソラ先生ツール化（docs/44）。ONでチャット返答を function calling 経由にし、
     # 動画リンク等の"事実"はカタログの実データだけをツールで供給する（捏造防止＋自然会話）。
     coach_tools_enabled: bool = True

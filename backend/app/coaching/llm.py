@@ -336,6 +336,10 @@ def build_session_context(state: dict) -> str:
     「どこのこと？」のような質問に LLM が具体的に答えられるようにする。
     """
     lines: list[str] = []
+    # 生徒カルテ（docs/53 FR-02）。過去の記録＝参考情報であり、今回の録音の断定材料にしない。
+    kc = (state.get("karte_context") or "").strip()
+    if kc:
+        lines.append(kc)
     lines.append(f"- 進行状況: {_phase_label(state.get('phase'))}")
 
     has_ref = bool(state.get("song_ref_url") or state.get("song_ref_path"))
