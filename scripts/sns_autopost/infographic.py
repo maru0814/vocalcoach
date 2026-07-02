@@ -167,7 +167,7 @@ def parse_diagnosis(pillar: str, day_index: int) -> dict:
                        f" ／ ♂ {'・'.join(a['male'])}")
         return {
             "type": "diagnosis",
-            "title": f"【声タイプ図鑑】{name}",
+            "title": f"【{name}】タイプの声、誰に似てる？",
             "subtitle": "",
             "spotlight": {"image": _voice_image_data_uri(name),
                           "desc": f"{desc}。あなたもこのタイプかも？", "artists": artists},

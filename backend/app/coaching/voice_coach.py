@@ -210,7 +210,7 @@ VOICE_TYPES: dict[tuple, dict] = {
     ("chest", "power", "clear"): {
         "id": "rock", "name": "Rock Voice", "emoji": "🔥",
         "desc": "芯のある地声成分で、明るくまっすぐ前に出るパワフルな声。",
-        "artists": {"female": ["LiSA", "YUKI"], "male": ["稲葉浩志(B'z)", "優里"]}},
+        "artists": {"female": ["LiSA", "YUKI"], "male": ["Mrs. GREEN APPLE", "稲葉浩志(B'z)", "優里"]}},
     ("chest", "power", "deep"): {
         "id": "groovy", "name": "Groovy Voice", "emoji": "🎙",
         "desc": "太く温かい地声成分。うねるような厚みとコクのある声。",
