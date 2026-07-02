@@ -27,7 +27,7 @@ VOICE_TYPES = [
 # 正本: backend/app/coaching/voice_coach.py の VOICE_TYPES[].artists。
 # snsは独立コンテナでbackendをimportしないためここにミラー。**変更時は両方を更新する**。
 ARTISTS_BY_ID = {
-    "rock":       {"female": ["LiSA", "YUKI"],            "male": ["稲葉浩志(B'z)", "優里"]},
+    "rock":       {"female": ["LiSA", "アイナ・ジ・エンド"], "male": ["Mrs. GREEN APPLE", "稲葉浩志(B'z)", "優里"]},
     "groovy":     {"female": ["Superfly", "あいみょん"],   "male": ["玉置浩二", "鈴木雅之"]},
     "pop":        {"female": ["aiko", "いきものがかり"],   "male": ["北村匠海", "マカロニえんぴつ"]},
     "mysterious": {"female": ["宇多田ヒカル", "MISIA"],    "male": ["米津玄師", "藤井風"]},
@@ -41,14 +41,29 @@ ARTISTS_BY_ID = {
 DIAGNOSIS_PILLARS = ("self_type", "voice_type", "visual")
 
 
+def artists_for(type_name: str, n: int = 2) -> str:
+    """そのタイプの「声質が近い例」アーティストを ♀♂交互で n 人、中黒でつなぐ。
+    交互にするのは、女性名だけで埋まって男性の代表格が埋もれるのを防ぐため。
+    声タイプ系の投稿は必ずこの実名を文言に載せる（運用者方針）。正本=ARTISTS_BY_ID。"""
+    a = ARTISTS_BY_ID.get(type_name.lower(), {})
+    f, m = a.get("female", []), a.get("male", [])
+    inter = []
+    for i in range(max(len(f), len(m))):
+        if i < len(f):
+            inter.append(f[i])
+        if i < len(m):
+            inter.append(m[i])
+    return "・".join(inter[:n])
+
+
 def cheatsheet_reply() -> str:
-    """診断導線の自己リプに置く“8タイプ早見”。VOICE_TYPES から生成して正本とズレない。
-    最大の答え（似てる歌手＝結果）はあえて伏せ、好奇心ギャップを残して診断へ送る。"""
-    lines = "\n".join(f"{e}{n} {d}" for n, e, d in VOICE_TYPES)
-    return ("🎤 声タイプは全8種（あなたはどれっぽい？）\n\n"
+    """診断導線の自己リプに置く“8タイプ早見”。各タイプに『声質が近い例』の歌手名を明記する。
+    型名だけの占い化を避け、実名で「自分ごと」を作る。個人の一番近い歌手は診断結果で返す。"""
+    lines = "\n".join(f"{e}{n} {d}（例：{artists_for(n)}）" for n, e, d in VOICE_TYPES)
+    return ("🎤 声タイプは全8種（声質が近い歌手の例つき）\n\n"
             f"{lines}\n\n"
-            "でも“似てる歌手”は、歌ってみないと出ません。\n"
-            "プロフィールから15秒 → 結果はそのままシェアできます。")
+            "あなたが“誰に一番近いか”は、15秒歌えばAIが判定します。\n"
+            "プロフィールから無料 → 結果はそのままシェアOK。")
 
 # 実践Tips（高音・ミックス中心の“保存される長文”）。番号付きの手順で再現性を持たせる。
 # これ自体が完成形に近い下敷き。Geminiはこのトーンと情報量を保ったままリライトする。
@@ -177,22 +192,23 @@ def template_post(pillar: str, day_index: int, app_url: str) -> dict:
     # ラベル陳列（旧「【声タイプ図鑑】◯◯」）はやめ、好奇心ギャップで止めて診断に送る。
     if pillar == "self_type":
         return {"text": ("あなたの声、歌手なら誰に似てる？🎤\n\n"
-                         "自分の声って、自分が一番わかってない。\n"
-                         "15秒歌うだけで、AIが「似てる歌手」と“声タイプ”を当てます。意外な結果、けっこう出ます。\n\n"
-                         "👇 どんなタイプがあるかはリプに置きました。"),
+                         f"たとえば {artists_for('rock')}、{artists_for('dramatic')}…\n"
+                         "自分の声が“誰系”かは、意外と自分ではわからないもの。\n"
+                         "15秒歌うだけで、AIが「似てる歌手」と声タイプを当てます。\n\n"
+                         "👇 8タイプ（近い歌手の例つき）はリプに置きました。"),
                 "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "voice_type":
         n, e, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
-        return {"text": ("あなたの声、歌手だと誰に似てる？🎤\n\n"
-                         f"たとえば「{d}」——これは診断だと【{n}{e}】タイプ。\n"
-                         "あなたは8つのうちどれ？ AIが似てる歌手まで当てます。\n\n"
-                         "👇 全8タイプの早見はリプに置きました。"),
+        return {"text": (f"{artists_for(n, 3)} みたいな声、憧れませんか？🎤\n\n"
+                         f"この“{d}”は、診断だと【{n}{e}】タイプ。\n"
+                         "あなたの声は8つのうちどれ？ AIが似てる歌手まで当てます。\n\n"
+                         "👇 全8タイプ（近い歌手の例つき）はリプに置きました。"),
                 "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "visual":
         return {"text": ("あなたの声は、どのタイプ？🎤\n\n"
-                         "15秒歌うだけで、AIが8つの声タイプと「似てる歌手」を診断。\n"
-                         "自分でも気づかない声の個性が見つかります。\n\n"
-                         "👇 8タイプの早見はリプに。結果はそのままシェアできます。"),
+                         f"{artists_for('mysterious')}系？ {artists_for('crystal')}系？\n"
+                         "15秒歌うだけで、AIが8つの声タイプと「似てる歌手」を診断。\n\n"
+                         "👇 8タイプ（近い歌手の例つき）はリプに。結果はそのままシェアOK。"),
                 "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "contrarian":
         # 本投稿=誤解を1行で否定して止める / リプ本体=なぜ違うかの根拠解説
@@ -281,18 +297,25 @@ def gemini_diagnosis_hook_prompt(pillar: str, day_index: int, app_url: str) -> s
     """診断導線（self_type/voice_type/visual）の“本投稿フックだけ”を生成させる指示。
     早見リプ(cheatsheet_reply)は正本なのでGeminiに触らせず、入口のワクワクだけ磨く。"""
     base = template_post(pillar, day_index, app_url)["text"]
-    extra = ""
     if pillar == "voice_type":
         n, _, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
-        extra = (f"\n今日の主役タイプは【{n}】=「{d}」。この声の“あるある”を一言で描いてから"
-                 "『歌手だと誰だろう？』に繋げると刺さる。タイプ名は出してよいが、図鑑的な陳列にしない。")
+        names = artists_for(n, 3)
+        extra = (f"\n今日の主役タイプは【{n}】=「{d}」で、声質が近い例は「{names}」。"
+                 f"『{names} みたいな声、憧れる？』のように**この実名を必ず本文に出して**惹きつけ、"
+                 "『あなたはどのタイプ？』に繋げる。タイプ名は出してよいが図鑑的な陳列にしない。")
+    else:
+        # self_type / visual: 全タイプから有名どころを2〜3人、実名で散りばめる。
+        marquee = "／".join(artists_for(t, 2) for t in ("rock", "mysterious", "dramatic"))
+        extra = (f"\n『{marquee}…あなたは誰系？』のように、**具体的な歌手の実名を必ず2〜3人**本文に出して"
+                 "自分ごと化させる（型名だけの占いにしない）。")
     return (
         "あなたはAIボイストレーナー『ソラ先生』のSNS担当（人間味のある“中の人”）です。"
         "X(旧Twitter)の【声タイプ診断】への導線ポストの、**本投稿（フック）だけ**を書きます。\n"
         "鉄則:\n"
         "- 1行目は『あなたの声、歌手なら誰に似てる？』のような“自分の正体を知りたくなる問い”で止める"
         "（好奇心ギャップ＝診断したくなるワクワク）。ラベル陳列・カタログ説明で始めない。\n"
-        "- 最大の答え（似てる歌手＝診断結果）は**見せない**。歌ってみないと分からない、と引っぱる。\n"
+        "- **声質が近い例の歌手を実名で必ず出す**（上記の指定アーティスト。でっち上げ・別の歌手名の追加は禁止）。"
+        "実名で“自分ごと”を作りつつ、『あなた自身が誰に一番近いか』は診断結果に取っておく（＝診断へ誘導）。\n"
         "- 『15秒歌うだけ』『8タイプ＋似てる歌手を当てる』『結果はシェアできる』のどれかでベネフィットを一言。\n"
         "- 末尾に『8タイプの早見はリプに置いた』と分かる一文（👇可）。読者にリプを促すのは禁止。\n"
         "- **URL・リンクは絶対に入れない**（誘導はプロフィール固定）。誇張NG。絵文字1〜3個。全角90〜160字。"
