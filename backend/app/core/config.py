@@ -65,9 +65,10 @@ class Settings(BaseSettings):
     # ツール往復の最大回数（暴走・レイテンシ防止）
     coach_tool_loop_max: int = 2
 
-    # --- ゼロベース個人最適FB（docs/43）。既定OFF。ONにするまで本番挙動は不変 ---
+    # --- ゼロベース個人最適FB（docs/43, docs/52）。CEO決定によりON（既定有効）。 ---
     # 録音FBを「カタログ選択」から「証拠＋生音声を聴いて推論生成」へ切替える経路の有効化。
-    enable_zero_base_fb: bool = False
+    # 緊急ロールバックは env に ENABLE_ZERO_BASE_FB=false を置いて再起動（再デプロイ不要）。
+    enable_zero_base_fb: bool = True
     # 分析ターン専用モデル（推論＋音色判断）。雑談は従来の llm_model のまま。
     # 既定 flash: 安定供給＋安価で完全な講評を返す（実測 pro は 503 多発）。最高品質が
     # 要る時だけ env で gemini-2.5-pro に上書き可。

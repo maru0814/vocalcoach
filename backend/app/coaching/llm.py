@@ -221,14 +221,32 @@ def build_evidence_pack(state: dict) -> str:
     return "\n\n".join(blocks)
 
 
+# zero-base 返答の先頭に置かせる意図宣言タグ（ユーザーには見せない。パース後に除去）
+_INTENT_TAG_RE = re.compile(r"^\s*INTENT:\s*(song|practice)\s*\n+", re.IGNORECASE)
+
+
+def _split_intent_tag(text: str) -> tuple[Optional[str], str]:
+    """先頭の `INTENT: song|practice` 行を (intent, 残り本文) に分離する。無ければ (None, 原文)。"""
+    m = _INTENT_TAG_RE.match(text or "")
+    if not m:
+        return None, (text or "")
+    return m.group(1).lower(), (text or "")[m.end():]
+
+
 def generate_feedback(
-    state: dict, user_wav: Optional[bytes] = None, ref_wav: Optional[bytes] = None
+    state: dict, user_wav: Optional[bytes] = None, ref_wav: Optional[bytes] = None,
+    intent_ctx: Optional[dict] = None,
 ) -> Optional[str]:
-    """録音FBの“ゼロベース個人最適”生成（docs/43）。
+    """録音FBの“ゼロベース個人最適”生成（docs/43, docs/52 FR-04）。
 
     強モデル＋thinking＋ハイブリッド音声（DSP実測の Evidence Pack ＋ 生音声）で、
     カタログから選ぶのではなく証拠から推論して講評する。enable_zero_base_fb がOFF・
     APIキー無し・SDK無し・失敗時は None（呼び出し側はルールベースFBにフォールバック）。
+
+    intent_ctx（任意）: {"kind_hint": "song"|"practice", "task_label": str, "practice_name": str}。
+    渡すと、モデルは録音を聴いて「曲か・勧めた基礎練の実演か」を最初に自分で判定し
+    （INTENT タグ）、その意図に合った講評を書く。判定結果は intent_ctx["heard"] に
+    書き戻す（呼び出し側が kind のルーティングに使う）。タグは本文から除去される。
     """
     if not settings.llm_enabled or not settings.enable_zero_base_fb:
         return None
@@ -249,13 +267,34 @@ def generate_feedback(
         if ref_wav:
             parts.append(types.Part.from_bytes(data=ref_wav, mime_type="audio/wav"))
         if user_wav and ref_wav:
-            intro = "1つ目の音声はユーザーの歌、2つ目はお手本（原曲）です。"
+            intro = "1つ目の音声はユーザーの録音、2つ目はお手本（原曲）です。"
         elif user_wav:
-            intro = "この音声はユーザーの歌です。"
+            intro = "この音声はユーザーの録音です。"
         else:
             intro = ""
+        # 意図判定の指示（docs/52 FR-04）: 勧めた基礎練の実演を「曲」として講評しない。
+        intent_block = ""
+        if intent_ctx:
+            prac = intent_ctx.get("practice_name")
+            tlabel = intent_ctx.get("task_label")
+            hint = intent_ctx.get("kind_hint")
+            lesson = (f"いまのレッスンでは課題「{tlabel}」に対して基礎練『{prac}』を勧めています。"
+                      if prac else "いまのレッスンで特定の基礎練はまだ勧めていません。")
+            intent_block = (
+                "# まず意図を判定する（最重要）\n"
+                f"{lesson}\n"
+                "録音を聴いて、これが (a)曲・歌の録音 か (b)勧めた基礎練の実演（ボーカルフライ・"
+                "リップロール・ハミング・ロングトーン等の発声練習） かを最初に判定してください。"
+                f"（音響特徴からの参考推定: {hint or '不明'}。ただし聴いた判断を優先してよい）\n"
+                "出力の1行目に必ず `INTENT: song` または `INTENT: practice` とだけ書き、空行を挟んで本文を続ける。\n"
+                "- INTENT: practice の場合: これは歌ではないので、歌としての講評（ビブラート・音程の正確さ・"
+                "歌い直しの改善など）をしない。その基礎練の出来（狙いどおりの発声ができているか）を"
+                "2〜4文で判定し、良ければ次の一歩（曲で試す等）、惜しければ直し方を1つだけ伝える。\n"
+                "- INTENT: song の場合: 通常どおり講評する。\n\n"
+            )
         prompt = (
-            f"{intro}\n\n# 実測の証拠（数値・秒はここにあるものだけ使う）\n{evidence}\n\n"
+            f"{intro}\n\n{intent_block}"
+            f"# 実測の証拠（数値・秒はここにあるものだけ使う）\n{evidence}\n\n"
             "# 指示\n上の音声と証拠から、この人にいま一番効く1点を自分で診断し、会話で講評してください。"
         )
         parts.append(types.Part.from_text(text=prompt))
@@ -272,6 +311,13 @@ def generate_feedback(
             ),
         )
         reply = (resp.text or "").strip()
+        if not reply:
+            return None
+        # 意図タグを分離（ユーザーに見せない）。判定は intent_ctx に書き戻す（docs/52 FR-04）
+        heard, reply = _split_intent_tag(reply)
+        if intent_ctx is not None and heard in ("song", "practice"):
+            intent_ctx["heard"] = heard
+        reply = reply.strip()
         if not reply:
             return None
         # 接地ガード: 証拠に無い秒の捏造を抑制＋“カードを出す約束”を除去

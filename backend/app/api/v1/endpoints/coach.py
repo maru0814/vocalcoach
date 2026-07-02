@@ -820,24 +820,41 @@ def send_audio(
     else:
         s.last_analysis = user_analysis
 
-    # ゼロベース個人最適FB（docs/43）。フラグONの時だけ、強モデル＋生音声＋実測証拠で
+    # ゼロベース個人最適FB（docs/43, docs/52）。ONの時、強モデル＋生音声＋実測証拠で
     # “聴いて推論した”講評を生成する。失敗時は下のルールベースFBにフォールバック。
-    # 月次コスト上限（¥2000）に達しそうなら呼ばず、ルールベースFBに切り替える。
+    # 月次コスト上限（¥2000）は無料ユーザーのみ対象。有料ユーザーは対象外（格下げしない）。
     zero_base_reply = None
     if settings.enable_zero_base_fb and settings.llm_enabled:
         from app.core import llm_budget
+        from app.services import billing_service
         _est = settings.llm_analysis_est_jpy_per_call
-        if llm_budget.would_exceed(_est):  # 上限到達 → 当月1回だけ通知してルールベースFBへ
-            llm_budget.notify_budget_reached_once()
-        else:  # 当月概算+今回 が上限を超えないときだけ呼ぶ
+        # 有料ユーザーは上限の対象外（無料枠が予算を食っても課金者を格下げしない）。docs/52 FR-02
+        _premium = settings.billing_enabled and billing_service.is_premium(db, user.id)
+        if llm_budget.zero_base_allowed(_premium, _est):
+            # 意図文脈（docs/52 FR-04）: モデル自身が「曲か・勧めた基礎練の実演か」を聴いて判定する。
+            _ictx: dict = {"kind_hint": kind}
+            _task = rule_engine.get_task(s.current_task) if s.current_task else None
+            if _task:
+                _ictx["task_label"] = _task["label"]
+                _ictx["practice_name"] = _task["practices"][0]["name"]
             try:
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
-                zero_base_reply = llm.generate_feedback(_session_state(s), user_wav=_uw, ref_wav=_rw)
+                zero_base_reply = llm.generate_feedback(
+                    _session_state(s), user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx
+                )
             except Exception:
                 zero_base_reply = None
             if zero_base_reply:
-                llm_budget.record(_est)  # 成功した呼び出しだけ当月コストに積む
+                # 有料・無料とも原価は記録（週次の原価・粗利監視のため）。docs/52 FR-03
+                llm_budget.record(_est)
+                # 聴いた意図をルーティングに反映: 実演なら基礎練チェック、曲なら歌い直し/診断へ。
+                # （表示テキストと状態遷移が同じ意図で揃う。タグ無しはヒューリスティックのまま）
+                _heard = _ictx.get("heard")
+                if _heard in ("song", "practice"):
+                    kind = _heard
+        else:  # 無料ユーザーが上限到達 → 当月1回だけ通知してルールベースFBへ
+            llm_budget.notify_budget_reached_once()
 
     msgs, updates = rule_engine.handle_audio(
         _session_state(s), user_analysis, compare_data, kind, history=history,
