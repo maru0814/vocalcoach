@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { logPaywallEvent, PaywallSource, startCheckout } from "@/lib/api";
+import { PREMIUM_PRICE_YEN } from "@/lib/pricing";
 
 type Props = {
   source: PaywallSource;
@@ -76,7 +77,7 @@ export default function UpgradeModal({ source, onClose }: Props) {
         </table>
 
         <p className="text-center text-sm">
-          <span className="text-xl font-bold">¥800</span>
+          <span className="text-xl font-bold">{PREMIUM_PRICE_YEN}</span>
           <span className="text-gray-500"> / 月</span>
           <span className="ml-2 text-xs text-gray-500">（いつでも解約OK）</span>
         </p>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BillingMe, getBillingMe, openPortal, startCheckout } from "@/lib/api";
+import { PREMIUM_PRICE_LABEL } from "@/lib/pricing";
 
 export default function SettingsPage() {
   const [me, setMe] = useState<BillingMe | null>(null);
@@ -75,7 +76,7 @@ export default function SettingsPage() {
           <>
             <p className="text-sm text-gray-700">現在のプラン: 無料プラン</p>
             <p className="text-xs text-gray-500">
-              プレミアム ¥800/月 で録音解析が無制限・詳細添削レポートが使えます（いつでも解約OK）。
+              プレミアム {PREMIUM_PRICE_LABEL} で録音解析が無制限・詳細添削レポートが使えます（いつでも解約OK）。
             </p>
             <button
               className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"

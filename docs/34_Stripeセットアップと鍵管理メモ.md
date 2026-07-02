@@ -1,6 +1,7 @@
 # Stripe セットアップ＆鍵管理メモ
 
-> 将来の自分用。有料プラン（プレミアム ¥500/月）の決済まわり。docs/31〜33・PR-A/Cの続き（PR-B）で使う。
+> 将来の自分用。有料プラン（プレミアム ¥800/月・税込）の決済まわり。docs/31〜33・PR-A/Cの続き（PR-B）で使う。
+> ⚠️ 価格の正本は Stripe 本番モードの Price 金額。docs・UI・特商法ページの表記は必ず実 Price 金額（現行 ¥800）に一致させる。
 > ⚠️ 鍵の実値はこのファイルにもチャットにも書かない。実値は `backend/.env`（gitignore済み）だけに置く。
 
 ## 1. `.env` に入れる鍵（backend/.env）
@@ -8,7 +9,7 @@
 | env名 | 形式 | 取得元 | 用途 |
 | --- | --- | --- | --- |
 | `STRIPE_SECRET_KEY` | `sk_test_...` / `sk_live_...` | 開発者 → APIキー | サーバからStripe APIを叩く |
-| `STRIPE_PRICE_ID_PREMIUM` | `price_...` | 商品 → ¥500/月の価格 | サブスク作成時のプラン指定 |
+| `STRIPE_PRICE_ID_PREMIUM` | `price_...` | 商品 → ¥800/月の価格 | サブスク作成時のプラン指定 |
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...` | `stripe listen`（ローカル）/ ダッシュボードのWebhook設定（本番） | webhook署名検証 |
 
 - これらは `app/core/config.py` の `stripe_secret_key` / `stripe_price_id_premium` / `stripe_webhook_secret` に対応（PR-Aで枠だけ用意済み）。
@@ -46,7 +47,7 @@ stripe trigger checkout.session.completed
 ## 4. 本番リリース時のチェックリスト
 
 - [ ] 本番モードでビジネス情報・本人確認・銀行口座を登録し審査通過
-- [ ] 本番モードで ¥500/月 の商品を**作り直す**（テストのPrice IDは本番で使えない）
+- [ ] 本番モードで ¥800/月 の商品を**作り直す**（テストのPrice IDは本番で使えない）
 - [ ] 本番の `sk_live_...` / `price_...` をサーバ（VPS）の `.env` に設定
 - [ ] 本番Webhook endpoint を登録（URL: `https://sora-vocal-ai.duckdns.org/api/v1/billing/webhook`）→ 発行された `whsec_...` を設定
 - [ ] 購読イベント: `checkout.session.completed` / `customer.subscription.updated` / `customer.subscription.deleted` / `invoice.payment_failed`
@@ -71,9 +72,9 @@ stripe trigger checkout.session.completed
 - **銀行口座**: 名義（カナ）はStripe登録氏名と一致させる（屋号口座は弾かれやすい→個人名義が無難）
 - 送信 → 審査。最短即日、書類確認が入ると数営業日。
 
-### 5.3 本番の商品（¥500/月）を作成
+### 5.3 本番の商品（¥800/月）を作成
 - 商品カタログ → 商品 → 「+ 商品を追加」
-- 名前=`ソラ先生 プレミアム`、料金=**500 JPY**、**継続（月次）**
+- 名前=`ソラ先生 プレミアム`、料金=**800 JPY**、**継続（月次）**
 - 発行された `price_...`（本番）を控える。
 
 ### 5.4 本番Webhookエンドポイント登録
