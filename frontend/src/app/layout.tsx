@@ -8,7 +8,9 @@ const DESCRIPTION =
   "AIボーカルトレーナー「ソラ先生」が、歌の録音を送るだけで音程・リズム・表現を解析し、今日直すところと基礎練メニューをチャットで教えます。スマホひとつ・専用マイク不要・無料で始められます。";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("http://localhost:3000"),
+  // OG/Twitter画像・favicon の絶対URL生成に使うサイトorigin。
+  // 本番はビルド引数 NEXT_PUBLIC_SITE_URL（compose）を使い、無ければ本番ドメインにフォールバック。
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://sora-vocal-ai.duckdns.org"),
   title: {
     default: `${SITE_NAME} - ${TAGLINE}`,
     template: `%s｜${SITE_NAME}`,
