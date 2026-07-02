@@ -27,7 +27,7 @@ VOICE_TYPES = [
 # 正本: backend/app/coaching/voice_coach.py の VOICE_TYPES[].artists。
 # snsは独立コンテナでbackendをimportしないためここにミラー。**変更時は両方を更新する**。
 ARTISTS_BY_ID = {
-    "rock":       {"female": ["LiSA", "YUKI"],            "male": ["Mrs. GREEN APPLE", "稲葉浩志(B'z)", "優里"]},
+    "rock":       {"female": ["LiSA", "アイナ・ジ・エンド"], "male": ["Mrs. GREEN APPLE", "稲葉浩志(B'z)", "優里"]},
     "groovy":     {"female": ["Superfly", "あいみょん"],   "male": ["玉置浩二", "鈴木雅之"]},
     "pop":        {"female": ["aiko", "いきものがかり"],   "male": ["北村匠海", "マカロニえんぴつ"]},
     "mysterious": {"female": ["宇多田ヒカル", "MISIA"],    "male": ["米津玄師", "藤井風"]},
