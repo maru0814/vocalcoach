@@ -61,5 +61,65 @@ class BudgetLedgerCounting(unittest.TestCase):
         self.assertAlmostEqual(llm_budget.month_spend_jpy(), 3.0, places=2)
 
 
+class IntentAwareListening(unittest.TestCase):
+    """zero-base の意図判定（docs/52 FR-04）。
+
+    「勧めた基礎練の実演」を zero-base が曲として講評して、resolve_kind の修正を
+    上書きしてしまう再発（表示テキストと状態遷移の食い違い）の回帰ガード。
+    """
+
+    def test_split_intent_tag_practice(self):
+        from app.coaching import llm
+        heard, rest = llm._split_intent_tag("INTENT: practice\n\nフライ、いい感じです。")
+        self.assertEqual(heard, "practice")
+        self.assertEqual(rest, "フライ、いい感じです。")
+
+    def test_split_intent_tag_song_case_insensitive(self):
+        from app.coaching import llm
+        heard, rest = llm._split_intent_tag("intent: SONG\n本文です。")
+        self.assertEqual(heard, "song")
+        self.assertEqual(rest, "本文です。")
+
+    def test_split_intent_tag_absent_returns_none(self):
+        from app.coaching import llm
+        heard, rest = llm._split_intent_tag("タグの無い普通の講評。")
+        self.assertIsNone(heard)
+        self.assertEqual(rest, "タグの無い普通の講評。")
+
+    def test_generate_feedback_strips_tag_and_writes_back(self):
+        """モデルが INTENT タグ付きで返したら、タグは本文から消え intent_ctx に書き戻る。"""
+        from unittest import mock
+        from app.coaching import llm
+
+        fake = "INTENT: practice\n\nガラガラからの繋ぎ、狙いどおりです。次は曲で試しましょう。"
+
+        class _Resp:
+            text = fake
+
+        class _Models:
+            def generate_content(self, **kw):
+                return _Resp()
+
+        class _Client:
+            def __init__(self, **kw):
+                self.models = _Models()
+
+        state = {"phase": "practice", "current_task": "breathy_closure",
+                 "last_analysis": {"duration_sec": 5.0}, "baseline_analysis": None,
+                 "song_ref_url": None, "song_ref_path": None}
+        ictx = {"kind_hint": "song", "task_label": "息漏れを減らす", "practice_name": "ボーカルフライからのアタック"}
+        orig_flag, orig_key = settings.enable_zero_base_fb, settings.gemini_api_key
+        settings.enable_zero_base_fb, settings.gemini_api_key = True, "TEST_DUMMY"
+        try:
+            with mock.patch("google.genai.Client", _Client):
+                reply = llm.generate_feedback(state, user_wav=b"RIFFfake", intent_ctx=ictx)
+        finally:
+            settings.enable_zero_base_fb, settings.gemini_api_key = orig_flag, orig_key
+        self.assertIsNotNone(reply)
+        self.assertNotIn("INTENT", reply, "意図タグをユーザーに見せない")
+        self.assertIn("ガラガラ", reply)
+        self.assertEqual(ictx.get("heard"), "practice", "聴いた判定が書き戻る")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
