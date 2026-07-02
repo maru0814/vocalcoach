@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { listRecordings, RecordingListItem } from "@/lib/api";
+import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import UpgradeModal from "@/components/UpgradeModal";
 import { AppHeader } from "@/components/AppHeader";
 
 export default function RecordingsPage() {
+  const router = useRouter();
   const [items, setItems] = useState<RecordingListItem[]>([]);
   const [lockedCount, setLockedCount] = useState(0);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -22,6 +25,7 @@ export default function RecordingsPage() {
       setLockedCount(data.locked_count);
       setStatus("ready");
     } catch (err) {
+      if (redirectToLoginIfAuthError(err, router)) return;
       const msg = err instanceof Error ? err.message : "";
       // ネットワーク失敗の生メッセージ（"Failed to fetch"）は出さず、次の手を示す
       setError(
@@ -31,7 +35,7 @@ export default function RecordingsPage() {
       );
       setStatus("error");
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     load();

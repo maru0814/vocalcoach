@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BillingMe, getBillingMe, openPortal, startCheckout } from "@/lib/api";
 import { PREMIUM_PRICE_LABEL } from "@/lib/pricing";
+import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [me, setMe] = useState<BillingMe | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -15,10 +18,11 @@ export default function SettingsPage() {
       try {
         setMe(await getBillingMe());
       } catch (err) {
+        if (redirectToLoginIfAuthError(err, router)) return;
         setError(err instanceof Error ? err.message : "取得に失敗しました");
       }
     })();
-  }, []);
+  }, [router]);
 
   const goCheckout = async () => {
     setBusy(true);

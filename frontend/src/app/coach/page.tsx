@@ -9,6 +9,7 @@ import {
   renameCoachSession,
   SessionSummary,
 } from "@/lib/api";
+import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import { BrandWordmark, Pill } from "@/components/brand/Brand";
 import { PremiumWidget } from "@/components/PremiumWidget";
 
@@ -30,13 +31,14 @@ export default function CoachListPage() {
     (async () => {
       try {
         setSessions(await listCoachSessions());
-      } catch {
-        setError("読み込みに失敗しました。ログインしてください。");
+      } catch (err) {
+        if (redirectToLoginIfAuthError(err, router)) return;
+        setError("読み込みに失敗しました。通信状態を確認して、もう一度お試しください。");
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [router]);
 
   async function startNew() {
     setCreating(true);
@@ -44,8 +46,9 @@ export default function CoachListPage() {
       await createCoachSession();
       const list = await listCoachSessions();
       router.push(`/coach/${list[0].id}`);
-    } catch {
-      setError("セッションを作成できませんでした。ログインを確認してください。");
+    } catch (err) {
+      if (redirectToLoginIfAuthError(err, router)) return;
+      setError("セッションを作成できませんでした。時間をおいてもう一度お試しください。");
       setCreating(false);
     }
   }

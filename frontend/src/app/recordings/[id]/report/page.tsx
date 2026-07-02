@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailedReport, getReport, startReport } from "@/lib/api";
+import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import UpgradeModal from "@/components/UpgradeModal";
 import { AppHeader } from "@/components/AppHeader";
 
@@ -31,6 +33,7 @@ function useDayChecks(recordingId: string) {
 }
 
 export default function ReportPage({ params }: Props) {
+  const router = useRouter();
   const [status, setStatus] = useState<"loading" | "none" | "generating" | "failed" | "ready" | "forbidden">("loading");
   const [report, setReport] = useState<DetailedReport | null>(null);
   const [error, setError] = useState("");
@@ -45,6 +48,7 @@ export default function ReportPage({ params }: Props) {
       if (res.report) setReport(res.report);
       return res.status;
     } catch (err) {
+      if (redirectToLoginIfAuthError(err, router)) return "error";
       const msg = err instanceof Error ? err.message : "";
       if (msg.includes("PREMIUM_REQUIRED")) {
         setStatus("forbidden");
@@ -53,7 +57,7 @@ export default function ReportPage({ params }: Props) {
       }
       return "error";
     }
-  }, [params.id]);
+  }, [params.id, router]);
 
   const generate = useCallback(async () => {
     setStatus("generating");

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getRecording, RecordingDetail } from "@/lib/api";
+import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import { AppHeader } from "@/components/AppHeader";
 
 type Props = { params: { id: string } };
@@ -17,6 +19,7 @@ function ScoreRow({ label, value }: { label: string; value: number | null | unde
 }
 
 export default function RecordingDetailPage({ params }: Props) {
+  const router = useRouter();
   const [data, setData] = useState<RecordingDetail | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
@@ -27,6 +30,7 @@ export default function RecordingDetailPage({ params }: Props) {
         setData(await getRecording(params.id));
         setStatus("ready");
       } catch (err) {
+        if (redirectToLoginIfAuthError(err, router)) return;
         const msg = err instanceof Error ? err.message : "";
         setError(
           !msg || /failed to fetch|networkerror/i.test(msg)
@@ -36,7 +40,7 @@ export default function RecordingDetailPage({ params }: Props) {
         setStatus("error");
       }
     })();
-  }, [params.id]);
+  }, [params.id, router]);
 
   return (
     <div className="bg-studio min-h-[100dvh]">
