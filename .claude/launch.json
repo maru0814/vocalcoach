@@ -6,12 +6,11 @@
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "node_modules/.bin/next",
-        "dev",
-        "-p",
-        "3000"
+        "dev"
       ],
       "port": 3000,
-      "cwd": "frontend"
+      "cwd": "frontend",
+      "autoPort": true
     },
     {
       "name": "backend",

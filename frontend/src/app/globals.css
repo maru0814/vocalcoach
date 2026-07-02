@@ -11,13 +11,41 @@ body {
   font-family: var(--font-rounded);
 }
 
-/* やわらかいスタジオ風グラデーション背景 */
+/* やわらかいスタジオ風グラデーション背景（docs/52: C案吸収で彩度を約1.5倍） */
 .bg-studio {
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(167, 139, 250, 0.25), transparent 60%),
-    radial-gradient(1000px 500px at 100% 0%, rgba(244, 114, 182, 0.18), transparent 55%),
-    radial-gradient(900px 700px at 50% 120%, rgba(99, 102, 241, 0.16), transparent 60%),
-    linear-gradient(180deg, #faf9ff 0%, #f4f2fb 100%);
+    radial-gradient(1200px 600px at 10% -10%, rgba(167, 139, 250, 0.38), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(244, 114, 182, 0.28), transparent 55%),
+    radial-gradient(900px 700px at 50% 120%, rgba(99, 102, 241, 0.25), transparent 60%),
+    linear-gradient(180deg, #faf9ff 0%, #f1eefb 100%);
+}
+
+/* 夜のステージ（ヒーロー・最終CTA・診断用）：紺→紫の闇＋スポットライト光条 docs/52 §5-3 */
+.bg-stage {
+  background:
+    radial-gradient(600px 400px at 50% -10%, rgba(251, 191, 36, 0.14), transparent 60%),
+    radial-gradient(800px 500px at 85% 20%, rgba(34, 211, 238, 0.1), transparent 55%),
+    radial-gradient(700px 500px at 10% 80%, rgba(236, 72, 153, 0.12), transparent 55%),
+    linear-gradient(175deg, #1e1655 0%, #171045 55%, #0f0a2e 100%);
+}
+
+/* 粒状ノイズ（のっぺり防止。position:relative な親に付与し全面3%で重ねる） */
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 環境アニメは reduced-motion で全停止（docs/52 §8） */
+@media (prefers-reduced-motion: reduce) {
+  .animate-twinkle,
+  .animate-note-float,
+  .animate-floaty {
+    animation: none;
+  }
 }
 
 .bg-brand-gradient {

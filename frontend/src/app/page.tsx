@@ -3,6 +3,10 @@ import { SiteHeader } from "@/components/site/SiteHeader";
 import { Reveal } from "@/components/site/Reveal";
 import { AnimatedDemo } from "@/components/site/AnimatedDemo";
 import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
+import { CoachSpotlight } from "@/components/character/CoachSpotlight";
+import { StageDecor } from "@/components/site/Stage";
+import { SectionHeading, Marker } from "@/components/site/SectionHeading";
+import { IconChip, IconName } from "@/components/site/IconChip";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
@@ -14,55 +18,47 @@ const STATS = [
   { value: "¥0", label: "登録だけで無料で始められる" },
 ];
 
-const PROBLEMS = [
-  { icon: "😕", text: "自分の歌の どこがダメか分からない" },
-  { icon: "🔍", text: "練習法を調べても 自分に合うのか不安で続かない" },
-  { icon: "📉", text: "練習してるのに 上達した実感がない" },
+const PROBLEMS: Array<{ icon: IconName; text: string }> = [
+  { icon: "frown", text: "自分の歌の どこがダメか分からない" },
+  { icon: "search", text: "練習法を調べても 自分に合うのか不安で続かない" },
+  { icon: "trend-down", text: "練習してるのに 上達した実感がない" },
 ];
 
-const FEATURES = [
+const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string; bullets: string[] }> = [
   {
-    icon: "🎙",
+    icon: "mic",
     tag: "AI声診断",
     title: "声が、見える化される。",
     desc: "あなたの声をAIが解析して、「この曲で出した音域」「使っている声（地声・ミックス・裏声）」「換声点」「声の共鳴」まで“声診断”。「なんとなく下手」が「サビ後半で息が切れている」みたいに、言葉で分かります。",
     bullets: ["音程の安定・強弱・ビブラートまで解析", "音域・声区・換声点まで“声診断”（推定）", "秒数つきで「どこを」直すか分かる"],
-    photo: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1000&q=80&auto=format&fit=crop",
-    alt: "AIが歌声を解析しているイメージ",
   },
   {
-    icon: "🎼",
+    icon: "headphones",
     tag: "原曲と聴き比べ",
     title: "原曲と、聴き比べる。",
     desc: "お手本の音源をアップロードすると、音を外していないか（音程の正確さ）とリズムの走り／モタりを原曲と聴き比べて実測。同じ曲を同じキーで歌うほど、ズレがぴたっと分かります。",
     bullets: ["音程の正確さを原曲と照合", "リズムの走り・モタりを秒数で指摘", "原曲なしでも、録音だけでFB"],
-    photo: "https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=1000&q=80&auto=format&fit=crop",
-    alt: "原曲とユーザーの歌を聴き比べるイメージ",
   },
   {
-    icon: "🎯",
+    icon: "target",
     tag: "個別メニュー",
     title: "今日の課題と、基礎練。",
     desc: "あなたの弱点に合わせて、今日やるべき基礎練を1つだけ提案。お手本のYouTube動画つきだから、迷わず練習できます。道具はいりません、声と体だけ。",
     bullets: ["弱点に合わせた練習を1つに絞る", "お手本動画つきで真似しやすい", "ドッグブレス等、家でできる練習"],
-    photo: "https://images.unsplash.com/photo-1454922915609-78549ad709bb?w=1000&q=80&auto=format&fit=crop",
-    alt: "自宅でボイストレーニングをする人のイメージ",
   },
   {
-    icon: "📈",
+    icon: "chart",
     tag: "成長記録",
     title: "上達が、記録に残る。",
     desc: "レッスンごとに自動で保存。録り直すと「前回より伸ばしが安定した」を、ソラ先生が会話で教えてくれます。見えなかった成長が、ちゃんと分かる。",
     bullets: ["レッスンを自動で履歴に保存", "前回より良くなった点を会話で伝える", "良くなった点をソラ先生が褒めてくれる"],
-    photo: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1000&q=80&auto=format&fit=crop",
-    alt: "上達の記録が積み上がるイメージ",
   },
 ];
 
-const STEPS = [
-  { n: "1", icon: "🎤", title: "歌って送る", desc: "スマホでそのまま録音、または音源をアップロード。原曲がなくてもOK。" },
-  { n: "2", icon: "💬", title: "AIから添削が届く", desc: "良かったところ・直すところ・今日の基礎練が、会話みたいにチャットで届きます。" },
-  { n: "3", icon: "🎼", title: "お手本と聴き比べ（任意）", desc: "原曲をアップロードすると、音程の正確さ・リズムをより正確に。" },
+const STEPS: Array<{ n: string; icon: IconName; title: string; desc: string }> = [
+  { n: "1", icon: "mic", title: "歌って送る", desc: "スマホでそのまま録音、または音源をアップロード。原曲がなくてもOK。" },
+  { n: "2", icon: "chat", title: "AIから添削が届く", desc: "良かったところ・直すところ・今日の基礎練が、会話みたいにチャットで届きます。" },
+  { n: "3", icon: "headphones", title: "お手本と聴き比べ（任意）", desc: "原曲をアップロードすると、音程の正確さ・リズムをより正確に。" },
 ];
 
 const FOR_YOU = [
@@ -129,18 +125,18 @@ export default function HomePage() {
       <SiteHeader />
 
       <main className="mx-auto max-w-6xl px-5">
-        {/* Hero */}
-        <section className="relative mt-4 overflow-hidden rounded-[2.5rem] bg-brand-gradient p-8 text-white shadow-soft sm:p-14">
-          <div className="absolute -right-16 -top-16 h-72 w-72 rounded-full bg-white/15 blur-3xl" />
-          <div className="absolute -bottom-20 left-1/4 h-80 w-80 rounded-full bg-pink-300/25 blur-3xl" />
+        {/* Hero（夜のステージ・開演 docs/52 §7 パイロット） */}
+        <section className="bg-stage grain relative mt-4 overflow-hidden rounded-[2.5rem] p-8 text-white shadow-soft sm:p-14">
+          <StageDecor />
           <div className="relative z-10 grid items-center gap-10 lg:grid-cols-2">
             <div className="max-w-xl">
-              <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-bold">
+              <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
                 <span className="inline-flex"><CoachAvatar size={18} /></span>
                 AIボーカルトレーナー {COACH_NAME}が担当
               </p>
-              <h1 className="text-4xl font-black leading-[1.12] sm:text-6xl">
-                その歌、<br className="hidden sm:block" />あと一歩。
+              <h1 className="text-4xl font-black leading-[1.12] tracking-tight sm:text-6xl lg:text-7xl">
+                その歌、<br className="hidden sm:block" />
+                <Marker tone="dark">あと一歩。</Marker>
               </h1>
               <p className="mt-4 text-lg font-bold text-white/95 sm:text-xl">
                 録って送るだけ。{COACH_NAME}が、今日直すところを教えます。
@@ -153,15 +149,18 @@ export default function HomePage() {
               <div className="mt-7 flex flex-wrap items-center gap-3">
                 <Link
                   href="/login"
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-7 py-3.5 font-bold text-brand-700 shadow-soft transition hover:scale-[1.02] active:scale-95"
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-7 py-3.5 font-bold text-brand-700 shadow-soft transition hover:scale-[1.02] hover:shadow-glow-neon active:scale-95"
                 >
                   無料で始める <span className="text-sm font-normal text-slate-400">30秒</span>
                 </Link>
                 <span className="text-sm text-white/80">★ 専用マイク不要・クレカ不要</span>
               </div>
             </div>
-            <div className="hidden lg:block">
-              <AnimatedDemo />
+            <div className="flex flex-col items-center gap-10">
+              <CoachSpotlight size={140} bubble="今日はどこを直す？" />
+              <div className="hidden lg:block">
+                <AnimatedDemo />
+              </div>
             </div>
           </div>
         </section>
@@ -182,51 +181,54 @@ export default function HomePage() {
           </div>
         </Reveal>
 
-        {/* 声タイプ診断 = AIボイトレの入口（まずはここから） */}
+        {/* 声タイプ診断 = AIボイトレの入口（図鑑アートと同じ夜ステージの世界） */}
         <Reveal className="mt-20">
-          <div className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-fuchsia-50 to-cyan-50 p-8 text-center shadow-card sm:p-12">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-3 py-1 text-xs font-bold text-brand-600">
-              <span className="inline-flex"><CoachAvatar size={16} /></span>
-              STEP 1 ・ まずはここから
-            </span>
-            <h2 className="mt-3 text-2xl font-black text-slate-800 sm:text-4xl">
-              まずは、<span className="text-brand-gradient">声タイプ診断</span>から。
-            </h2>
-            <p className="mx-auto mt-3 max-w-xl text-slate-600">
-              AIボーカルトレーナー{COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。
-              15秒ほど歌うだけ。似た声質のアーティストつきで、結果はそのままシェアできます。
-            </p>
-            <p className="mx-auto mt-2 max-w-xl text-sm font-bold text-brand-600">
-              診断のあとは、その声に合った発声レッスンへ。だから“いまの自分”から始められます。
-            </p>
-            <div className="mx-auto mt-8 grid max-w-2xl grid-cols-4 gap-2.5 sm:gap-3">
-              {VOICE_TYPE_LIST.map((t) => (
-                <div key={t.id} className="relative aspect-square overflow-hidden rounded-2xl shadow-soft">
-                  <VoiceTypeArt id={t.id} fallbackMascotSize={42} className="h-full w-full" />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-1 pb-1 pt-3 text-center">
-                    <span className="text-[10px] font-bold text-white drop-shadow">{t.name}</span>
+          <div className="bg-stage grain relative overflow-hidden rounded-[2rem] p-8 text-center shadow-card sm:p-12">
+            <StageDecor />
+            <div className="relative z-10">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-brand-600">
+                <span className="inline-flex"><CoachAvatar size={16} /></span>
+                STEP 1 ・ まずはここから
+              </span>
+              <h2 className="mt-3 text-2xl font-black text-white sm:text-4xl">
+                まずは、<span className="bg-gradient-to-r from-brand-200 to-pink-200 bg-clip-text text-transparent">声タイプ診断</span>から。
+              </h2>
+              <p className="mx-auto mt-3 max-w-xl text-white/80">
+                AIボーカルトレーナー{COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。
+                15秒ほど歌うだけ。似た声質のアーティストつきで、結果はそのままシェアできます。
+              </p>
+              <p className="mx-auto mt-2 max-w-xl text-sm font-bold text-brand-200">
+                診断のあとは、その声に合った発声レッスンへ。だから“いまの自分”から始められます。
+              </p>
+              <div className="mx-auto mt-8 grid max-w-2xl grid-cols-4 gap-2.5 sm:gap-3">
+                {VOICE_TYPE_LIST.map((t) => (
+                  <div key={t.id} className="relative aspect-square overflow-hidden rounded-2xl shadow-soft ring-1 ring-white/15 transition hover:-translate-y-0.5 hover:ring-white/40">
+                    <VoiceTypeArt id={t.id} fallbackMascotSize={42} className="h-full w-full" />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-1 pb-1 pt-3 text-center">
+                      <span className="text-[10px] font-bold text-white drop-shadow">{t.name}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <Link
+                href="/voice-type"
+                className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-gradient px-7 py-3.5 font-bold text-white shadow-soft transition hover:scale-[1.02] hover:shadow-glow-neon active:scale-95"
+              >
+                無料登録して、声タイプ診断 →
+              </Link>
+              <p className="mt-3 text-xs text-white/50">※ 診断・発声レッスンとも、無料登録（30秒）で使えます</p>
+              <VoiceTypeStats className="mt-3" tone="dark" />
             </div>
-            <Link
-              href="/voice-type"
-              className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-gradient px-7 py-3.5 font-bold text-white shadow-soft transition hover:scale-[1.02] active:scale-95"
-            >
-              無料登録して、声タイプ診断 →
-            </Link>
-            <p className="mt-3 text-xs text-slate-400">※ 診断・発声レッスンとも、無料登録（30秒）で使えます</p>
-            <VoiceTypeStats className="mt-3" />
           </div>
         </Reveal>
 
         {/* 課題提起 */}
         <Reveal className="mt-20 text-center">
-          <h2 className="text-2xl font-bold text-slate-800 sm:text-3xl">こんな悩み、ありませんか？</h2>
+          <SectionHeading eyebrow="PROBLEM" title={<>こんな悩み、<Marker>ありませんか？</Marker></>} />
           <div className="mt-7 grid gap-4 sm:grid-cols-3">
             {PROBLEMS.map((p) => (
-              <div key={p.text} className="rounded-2xl bg-white/90 p-6 shadow-card">
-                <div className="text-4xl">{p.icon}</div>
+              <div key={p.text} className="rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
+                <IconChip icon={p.icon} size={48} />
                 <p className="mt-3 text-sm font-medium text-slate-600">{p.text}</p>
               </div>
             ))}
@@ -252,16 +254,16 @@ export default function HomePage() {
 
         {/* 使い方 3ステップ */}
         <Reveal className="mt-20">
-          <h2 className="text-center text-2xl font-bold text-slate-800 sm:text-3xl">使い方は、3ステップ</h2>
+          <SectionHeading eyebrow="HOW IT WORKS" title={<>使い方は、<Marker>3ステップ</Marker></>} />
           <div className="mt-7 grid gap-4 sm:grid-cols-3">
             {STEPS.map((s, i) => (
               <Reveal key={s.n} delay={i * 120}>
-                <div className="h-full rounded-2xl bg-white/90 p-6 shadow-card">
+                <div className="h-full rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
                   <div className="flex items-center gap-2">
                     <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-gradient text-sm font-bold text-white">
                       {s.n}
                     </span>
-                    <span className="text-2xl">{s.icon}</span>
+                    <IconChip icon={s.icon} size={40} />
                   </div>
                   <div className="mt-3 font-bold text-slate-800">{s.title}</div>
                   <div className="mt-1 text-sm text-slate-500">{s.desc}</div>
@@ -271,28 +273,21 @@ export default function HomePage() {
           </div>
         </Reveal>
 
-        {/* 機能紹介（ジグザグ） */}
+        {/* 機能紹介（ジグザグ・パネルは実写でなくブランドの夜ステージ） */}
         <section className="mt-24 space-y-16">
-          <h2 className="text-center text-2xl font-bold text-slate-800 sm:text-3xl">
-            登録すると、できること
-          </h2>
+          <SectionHeading eyebrow="FEATURES" title={<>登録すると、<Marker>できること</Marker></>} />
           {FEATURES.map((f, i) => (
             <Reveal key={f.title}>
               <div className={`grid items-center gap-8 lg:grid-cols-2 ${i % 2 === 1 ? "lg:[&>div:first-child]:order-2" : ""}`}>
-                <div
-                  className="relative h-60 overflow-hidden rounded-3xl bg-brand-gradient bg-cover bg-center shadow-card sm:h-72"
-                  style={{ backgroundImage: `url(${f.photo}), linear-gradient(135deg,#7c3aed,#ec4899)` }}
-                  role="img"
-                  aria-label={f.alt}
-                >
-                  <span className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-brand-600">
+                <div className="bg-stage grain relative flex h-60 items-center justify-center overflow-hidden rounded-3xl shadow-card sm:h-72">
+                  <StageDecor notes={false} />
+                  <IconChip icon={f.icon} size={88} className="relative z-10 shadow-glow-neon" />
+                  <span className="absolute left-4 top-4 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-brand-600">
                     {f.tag}
                   </span>
                 </div>
                 <div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient text-2xl shadow-soft">
-                    {f.icon}
-                  </div>
+                  <IconChip icon={f.icon} size={48} />
                   <h3 className="mt-4 text-2xl font-black text-slate-800">{f.title}</h3>
                   <p className="mt-3 text-slate-600">{f.desc}</p>
                   <ul className="mt-4 space-y-2">
@@ -348,11 +343,11 @@ export default function HomePage() {
 
         {/* 利用者の声 */}
         <Reveal className="mt-24">
-          <h2 className="text-center text-2xl font-bold text-slate-800 sm:text-3xl">使った人の声</h2>
+          <SectionHeading eyebrow="VOICES" title="使った人の声" />
           <div className="mt-7 grid gap-4 sm:grid-cols-3">
             {VOICES.map((v, i) => (
               <Reveal key={v.name} delay={i * 120}>
-                <div className="h-full rounded-2xl bg-white/90 p-6 shadow-card">
+                <div className="h-full rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
                   <div className="text-amber-400">★★★★★</div>
                   <p className="mt-3 text-sm text-slate-700">{v.quote}</p>
                   <div className="mt-4 flex items-center gap-2">
@@ -388,7 +383,7 @@ export default function HomePage() {
 
         {/* FAQ（アコーディオン） */}
         <Reveal className="mt-24">
-          <h2 className="text-center text-2xl font-bold text-slate-800 sm:text-3xl">よくある質問</h2>
+          <SectionHeading eyebrow="FAQ" title="よくある質問" />
           <div className="mx-auto mt-7 max-w-2xl space-y-3">
             {FAQ.map((f) => (
               <details key={f.q} className="group rounded-2xl bg-white/90 px-5 py-4 shadow-card">
@@ -402,13 +397,15 @@ export default function HomePage() {
           </div>
         </Reveal>
 
-        {/* 最後のCTA */}
+        {/* 最後のCTA（夜のステージ・終演＝開演と首尾を揃える） */}
         <Reveal className="mt-24">
-          <div className="relative overflow-hidden rounded-[2.5rem] bg-brand-gradient p-10 text-center text-white shadow-soft sm:p-16">
-            <div className="absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/15 blur-2xl" />
-            <h2 className="relative z-10 text-3xl font-black sm:text-4xl">上達は、今日の一歩から。</h2>
+          <div className="bg-stage grain relative overflow-hidden rounded-[2.5rem] p-10 text-center text-white shadow-soft sm:p-16">
+            <StageDecor />
+            <h2 className="relative z-10 text-3xl font-black sm:text-4xl">
+              上達は、<Marker tone="dark">今日の一歩</Marker>から。
+            </h2>
             <p className="relative z-10 mt-3 text-white/90">まずは1曲、歌って送ってみましょう。AIボーカルトレーナーが待っています。</p>
-            <Link href="/login" className="relative z-10 mt-8 inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 font-bold text-brand-700 shadow-soft transition hover:scale-[1.02] active:scale-95">
+            <Link href="/login" className="relative z-10 mt-8 inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 font-bold text-brand-700 shadow-soft transition hover:scale-[1.02] hover:shadow-glow-neon active:scale-95">
               無料でレッスンを始める →
             </Link>
             <p className="relative z-10 mt-3 text-xs text-white/70">専用マイク不要・登録30秒・クレジットカード不要</p>
