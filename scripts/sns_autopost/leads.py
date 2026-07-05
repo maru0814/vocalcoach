@@ -13,7 +13,11 @@ import re
 
 # --- 探索クエリの正本（FR-01）。query はX検索にそのまま渡す語。 -----------------
 # keywords は「本文がこの悩み文脈か」を機械判定するための語（1つ以上ヒットで通過）。
+# require は「歌の文脈が本文に必要」な曖昧クエリ用（いずれか1つ必須。無指定は判定なし）。
 # 改定は growth-operator が lead_metrics.py のクエリ別フォロバ率を見て行う。
+#
+# 2026-07-05 初回本番ドライランの教訓: 「音痴 直したい」は方向音痴・機械音痴・味音痴を
+# 大量に拾った（通過10件中8件が歌と無関係）→ query に「歌」を足し、NEGATIVE/require で防衛。
 LEAD_QUERIES = [
     {"id": "highnote",   "query": "高音 出ない",          "intent": "高音が出ない悩み",
      "keywords": ["高音", "出ない", "届かない", "きつい", "苦しい"]},
@@ -21,8 +25,9 @@ LEAD_QUERIES = [
      "keywords": ["裏返る", "ひっくり返る", "換声点", "喚声点"]},
     {"id": "mix",        "query": "ミックスボイス できない", "intent": "ミックスボイス習得の悩み",
      "keywords": ["ミックスボイス", "ミックス", "地声", "裏声"]},
-    {"id": "onchi",      "query": "音痴 直したい",         "intent": "音程への自信のなさ",
-     "keywords": ["音痴", "直したい", "音程", "外れる", "ずれる"]},
+    {"id": "onchi",      "query": "歌 音痴",              "intent": "音程への自信のなさ",
+     "keywords": ["音痴", "音程", "外れる", "ずれる"],
+     "require": ["歌", "カラオケ", "音程", "声", "ボイトレ", "弾き語り"]},
     {"id": "pitch",      "query": "音程 不安定",           "intent": "ピッチが不安定な悩み",
      "keywords": ["音程", "ピッチ", "不安定", "ぶれる", "合わない"]},
     {"id": "karaoke",    "query": "精密採点 点数",         "intent": "カラオケ採点で伸び悩み",
@@ -67,6 +72,10 @@ def followers_range() -> tuple[int, int]:
             int(os.getenv("LEAD_FOLLOWERS_MAX", "3000")))
 
 
+# 「歌の音痴」ではない複合語（初回本番ドライランで実際に混入したもの）。本文にあれば即除外。
+NEGATIVE_COMPOUNDS = ("方向音痴", "機械音痴", "味音痴", "運動音痴", "SNS音痴",
+                      "ゲーム音痴", "方角音痴", "地図音痴")
+
 _JA_RE = re.compile(r"[ぁ-んァ-ヶ一-龠]")
 
 
@@ -101,9 +110,16 @@ def select(cand: dict, engaged_handles: set[str]) -> tuple[bool, str]:
         return False, "本文なし（取得失敗）"
     if not is_japanese(text):
         return False, "日本語でない"
+    for w in NEGATIVE_COMPOUNDS:
+        if w in text:
+            return False, f"歌以外の音痴（{w}）"
     # エンゲージ起点はすでに興味を示しているので intent 判定をスキップ
-    if cand.get("source") != "mention" and not intent_match(qid, text):
-        return False, f"文脈不一致（{qid}）"
+    if cand.get("source") != "mention":
+        if not intent_match(qid, text):
+            return False, f"文脈不一致（{qid}）"
+        req = (QUERY_BY_ID.get(qid) or {}).get("require")
+        if req and not any(k in text for k in req):
+            return False, f"歌の文脈なし（{qid}）"
     for w in _exclude_words():
         if w in text or w in bio or w in handle:
             return False, f"相互狙いワード（{w}）"
