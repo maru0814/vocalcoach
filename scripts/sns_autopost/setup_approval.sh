@@ -127,10 +127,14 @@ echo
 # --- --cron ---
 if [ "$DO_CRON" = 1 ]; then
   C="cd $DOCKER_DIR && docker compose -f docker-compose.prod.yml --env-file .env exec -T sns python"
+  # 注意: この一覧を変えたら scripts/deploy/remote_deploy.sh の同じ一覧も揃えること
+  # （デプロイ時にも冪等登録される。文字列完全一致で重複判定するため）。
   declare -a LINES=(
     "0 12 * * * $C generate_and_post.py --slot 1 >> /var/log/sns_autopost.log 2>&1"
     "0 21 * * * $C generate_and_post.py --slot 2 >> /var/log/sns_autopost.log 2>&1"
     "0 23 * * * $C fetch_metrics.py >> /var/log/sns_metrics.log 2>&1"
+    "0 10 * * * $C lead_finder.py >> /var/log/sns_leads.log 2>&1"
+    "30 22 * * 0 $C lead_metrics.py >> /var/log/sns_leads.log 2>&1"
   )
   CUR="$(crontab -l 2>/dev/null || true)"
   for l in "${LINES[@]}"; do
