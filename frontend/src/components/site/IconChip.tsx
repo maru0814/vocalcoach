@@ -70,7 +70,7 @@ const PATHS: Record<IconName, ReactNode> = {
 };
 
 /**
- * グラデ地＋白ラインアイコンのチップ（docs/52 §5-5: 絵文字アイコンの置き換え）。
+ * グラデ地＋白ラインアイコンのチップ（docs/55 §5-5: 絵文字アイコンの置き換え）。
  * 絵文字はチャット吹き出し・FAQ 内のみ残す。
  */
 export function IconChip({

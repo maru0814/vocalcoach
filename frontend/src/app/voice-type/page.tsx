@@ -9,6 +9,8 @@ import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
 import { analyzeVoiceType, getMe, VoiceTypeResult } from "@/lib/api";
 import { BrandWordmark } from "@/components/brand/Brand";
+import { CoachAvatar } from "@/components/character/Coach";
+import { StageDecor } from "@/components/site/Stage";
 
 const LOGIN_URL = "/login?next=/voice-type";
 
@@ -112,11 +114,14 @@ export default function VoiceTypePage() {
       </header>
 
       <main className="mx-auto max-w-2xl space-y-5 px-5">
-        {/* ヒーロー */}
-        <section className="relative overflow-hidden rounded-3xl bg-brand-gradient p-6 text-white shadow-soft">
-          <div className="absolute -right-8 -top-10 h-36 w-36 rounded-full bg-white/15 blur-2xl" />
+        {/* ヒーロー（夜のステージ docs/55 Phase 3） */}
+        <section className="bg-stage grain relative overflow-hidden rounded-3xl p-6 text-white shadow-soft">
+          <StageDecor notes={false} />
           <div className="relative z-10">
-            <span className="inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-bold">🎤 声タイプ診断</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
+              <span className="inline-flex"><CoachAvatar size={16} /></span>
+              声タイプ診断
+            </span>
             <h1 className="mt-3 text-2xl font-black leading-snug sm:text-3xl">
               あなたの声は、どのタイプ？
             </h1>

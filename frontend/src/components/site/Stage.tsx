@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 
-// 夜のステージ装飾（docs/52 §5-3）。座標は固定値＝SSRとクライアントで一致させる。
+// 夜のステージ装飾（docs/55 §5-3）。座標は固定値＝SSRとクライアントで一致させる。
 const STARS: Array<{ top: string; left: string; size: number; delay: string }> = [
   { top: "8%", left: "12%", size: 2, delay: "0s" },
   { top: "16%", left: "78%", size: 3, delay: "0.7s" },
@@ -50,7 +50,7 @@ export function StageDecor({ notes = true }: { notes?: boolean }) {
 
 /**
  * 夜のステージ面（ヒーロー・最終CTA・診断セクション用）。
- * docs/52 §5-7: 1画面に最大1〜2箇所（LPは3箇所を上限）。
+ * docs/55 §5-7: 1画面に最大1〜2箇所（LPは3箇所を上限）。
  */
 export function StageSection({
   children,

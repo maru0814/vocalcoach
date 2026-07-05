@@ -11,7 +11,7 @@ body {
   font-family: var(--font-rounded);
 }
 
-/* やわらかいスタジオ風グラデーション背景（docs/52: C案吸収で彩度を約1.5倍） */
+/* やわらかいスタジオ風グラデーション背景（docs/55: C案吸収で彩度を約1.5倍） */
 .bg-studio {
   background:
     radial-gradient(1200px 600px at 10% -10%, rgba(167, 139, 250, 0.38), transparent 60%),
@@ -20,7 +20,7 @@ body {
     linear-gradient(180deg, #faf9ff 0%, #f1eefb 100%);
 }
 
-/* 夜のステージ（ヒーロー・最終CTA・診断用）：紺→紫の闇＋スポットライト光条 docs/52 §5-3 */
+/* 夜のステージ（ヒーロー・最終CTA・診断用）：紺→紫の闇＋スポットライト光条 docs/55 §5-3 */
 .bg-stage {
   background:
     radial-gradient(600px 400px at 50% -10%, rgba(251, 191, 36, 0.14), transparent 60%),
@@ -39,7 +39,7 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* 環境アニメは reduced-motion で全停止（docs/52 §8） */
+/* 環境アニメは reduced-motion で全停止（docs/55 §8） */
 @media (prefers-reduced-motion: reduce) {
   .animate-twinkle,
   .animate-note-float,

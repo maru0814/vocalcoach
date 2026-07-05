@@ -12,6 +12,9 @@ import {
 import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import { BrandWordmark, Pill } from "@/components/brand/Brand";
 import { PremiumWidget } from "@/components/PremiumWidget";
+import { CoachAvatar } from "@/components/character/Coach";
+import { StageDecor } from "@/components/site/Stage";
+import { IconChip } from "@/components/site/IconChip";
 
 const PHASE_LABEL: Record<string, string> = {
   A: "曲を決める", B: "課題を見つける", C: "基礎練中", D: "練習チェック", E: "再録音", done: "完了",
@@ -89,17 +92,15 @@ export default function CoachListPage() {
       </header>
 
       <main className="mx-auto max-w-2xl space-y-5 px-5 pb-16">
-        {/* ヒーローCTA */}
+        {/* ヒーローCTA（今日のステージへ docs/55 Phase 3） */}
         <button
           onClick={startNew}
           disabled={creating}
-          className="group relative w-full overflow-hidden rounded-3xl bg-brand-gradient p-6 text-left text-white shadow-soft transition active:scale-[0.99] disabled:opacity-70"
+          className="group bg-stage grain relative w-full overflow-hidden rounded-3xl p-6 text-left text-white shadow-soft transition hover:shadow-card-2 active:scale-[0.99] disabled:opacity-70"
         >
-          <div className="absolute -right-6 -top-8 h-32 w-32 rounded-full bg-white/15 blur-2xl" />
+          <StageDecor notes={false} />
           <div className="relative z-10 flex items-center gap-4">
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 text-3xl">
-              {creating ? "⏳" : "🎤"}
-            </span>
+            <IconChip icon="mic" size={56} className="shadow-glow-neon" />
             <div>
               <div className="text-lg font-black">
                 {creating ? "準備しています…" : "新しいレッスンを始める"}
@@ -113,11 +114,9 @@ export default function CoachListPage() {
         {/* 声タイプ診断（別機能・いつでも） */}
         <Link
           href="/voice-type"
-          className="group flex items-center gap-3 rounded-2xl bg-white/80 p-4 shadow-card ring-1 ring-brand-100 transition hover:shadow-soft"
+          className="group flex items-center gap-3 rounded-2xl bg-white/80 p-4 shadow-card ring-1 ring-brand-100 transition hover:-translate-y-0.5 hover:shadow-card-2"
         >
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-cyan-500 text-2xl text-white shadow-soft">
-            🎤
-          </span>
+          <IconChip icon="search" size={48} />
           <div className="min-w-0 flex-1">
             <div className="font-bold text-slate-800">声タイプ診断</div>
             <div className="text-xs text-slate-500">15秒歌うだけ。8タイプから診断＆シェア（いつでもOK）</div>
@@ -142,19 +141,28 @@ export default function CoachListPage() {
           </div>
         ) : sessions.length === 0 ? (
           <div className="glass rounded-3xl p-10 text-center shadow-card">
-            <div className="animate-floaty mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-gradient text-3xl shadow-soft">
-              🎶
+            <div className="animate-floaty mx-auto mb-3 inline-flex">
+              <CoachAvatar size={64} ring />
+            </div>
+            <div className="mb-3 flex items-end justify-center gap-1" aria-hidden>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span
+                  key={i}
+                  className="block w-1.5 origin-bottom animate-eq rounded-full bg-brand-300"
+                  style={{ height: 14, animationDelay: `${i * 0.12}s` }}
+                />
+              ))}
             </div>
             <p className="font-bold text-slate-700">まだレッスンがありません</p>
-            <p className="mt-1 text-sm text-slate-500">上のボタンから、最初のレッスンを始めましょう。</p>
+            <p className="mt-1 text-sm text-slate-500">ソラ先生が待っています。上のボタンから、最初のレッスンを始めましょう。</p>
           </div>
         ) : (
           <ul className="space-y-3">
             {sessions.map((s) => (
               <li key={s.id} className="animate-fade-in-up">
-                <div className="glass flex items-center gap-3 rounded-2xl p-4 shadow-card transition hover:shadow-soft">
-                  <Link href={`/coach/${s.id}`} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-2xl">
-                    🎵
+                <div className="glass flex items-center gap-3 rounded-2xl p-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
+                  <Link href={`/coach/${s.id}`} className="shrink-0">
+                    <IconChip icon="note" size={48} />
                   </Link>
                   <div className="min-w-0 flex-1">
                     {editingId === s.id ? (

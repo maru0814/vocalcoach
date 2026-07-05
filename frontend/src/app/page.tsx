@@ -125,7 +125,7 @@ export default function HomePage() {
       <SiteHeader />
 
       <main className="mx-auto max-w-6xl px-5">
-        {/* Hero（夜のステージ・開演 docs/52 §7 パイロット） */}
+        {/* Hero（夜のステージ・開演 docs/55 §7 パイロット） */}
         <section className="bg-stage grain relative mt-4 overflow-hidden rounded-[2.5rem] p-8 text-white shadow-soft sm:p-14">
           <StageDecor />
           <div className="relative z-10 grid items-center gap-10 lg:grid-cols-2">

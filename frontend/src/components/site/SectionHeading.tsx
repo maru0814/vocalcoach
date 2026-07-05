@@ -16,7 +16,7 @@ export function Marker({ children, tone = "light" }: { children: ReactNode; tone
 }
 
 /**
- * eyebrow → h2 → sub の3段リズム見出し（docs/52 §5-4）。
+ * eyebrow → h2 → sub の3段リズム見出し（docs/55 §5-4）。
  */
 export function SectionHeading({
   eyebrow,

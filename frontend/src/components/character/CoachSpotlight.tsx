@@ -1,7 +1,7 @@
 import { CoachAvatar } from "./Coach";
 
 /**
- * スポットライトを浴びる大型ソラ先生（docs/52 §5-6）。
+ * スポットライトを浴びる大型ソラ先生（docs/55 §5-6）。
  * 主役サイズ（120px+）での登場は1画面1箇所だけ。暗面（bg-stage）の上で使う。
  */
 export function CoachSpotlight({ size = 140, bubble }: { size?: number; bubble?: string }) {
