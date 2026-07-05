@@ -172,3 +172,28 @@ cd docker && docker compose -f docker-compose.prod.yml --env-file .env up -d --b
 - `DRY_RUN` 既定=1（うっかり投稿しない）。実運用で 0 にする。
 - Geminiが盛った/URL欠落の文を返したらテンプレに自動差し替え。
 - キーは `.env`（Git除外）。**チャットやコミットに貼らない**。
+
+## Xリード獲得（半自動。docs/58/59）
+
+「歌の悩みを実況している人」を見つけ、返信下書きを専門家ゲート込みで用意して
+LINEに [✅返信する][⏭スキップ] で届ける。**返信・フォローの実行は常にあなたの手**
+（write自動化は実装として存在しない＝バン安全性の不変条件）。
+
+```bash
+python lead_finder.py --dry-run                 # まず安全に確認（既定DRY_RUN=1）
+python lead_finder.py                           # メンション＋API検索（要Xキー）
+python lead_finder.py --input leads_input.jsonl # Xアプリで見つけたURLを渡す（¥0）
+python lead_metrics.py                          # クエリ別フォロバ率（週次）
+```
+
+- 候補ソースは安い順に ①ペースト入力(oEmbed・¥0) ②自投稿へのメンション(owned read≒$0.001)
+  ③従量API検索(post read $0.005。`leads.LEAD_QUERIES` を日替わりローテ)。
+- フォロワー数/bio は本文選別を**通過した候補だけ** user read($0.010)で取得（遅延lookup）。
+- read課金は `LEAD_DAILY_READ_BUDGET_USD`(既定0.60)の日次予算ガード内。概算は
+  `lead_reads_log.jsonl` に記録。
+- 選別: 日本語/悩み文脈/相互狙い除外/対応済み除外/フォロワー30〜3000（`.env`で変更可）。
+- 返信下書きは同文連投を検出して破棄し、専門家ゲート（URL・誘導ワードは即失格）を通過した
+  ものだけLINEへ。1日の提示上限 `MAX_LEADS_PER_DAY`(既定10)。
+- LINEで承認しても**Xには投稿されない**。返信文コピー＋相手ツイートURLが返るので、
+  Xアプリからあなたの指で返信（＋必要ならフォロー）する。
+- テスト: `python tests/qa_leads.py`（外部API/キー不要）。

@@ -120,6 +120,68 @@ def push_approval(draft: dict) -> tuple[bool, str]:
         return False, f"EXC: {e}"
 
 
+def push_lead_approval(rec: dict) -> tuple[bool, str]:
+    """リード承認カードを運用者にpush（docs/58 FR-05）。
+    ①相手ツイート ②プロフ要約 ③提案返信 ④専門家判定 ＋ [✅返信する][⏭スキップ]。
+    承認しても X には投稿されない（実行は運用者の手動）。"""
+    if not enabled():
+        return False, "LINE_KEYS_MISSING"
+    to = os.getenv("LINE_OPERATOR_USER_ID")
+    if not to:
+        return False, "LINE_OPERATOR_USER_ID_MISSING"
+    lead = rec.get("lead") or {}
+    did = rec.get("id", "")
+    followers = lead.get("followers")
+    prof = f"@{(lead.get('handle') or '?').lstrip('@')}"
+    prof += f"（フォロワー {followers:,}人）" if isinstance(followers, int) else "（フォロワー数 不明）"
+    expert = (rec.get("expert_note") or "").strip()
+    body = (
+        (f"{expert}\n\n" if expert else "")
+        + f"🎯 リード候補（{lead.get('query_id', '?')} / {lead.get('source', '?')}）\n"
+        + f"{prof}\n\n【相手のツイート】\n{'─' * 12}\n{lead.get('source_text', '')}\n\n"
+        + f"【提案する返信】\n{'─' * 12}\n{lead.get('reply_text', '')}"
+    )
+    buttons = {
+        "type": "template",
+        "altText": "リード返信の確認（返信する / スキップ）",
+        "template": {
+            "type": "confirm",
+            "text": "この人に返信しますか？（実行はあなたの手で）",
+            "actions": [
+                {"type": "postback", "label": "✅ 返信する",
+                 "data": f"act=lead_approve&id={did}", "displayText": "✅ 返信する"},
+                {"type": "postback", "label": "⏭ スキップ",
+                 "data": f"act=lead_skip&id={did}", "displayText": "⏭ スキップ"},
+            ],
+        },
+    }
+    payload = {"to": to, "messages": [{"type": "text", "text": body}, buttons]}
+    try:
+        r = requests.post(f"{_API}/message/push", headers=_headers(),
+                          json=payload, timeout=_TIMEOUT)
+        if r.status_code == 200:
+            return True, "ok"
+        return False, f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        return False, f"EXC: {e}"
+
+
+def push_text(text: str) -> tuple[bool, str]:
+    """運用者への単発テキストpush（「本日は該当リードなし」等の通知用）。"""
+    if not enabled():
+        return False, "LINE_KEYS_MISSING"
+    to = os.getenv("LINE_OPERATOR_USER_ID")
+    if not to:
+        return False, "LINE_OPERATOR_USER_ID_MISSING"
+    payload = {"to": to, "messages": [{"type": "text", "text": text}]}
+    try:
+        r = requests.post(f"{_API}/message/push", headers=_headers(),
+                          json=payload, timeout=_TIMEOUT)
+        return (r.status_code == 200), (f"HTTP {r.status_code}" if r.status_code != 200 else "ok")
+    except Exception as e:
+        return False, f"EXC: {e}"
+
+
 def reply(reply_token: str, text: str) -> tuple[bool, str]:
     """Webhookイベントへの返信（押下結果の通知など）。"""
     if not enabled() or not reply_token:

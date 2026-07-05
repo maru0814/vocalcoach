@@ -44,6 +44,26 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - 毎日その時刻に下書きがLINEに届く → 承認したものだけ投稿される。
 - 即投稿したいとき（緊急）: `docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --pillar tip --post-now --force`
 
+### リード獲得（docs/58/59。2026-07 追加）
+- **cron**: リード探索=毎朝10時 / フォロバ計測=日曜22:30（ログは `/var/log/sns_leads.log`）。
+  デプロイ（`remote_deploy.sh`）が冪等登録するので手作業不要。cron一覧の正は
+  `setup_approval.sh --cron` と `remote_deploy.sh` の2箇所（変更時は両方揃える）。
+- **毎朝の流れ**: 10時にLINEへ「🎯リード候補」カードが最大10件（`MAX_LEADS_PER_DAY`）届く →
+  [✅返信する] を押すと返信文コピーと相手ツイートURLが返る → **Xアプリで自分の指で返信**。
+  自動では一切返信・フォローされない（コード上writeが存在しない）。
+- **前提（人間作業・初回のみ）**: console.x.com で**従量課金クレジット（最低$5）**をチャージ。
+  未チャージだと検索/メンション取得が4xxになり「本日は該当リードなし」通知が続く（落ちはしない）。
+- **コスト**: read課金は日次予算 `LEAD_DAILY_READ_BUDGET_USD`（既定0.60）で頭打ち。
+  実績は sns コンテナ内 `/data/lead_reads_log.jsonl` に日別記録。
+- **トラブルシュート**:
+  ```bash
+  tail /var/log/sns_leads.log                     # 探索の実行ログ（除外理由・read概算も出る）
+  docker compose -f docker-compose.prod.yml --env-file .env \
+    exec -T sns sh -c "tail -3 /data/engaged_log.jsonl"   # 承認/スキップの記録
+  docker compose -f docker-compose.prod.yml --env-file .env \
+    exec -T sns python lead_finder.py --dry-run    # 手動で安全確認（LINE・記録に触れない）
+  ```
+
 ## 注意
 - キー類（X / LINE / Gemini）は `.env`（Git除外）にのみ置く。**チャットやスクショに出さない**。
 - 漏れたら必ず再生成（X: 開発者ポータルで再生成 / Gemini: AI Studioで再発行）。

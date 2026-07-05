@@ -52,6 +52,39 @@ def serve_image(name: str) -> Response:
                         headers={"Cache-Control": "public, max-age=86400"})
 
 
+def _handle_lead_postback(act: str, draft: dict, reply_token: str) -> None:
+    """リード承認/スキップの処理（docs/58 FR-05）。
+
+    バン安全性の不変条件: ここでは X の書込みAPI（返信/フォロー）を一切呼ばない。
+    承認＝engaged_log への記録＋返信文の再表示のみ。実行は運用者がXアプリで手動。"""
+    lead = draft.get("lead") or {}
+    did = draft.get("id", "")
+    base = {"lead_id": did,
+            "handle": (lead.get("handle") or "").lstrip("@"),
+            "query_id": lead.get("query_id", ""),
+            "reply_text": lead.get("reply_text", "")}
+
+    if act == "lead_skip":
+        q.mark_decided(did, "skipped")
+        q.append_engaged({**base, "status": "skipped"})
+        line_client.reply(reply_token, "⏭ スキップしました（返信・フォローはしていません）。")
+        return
+
+    # lead_approve: 記録して返信文を渡すだけ。X APIは叩かない。
+    q.mark_decided(did, "approved")
+    q.append_engaged({**base, "status": "approved"})
+    url = lead.get("url", "")
+    line_client.reply(
+        reply_token,
+        "✅ 承認を記録しました（自動投稿はしていません）。\n\n"
+        "【返信文（長押しでコピー）】\n"
+        f"{lead.get('reply_text', '')}\n\n"
+        "【相手のツイート】\n"
+        f"{url}\n\n"
+        "Xアプリで開いて、ご自身の指で返信（＋必要ならフォロー）してください。",
+    )
+
+
 def _handle_postback(data: str, reply_token: str) -> None:
     """承認/却下ボタンの処理。"""
     params = {k: v[0] for k, v in parse_qs(data or "").items()}
@@ -65,6 +98,10 @@ def _handle_postback(data: str, reply_token: str) -> None:
     if draft.get("status") != "pending":
         line_client.reply(reply_token,
                           f"この投稿は処理済みです（{draft.get('status')}）。")
+        return
+
+    if act in ("lead_approve", "lead_skip"):
+        _handle_lead_postback(act, draft, reply_token)
         return
 
     if act == "reject":
