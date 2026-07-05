@@ -86,7 +86,7 @@ export function IconChip({
 }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow-soft ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-soft ${className}`}
       style={{ width: size, height: size }}
       role={label ? "img" : undefined}
       aria-label={label}

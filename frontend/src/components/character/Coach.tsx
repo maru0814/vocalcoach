@@ -5,21 +5,33 @@ export const COACH_NAME = "ソラ先生";
 export const COACH_ROLE = "AIボーカルトレーナー";
 export const SERVICE_NAME = "AIボーカルトレーナー ソラ先生";
 
+/** ポーズライブラリ（docs/56 §3-6）。同一画面に同じポーズを2回出さない。 */
+export type CoachPose = "singing" | "explain" | "cheer" | "clap" | "thinking" | "bow";
+
 /**
  * ソラ先生のアバター。サービス共通のキャラクター画像（チビ調）を円形で表示する。
- * 画像は声タイプ図鑑・SNSと同じ絵柄で統一（`/brand/sora-icon.png`）。
+ * pose 省略時は従来の顔アイコン（`/brand/sora-icon.png`）、指定時は `/brand/poses/` のポーズ差分。
  */
-export function CoachAvatar({ size = 36, ring = false }: { size?: number; ring?: boolean }) {
+export function CoachAvatar({
+  size = 36,
+  ring = false,
+  pose,
+}: {
+  size?: number;
+  ring?: boolean;
+  pose?: CoachPose;
+}) {
+  const src = pose ? `/brand/poses/${pose}.png` : "/brand/sora-icon.png";
   return (
     <span
-      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-gradient shadow-soft ${
+      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-soft ${
         ring ? "ring-2 ring-white" : ""
       }`}
       style={{ width: size, height: size }}
       aria-hidden
     >
       <Image
-        src="/brand/sora-icon.png"
+        src={src}
         alt=""
         width={size}
         height={size}

@@ -7,6 +7,8 @@ import { CoachSpotlight } from "@/components/character/CoachSpotlight";
 import { StageDecor } from "@/components/site/Stage";
 import { SectionHeading, Marker } from "@/components/site/SectionHeading";
 import { IconChip, IconName } from "@/components/site/IconChip";
+import { ProductSnippet, SnippetMessage } from "@/components/site/ProductSnippet";
+import { Button } from "@/components/ui/Button";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
@@ -24,13 +26,24 @@ const PROBLEMS: Array<{ icon: IconName; text: string }> = [
   { icon: "trend-down", text: "練習してるのに 上達した実感がない" },
 ];
 
-const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string; bullets: string[] }> = [
+const FEATURES: Array<{
+  icon: IconName;
+  tag: string;
+  title: string;
+  desc: string;
+  bullets: string[];
+  chat: SnippetMessage[]; // 実際の製品と同じ見た目のモック（docs/56 §3-7）
+}> = [
   {
     icon: "mic",
     tag: "AI声診断",
     title: "声が、見える化される。",
     desc: "あなたの声をAIが解析して、「この曲で出した音域」「使っている声（地声・ミックス・裏声）」「換声点」「声の共鳴」まで“声診断”。「なんとなく下手」が「サビ後半で息が切れている」みたいに、言葉で分かります。",
     bullets: ["音程の安定・強弱・ビブラートまで解析", "音域・声区・換声点まで“声診断”（推定）", "秒数つきで「どこを」直すか分かる"],
+    chat: [
+      { from: "sora", text: "1:24の伸ばし、後半でゆれて下がっています。息の支えから整えましょう" },
+      { from: "user", text: "たしかにそこ、苦しかったです…！" },
+    ],
   },
   {
     icon: "headphones",
@@ -38,6 +51,9 @@ const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string
     title: "原曲と、聴き比べる。",
     desc: "お手本の音源をアップロードすると、音を外していないか（音程の正確さ）とリズムの走り／モタりを原曲と聴き比べて実測。同じ曲を同じキーで歌うほど、ズレがぴたっと分かります。",
     bullets: ["音程の正確さを原曲と照合", "リズムの走り・モタりを秒数で指摘", "原曲なしでも、録音だけでFB"],
+    chat: [
+      { from: "sora", text: "原曲と比べると、Bメロで半拍はやく入っています。まずは手拍子で合わせてみましょう" },
+    ],
   },
   {
     icon: "target",
@@ -45,6 +61,10 @@ const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string
     title: "今日の課題と、基礎練。",
     desc: "あなたの弱点に合わせて、今日やるべき基礎練を1つだけ提案。お手本のYouTube動画つきだから、迷わず練習できます。道具はいりません、声と体だけ。",
     bullets: ["弱点に合わせた練習を1つに絞る", "お手本動画つきで真似しやすい", "ドッグブレス等、家でできる練習"],
+    chat: [
+      { from: "sora", text: "今日の基礎練は1つだけ。ドッグブレス30秒×3、お手本動画つきです" },
+      { from: "user", text: "1つならできそう！" },
+    ],
   },
   {
     icon: "chart",
@@ -52,6 +72,9 @@ const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string
     title: "上達が、記録に残る。",
     desc: "レッスンごとに自動で保存。録り直すと「前回より伸ばしが安定した」を、ソラ先生が会話で教えてくれます。見えなかった成長が、ちゃんと分かる。",
     bullets: ["レッスンを自動で履歴に保存", "前回より良くなった点を会話で伝える", "良くなった点をソラ先生が褒めてくれる"],
+    chat: [
+      { from: "sora", text: "前回より伸ばしが安定しました。息の支え、効いてきていますよ" },
+    ],
   },
 ];
 
@@ -147,13 +170,10 @@ export default function HomePage() {
                 教室に通わなくても、家でスマホひとつ。
               </p>
               <div className="mt-7 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-7 py-3.5 font-bold text-brand-700 shadow-soft transition hover:scale-[1.02] hover:shadow-glow-neon active:scale-95"
-                >
+                <Button href="/login" variant="secondary" size="lg">
                   無料で始める <span className="text-sm font-normal text-slate-400">30秒</span>
-                </Link>
-                <span className="text-sm text-white/80">★ 専用マイク不要・クレカ不要</span>
+                </Button>
+                <span className="text-sm text-white/80">専用マイク不要・クレカ不要</span>
               </div>
             </div>
             <div className="flex flex-col items-center gap-10">
@@ -279,9 +299,9 @@ export default function HomePage() {
           {FEATURES.map((f, i) => (
             <Reveal key={f.title}>
               <div className={`grid items-center gap-8 lg:grid-cols-2 ${i % 2 === 1 ? "lg:[&>div:first-child]:order-2" : ""}`}>
-                <div className="bg-stage grain relative flex h-60 items-center justify-center overflow-hidden rounded-3xl shadow-card sm:h-72">
+                <div className="bg-stage grain relative flex items-center justify-center overflow-hidden rounded-[2rem] p-6 shadow-card sm:p-10">
                   <StageDecor notes={false} />
-                  <IconChip icon={f.icon} size={88} className="relative z-10 shadow-glow-neon" />
+                  <ProductSnippet messages={f.chat} className="relative z-10 w-full max-w-sm" />
                   <span className="absolute left-4 top-4 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-brand-600">
                     {f.tag}
                   </span>
