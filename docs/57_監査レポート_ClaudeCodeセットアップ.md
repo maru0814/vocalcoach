@@ -19,7 +19,7 @@
 | `.claude/rules/` / output-styles / MCP | なし | 見送り（移すべき常時ロード内容が現状なく効果薄） |
 | permissions | なし（毎回プロンプト） | 提案のみ（`settings.proposed.json`） |
 | CI | deploy.yml のみ（品質ゲート不在） | `ci.yml` 新設（backend pytest＋frontend tsc） |
-| docs 連番 | 35・44 が各2ファイルで衝突 | 35_本番運用メモ→55、44_レポート→56 に改番 |
+| docs 連番 | 35・44 が各2ファイルで衝突 | 35_本番運用メモ→55、44_レポート→56 に改番。※その後 PR #126（ブランドリニューアル）が独立に 55 を採番したため、本番運用メモは 60 へ再改番（55=ブランドリニューアル仕様が正） |
 
 スキル description（発火トリガー）は総じて高品質（具体的発話例・役割境界明記）で手入れ不要と判定。`scripts/sns_autopost/` の自動化資産・deploy.yml の設計（concurrency 直列化・docs 除外）も良好。
 

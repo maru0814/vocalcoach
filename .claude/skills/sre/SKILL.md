@@ -28,7 +28,7 @@ description: 本番インフラ（ConoHa VPS / Docker Compose / Caddy / cron）�
 scripts/deploy/remote_deploy.sh   — 変更サービスだけ再ビルドする本体スクリプト
 docker/docker-compose.prod.yml    — 本番構成（frontend/backend/sns/caddy）
 docker/Caddyfile                  — ルーティング（/sns/* → sns:8088。単一ファイルbind mount）
-docs/55_本番運用メモ_VPSとSNS承認.md — 手順・トラブルシュートの一次情報（旧 docs/35）
+docs/60_本番運用メモ_VPSとSNS承認.md — 手順・トラブルシュートの一次情報（旧 docs/35→55）
 ```
 
 ## デプロイの仕組み（把握しておく）
