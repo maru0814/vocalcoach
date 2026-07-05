@@ -1,0 +1,53 @@
+{
+  "_readme": "監査プランP2/P3/P5の提案設定。有効化するには、この内容を確認のうえ .claude/settings.json に自分で貼り付けてください（Claude Code の自動書換ガードにより Claude 自身は settings.json を変更しない）。permissions.allow は read-only コマンドのみ。PreToolUse は main 直編集・直コミットを .claude/hooks/protect-main.py でブロックする。",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree list:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(npx tsc:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(rm -rf:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s\\n' '【リマインド】着手前に該当役職スキルを起動する（対応表は claude.md「役職ディスパッチ」）。ファイル編集を伴うセッションは EnterWorktree 必須。'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-main.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
