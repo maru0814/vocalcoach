@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Xリード獲得の探索パイプライン（docs/55/56、ハイブリッド版）。
+"""Xリード獲得の探索パイプライン（docs/58/59、ハイブリッド版）。
 
 「歌の悩みを実況している人」を集め、選別し、刺さる返信下書きを専門家ゲート込みで
 用意して LINE 承認に回す。**フォロー/返信の実行は常に運用者の手動**（write自動化なし）。
@@ -46,7 +46,7 @@ import lead_reply
 import leads
 import line_client
 
-# 従量課金の単価（docs/56 §2.1。概算ガード用。変動したらここを直す）
+# 従量課金の単価（docs/59 §2.1。概算ガード用。変動したらここを直す）
 PRICE = {"post_read": 0.005, "user_read": 0.010, "owned_read": 0.001}
 
 
@@ -203,7 +203,7 @@ def source_mentions(oauth, meter: ReadMeter, limit: int = 20) -> list[dict]:
 
 def source_search(oauth, meter: ReadMeter, want: int) -> list[dict]:
     """従量API検索（post read $0.005/件）。クエリは日替わりでローテーション。
-    フォロワー数/bio はこの段階では取らない（遅延lookup。docs/56 §2.1改）。"""
+    フォロワー数/bio はこの段階では取らない（遅延lookup。docs/59 §2.1改）。"""
     out = []
     qs = leads.search_queries()
     per_run = int(os.getenv("LEAD_QUERIES_PER_RUN", "3"))

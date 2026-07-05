@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""リード探索のSSOT（docs/55 FR-01/FR-02、docs/56）。
+"""リード探索のSSOT（docs/58 FR-01/FR-02、docs/59）。
 
 「歌の悩みを今まさに言語化している人」を捕まえる検索クエリと、候補を絞り込む
 選別基準をここに一元管理する（themes.py と同格の静的定義）。
 
 バン安全性の原則（不変条件）: このモジュール群が扱うのは read（探す・絞る）だけ。
 フォロー/返信/DM の write 自動実行はリード獲得のどのモジュールにも存在しない。
-実行は常に運用者がXアプリで手動（docs/56 §2.3）。
+実行は常に運用者がXアプリで手動（docs/59 §2.3）。
 """
 import os
 import re
@@ -87,7 +87,7 @@ def intent_match(query_id: str, text: str) -> bool:
 
 
 def select(cand: dict, engaged_handles: set[str]) -> tuple[bool, str]:
-    """候補1件を選別する（docs/56 §3.2。すべてANDで通過）。
+    """候補1件を選別する（docs/59 §3.2。すべてANDで通過）。
 
     cand: {text, handle, query_id, source, followers(optional int|None), bio(optional)}
     returns (ok, reason)。reason は除外理由 or 通過時の注記。

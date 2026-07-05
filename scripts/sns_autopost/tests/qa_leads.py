@@ -1,4 +1,4 @@
-"""QA harness: Xリード獲得半自動化（docs/55 AC / docs/56 §10 の自動化可能ケース）。
+"""QA harness: Xリード獲得半自動化（docs/58 AC / docs/59 §10 の自動化可能ケース）。
 外部API・LINE・Geminiは呼ばない（キー未設定前提で走る）。"""
 import json
 import os

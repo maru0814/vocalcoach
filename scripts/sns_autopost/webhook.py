@@ -53,7 +53,7 @@ def serve_image(name: str) -> Response:
 
 
 def _handle_lead_postback(act: str, draft: dict, reply_token: str) -> None:
-    """リード承認/スキップの処理（docs/55 FR-05）。
+    """リード承認/スキップの処理（docs/58 FR-05）。
 
     バン安全性の不変条件: ここでは X の書込みAPI（返信/フォロー）を一切呼ばない。
     承認＝engaged_log への記録＋返信文の再表示のみ。実行は運用者がXアプリで手動。"""

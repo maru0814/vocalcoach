@@ -44,7 +44,7 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - 毎日その時刻に下書きがLINEに届く → 承認したものだけ投稿される。
 - 即投稿したいとき（緊急）: `docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --pillar tip --post-now --force`
 
-### リード獲得（docs/55/56。2026-07 追加）
+### リード獲得（docs/58/59。2026-07 追加）
 - **cron**: リード探索=毎朝10時 / フォロバ計測=日曜22:30（ログは `/var/log/sns_leads.log`）。
   デプロイ（`remote_deploy.sh`）が冪等登録するので手作業不要。cron一覧の正は
   `setup_approval.sh --cron` と `remote_deploy.sh` の2箇所（変更時は両方揃える）。

@@ -136,8 +136,8 @@ def pending(limit: int = 50) -> list[dict]:
     return [r for r in _read_all() if r.get("status") == "pending"][-limit:]
 
 
-# ==== リード獲得（docs/55/56）: 承認キュー相乗り＋engaged_log ========================
-# 既存レコードに kind が無いものは "post" として扱う（後方互換。docs/56 §11）。
+# ==== リード獲得（docs/58/59）: 承認キュー相乗り＋engaged_log ========================
+# 既存レコードに kind が無いものは "post" として扱う（後方互換。docs/59 §11）。
 ENGAGED_PATH = os.path.join(_DATA_DIR, "engaged_log.jsonl")
 
 
@@ -175,7 +175,7 @@ def leads_today() -> int:
 
 
 def append_engaged(rec: dict) -> dict:
-    """engaged_log.jsonl に1件追記する（計測のSSOT。docs/56 §4.2）。"""
+    """engaged_log.jsonl に1件追記する（計測のSSOT。docs/59 §4.2）。"""
     rec = dict(rec)
     rec.setdefault("approved_at", _now())
     rec.setdefault("followed_back", None)

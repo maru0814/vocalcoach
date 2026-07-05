@@ -121,7 +121,7 @@ def push_approval(draft: dict) -> tuple[bool, str]:
 
 
 def push_lead_approval(rec: dict) -> tuple[bool, str]:
-    """リード承認カードを運用者にpush（docs/55 FR-05）。
+    """リード承認カードを運用者にpush（docs/58 FR-05）。
     ①相手ツイート ②プロフ要約 ③提案返信 ④専門家判定 ＋ [✅返信する][⏭スキップ]。
     承認しても X には投稿されない（実行は運用者の手動）。"""
     if not enabled():

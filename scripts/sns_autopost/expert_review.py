@@ -247,7 +247,7 @@ def review_and_gate(text: str, reply: str | None, pillar: str,
                 "report": f"⚠️ 専門家レビュー未実施（エラー: {e}）"}
 
 
-# ==== リード返信のゲート（docs/55 FR-04、docs/56）====================================
+# ==== リード返信のゲート（docs/58 FR-04、docs/59）====================================
 # 投稿とは文脈が違う（他人への1:1の返信）ので、専用の小さいルーブリックで採点する。
 MAXES_LEAD = {"fit": 30, "concrete": 25, "authority": 20, "safety": 15, "cta": 10}
 _LABEL_LEAD = {"fit": "相手の悩みへの適合", "concrete": "具体性・今日試せるか",
