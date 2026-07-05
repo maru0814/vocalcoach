@@ -1,0 +1,72 @@
+# コーチングループの詳細（Phase A〜E 実務手順）
+
+> `vocal-trainer` SKILL.md 本体から参照される実務手順。コーチングセッションを実際に進める時に読む。
+
+## Phase A: 曲・区間指定 + 原曲指定（必須情報収集）
+最初にユーザーから以下を全部そろえてから次フェーズに進む。揃わなければ Phase A に留まり追加質問する。
+
+| 項目 | 形式 | 例 |
+| --- | --- | --- |
+| ユーザー録音ファイル | ローカルパス (wav/mp3/m4a) | `/path/to/recording.mp3` |
+| 見てほしい区間 | mm:ss-mm:ss または「全体」 | `0:15-0:45` |
+| 原曲参照 | 音源パス / YouTube URL / アーティスト+曲名 | `https://youtube.com/watch?v=...` |
+| 原曲の対応区間 | mm:ss-mm:ss（ユーザー区間と歌詞的に一致する位置） | `1:30-2:00` |
+| 着目したい観点（任意） | 「サビ高音」「ロングトーン」「ミックス習得」など | 「ミックスボイスのコツが欲しい」 |
+
+「全体」指定や原曲区間省略は許容するが、その場合FBは大味になることを伝える。
+
+## Phase B: 解析と課題発見
+1. 原曲がURLの場合は `yt-dlp` で wav 抽出（既に取得済みなら再利用）
+2. `tools/audio_analyzer.py` を区間指定付きで実行:
+   ```
+   backend/.venv/bin/python tools/audio_analyzer.py \
+     <user.wav> <ref.wav> \
+     --user-start <ss> --user-end <ee> \
+     --ref-start <ss> --ref-end <ee>
+   ```
+3. **同一音源検出**: 主要指標が小数点まで一致 + RMS包絡相関 >0.95 なら同一音源と判定し、本人歌唱の再提出を求める（FB中断）
+4. 解析データ + 原曲事前知識 + ヒアリング（簡潔に）から **課題を1つ特定** する
+   - 全部直そうとしない。最大の1点だけ。完了したら次の課題へ
+5. 課題は「課題タクソノミー」（`references/taxonomy.md`）にマップし、対応する基礎練を選ぶ
+
+## Phase C: 基礎練処方 + 参考動画
+1. 課題に対応した基礎練メニューを提示（`references/taxonomy.md`）
+2. 参考動画を WebSearch で見つけて URL を提示
+   - 検索クエリは課題ごとに準備（`references/taxonomy.md` 参照）
+   - 候補が複数ある場合、再生数が多い・解剖学ベースの説明があるものを優先
+3. 練習回数・所要時間・チェックポイントを明示
+4. 「録音して送ってください」で Phase D に渡す
+
+## Phase D: 基礎練の録音確認
+1. ユーザーが基礎練を録音 → パスを送付
+2. `tools/audio_analyzer.py` で解析（リファレンスなしの単体解析）
+3. 基礎練の成否基準を確認:
+   - 喉締めリリース系 → spectral_centroid と RMS の安定度
+   - ビブラート練習 → vibrato_rate 4-7Hz, depth 30-80cents の達成
+   - ロングトーン → long_tone_stability ≤ 30 (cents)
+   - ミックスボイス → 音域・f0 安定の両立
+4. 未達なら同じ Phase C のメニューに細部調整を加えて差し戻し
+5. 達成なら Phase E に進む
+
+## Phase E: 曲の再録音 + 改善判定
+1. ユーザーに同じ曲・同じ区間で再録音を依頼
+2. 解析 → 初回録音との差分を計算
+3. 課題対応指標が改善していれば:
+   - **必ず褒める**（具体的な改善幅を数値で示して）
+   - 次の課題を Phase B から選び直してループを再開
+4. 改善が見えなければ Phase B に戻り、課題切り分けをやり直す（基礎練の選択が間違っていた可能性）
+
+## 解析パイプライン仕様
+- 実装: `tools/audio_analyzer.py`（librosa ベース、`backend/.venv` 内）
+- 実行例（区間指定あり）:
+  ```
+  backend/.venv/bin/python tools/audio_analyzer.py \
+    <user.wav> <ref.wav> \
+    --user-start 0:15 --user-end 0:45 \
+    --ref-start 1:30 --ref-end 2:00
+  ```
+- 前処理: 非wav入力は ffmpeg (imageio-ffmpeg バンドル) で mono 22050Hz wav に変換
+- YouTube取得: `yt-dlp --ffmpeg-location <path> -x --audio-format wav -o '<name>.%(ext)s' <URL>`
+- 出力JSONの主要キーは `references/analysis-guide.md` の「解析データの読み解き方」を参照
+- **原曲（伴奏混在）は `--isolate-vocal-ref` を付ける**: HPSS+ボーカル帯域強調の軽量声分離でベース由来の f0/キー誤判定を緩和（torch不要）。原曲のf0が極端に低い（ベースを拾っている）と感じたら必ず付ける
+- **リズムは DTW の `alignment` を優先**: 2音源指定時に出力される `alignment.mean_lag_sec`（＋=モタり/−=走り）と `worst_segments`（ずれの大きい秒数）を使い、「○秒あたりで△秒走っている」と指摘する。テンポBPM差は25秒程度の短区間では half/double 誤判定が出るため、DTWラグを主たるリズム根拠とする
