@@ -55,6 +55,9 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   未チャージだと検索/メンション取得が4xxになり「本日は該当リードなし」通知が続く（落ちはしない）。
 - **コスト**: read課金は日次予算 `LEAD_DAILY_READ_BUDGET_USD`（既定0.60）で頭打ち。
   実績は sns コンテナ内 `/data/lead_reads_log.jsonl` に日別記録。
+- **手動実行**: GitHub Actions の「SNS Ops」（workflow_dispatch）から
+  `lead-finder-dry`（安全確認）/`lead-finder`（本実行）/`lead-metrics`/`healthz`/`diag` を選んで実行できる。
+  SSH不要でスマホからでも回せる。
 - **トラブルシュート**:
   ```bash
   tail /var/log/sns_leads.log                     # 探索の実行ログ（除外理由・read概算も出る）
@@ -63,6 +66,12 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   docker compose -f docker-compose.prod.yml --env-file .env \
     exec -T sns python lead_finder.py --dry-run    # 手動で安全確認（LINE・記録に触れない）
   ```
+- **事例: exit 137（SIGKILL）で探索が落ちる（2026-07-05）**: VPSは960MBで、lead_finder は
+  Gemini SDK 読み込み時に RSS約420MB まで膨らむ。デプロイ直後（ビルドでメモリが荒れている
+  タイミング）に実行すると OOM キラーに殺されることがある（`diag` タスクの dmesg で
+  `Out of memory: Killed process (python)` を確認）。**数分待って再実行すれば通る**
+  （事実: 02:18 の初回は137、02:24 の再実行は成功・$0.291消費）。毎朝10時のcronは
+  デプロイと重ならない限り問題ない。頻発するようなら Gemini呼び出しのREST化（SDK排除）を検討。
 
 ## 注意
 - キー類（X / LINE / Gemini）は `.env`（Git除外）にのみ置く。**チャットやスクショに出さない**。

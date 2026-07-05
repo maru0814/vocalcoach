@@ -50,6 +50,17 @@ ok, why = leads.select({**GOOD, "text": "うたが下手で高音も出ないの
                         "query_id": "mention"}, set())
 check("TC-02h mentionは文脈判定スキップ", ok, f"=> {why}")
 
+# TC-02i〜l: 「歌以外の音痴」の除外（2026-07-05 初回本番ドライランで実際に混入したケース）
+ONCHI = {**GOOD, "query_id": "onchi"}
+ok, why = leads.select({**ONCHI, "text": "方向音痴なのを直したい。誰かがいないとまともに外を歩けない"}, set())
+check("TC-02i 方向音痴を除外", not ok, f"=> {why}")
+ok, why = leads.select({**ONCHI, "text": "機械音痴すぎてメールで小さい「っ」は打てないし音程どころじゃない"}, set())
+check("TC-02j 機械音痴を除外(複合語優先)", not ok, f"=> {why}")
+ok, why = leads.select({**ONCHI, "text": "自分は音痴だと思う。推し活が忙しくて心が迷子"}, set())
+check("TC-02k 歌の文脈なしを除外", not ok, f"=> {why}")
+ok, why = leads.select({**ONCHI, "text": "カラオケで音痴って言われた…直したいなあ"}, set())
+check("TC-02l 歌文脈の音痴は通過", ok, f"=> {why}")
+
 # TC-07(AC-07): Geminiキー無しでもテンプレ返信が出る・URLを含まない
 text, generated = lead_reply.draft(GOOD["text"], "highnote")
 check("TC-07 キー無し=テンプレ返信", (not generated) and len(text) > 10 and "http" not in text,
