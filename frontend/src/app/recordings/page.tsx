@@ -7,6 +7,8 @@ import { listRecordings, RecordingListItem } from "@/lib/api";
 import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import UpgradeModal from "@/components/UpgradeModal";
 import { AppHeader } from "@/components/AppHeader";
+import { CoachAvatar } from "@/components/character/Coach";
+import { IconChip } from "@/components/site/IconChip";
 
 export default function RecordingsPage() {
   const router = useRouter();
@@ -61,11 +63,9 @@ export default function RecordingsPage() {
         {/* coach 誘導バナー（圧の弱い補助導線・docs/49） */}
         <Link
           href="/coach"
-          className="glass flex items-center gap-3 rounded-2xl p-4 shadow-card ring-1 ring-brand-100 transition hover:shadow-soft"
+          className="glass flex items-center gap-3 rounded-2xl p-4 shadow-card ring-1 ring-brand-100 transition hover:-translate-y-0.5 hover:shadow-card-2"
         >
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-gradient text-2xl text-white shadow-soft">
-            🎤
-          </span>
+          <IconChip icon="mic" size={44} />
           <div className="min-w-0 flex-1">
             <div className="text-sm font-bold text-slate-800">録音は「レッスン」からどうぞ</div>
             <div className="text-xs text-slate-500">会話しながらFBをもらえます。ここは過去の評価を見返す場所です。</div>
@@ -101,8 +101,8 @@ export default function RecordingsPage() {
         {/* empty */}
         {isEmpty && (
           <div className="glass rounded-3xl p-10 text-center shadow-card">
-            <div className="animate-floaty mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-gradient text-3xl shadow-soft">
-              🎶
+            <div className="animate-floaty mx-auto mb-3 inline-flex">
+              <CoachAvatar size={64} ring />
             </div>
             <p className="font-bold text-slate-700">まだ評価がありません</p>
             <p className="mt-1 text-sm text-slate-500">まずは「レッスン」で1曲歌うと、ここに評価が並びます。</p>
@@ -122,7 +122,7 @@ export default function RecordingsPage() {
               <li key={item.id} className="animate-fade-in-up">
                 <Link
                   href={`/recordings/${item.id}`}
-                  className="glass flex items-center justify-between gap-4 rounded-2xl p-4 shadow-card transition hover:shadow-soft"
+                  className="glass flex items-center justify-between gap-4 rounded-2xl p-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2"
                 >
                   <div className="min-w-0">
                     <p className="truncate font-bold text-slate-800">{item.title}</p>

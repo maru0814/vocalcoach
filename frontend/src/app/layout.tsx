@@ -36,11 +36,16 @@ export const metadata: Metadata = {
     title: `${SITE_NAME}｜${TAGLINE}`,
     description: DESCRIPTION,
     locale: "ja_JP",
+    // サイト共通OG。app/opengraph-image.png（ファイル規約）だと voice-type/share の
+    // タイプ別OGP（generateMetadata の images 指定）まで上書きしてしまうため、
+    // public 配置＋config 指定にして子ルートが上書きできるようにしている
+    images: [{ url: "/brand/og-default.png", width: 1200, height: 630, alt: SITE_NAME }],
   },
   twitter: {
     card: "summary_large_image",
     title: `${SITE_NAME}｜${TAGLINE}`,
     description: DESCRIPTION,
+    images: ["/brand/og-default.png"],
   },
   robots: { index: true, follow: true },
 };
