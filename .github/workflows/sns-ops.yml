@@ -15,6 +15,7 @@ on:
           - lead-finder       # リード探索の本実行（LINE承認カードが届く）
           - lead-metrics      # クエリ別フォロバ率の集計
           - healthz           # /sns/healthz の疎通確認（SSH不要）
+          - diag              # VPSの状態診断（メモリ/コンテナ/OOM痕跡/リードログ）
 
 concurrency:
   group: sns-ops
@@ -50,8 +51,21 @@ jobs:
             lead-finder-dry) CMD="python lead_finder.py --dry-run" ;;
             lead-finder)     CMD="python lead_finder.py" ;;
             lead-metrics)    CMD="python lead_metrics.py" ;;
+            diag)            CMD="" ;;
             *) echo "unknown task"; exit 2 ;;
           esac
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-            "$VPS_USER@$VPS_HOST" \
-            "bash -lc 'cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T sns $CMD'"
+          if [ "${{ inputs.task }}" = "diag" ]; then
+            # 状態診断（read-only）: メモリ・スワップ・コンテナ・OOM痕跡・リードログ
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+              "$VPS_USER@$VPS_HOST" "bash -lc '
+                echo \"=== free -m ===\"; free -m;
+                echo \"=== docker compose ps ===\"; cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env ps;
+                echo \"=== docker stats（1回分） ===\"; docker stats --no-stream;
+                echo \"=== OOM痕跡（dmesg末尾） ===\"; dmesg | grep -iE \"oom|killed process\" | tail -10 || echo \"（OOM記録なし）\";
+                echo \"=== /var/log/sns_leads.log 末尾 ===\"; tail -20 /var/log/sns_leads.log 2>/dev/null || echo \"（まだ無い）\";
+              '"
+          else
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+              "$VPS_USER@$VPS_HOST" \
+              "bash -lc 'cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T sns $CMD'"
+          fi
