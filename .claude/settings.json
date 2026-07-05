@@ -1,4 +1,30 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree list:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(npx tsc:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(rm -rf:*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -6,7 +32,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "printf '%s\\n' '【起動保証リマインド】Vocal Coach Inc. は11名の役職スキルで動く会社です。実装・ドキュメント・運用タスクに着手する前に、必ず該当役職スキルを起動してください（自動起動に頼り切らない）。対応表: 優先順位=ceo / 要件=pdm / UI=designer / 設計=architect / API実装=backend-engineer / 画面実装=frontend-engineer / テスト=qa-engineer / 歌FB=vocal-trainer / ローンチ=marketer / SNS週次運用=growth-operator / 本番障害・デプロイ=sre。詳細は claude.md の役職表を参照。'"
+            "command": "printf '%s\\n' '【リマインド】着手前に該当役職スキルを起動する（対応表は claude.md「役職ディスパッチ」）。ファイル編集を伴うセッションは EnterWorktree 必須。'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-main.py\""
           }
         ]
       }
