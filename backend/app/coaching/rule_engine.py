@@ -70,7 +70,34 @@ def coach_msg(type_: str, text: Optional[str] = None, payload: Optional[dict] = 
     return m
 
 
-def initial_messages() -> list[dict]:
+def initial_messages(opener: Optional[dict] = None) -> list[dict]:
+    """セッション開始時の挨拶。opener（カルテの引き継ぎ情報, docs/53 FR-06）があれば差し替える。"""
+    if opener:
+        mode = opener.get("mode")
+        if mode == "homework":
+            first = (
+                f"おかえりなさい😊 前回は『{opener['practice_name']}』を宿題にしましたね。"
+                "おうちでやってみて、どうでした？感想を聞かせてください🎤 "
+                "（もちろん、すぐ録音を送ってくれてもOKですよ）"
+            )
+        elif mode == "reopen":
+            first = (
+                f"お久しぶりです😊 また会えてうれしいです！ "
+                "焦らず、今日の声の調子から一緒に確かめていきましょうね🎤"
+            )
+        else:  # continue
+            first = (
+                f"おかえりなさい😊 前回は「{(opener.get('last_summary') or '').strip()}」まで進みましたね。"
+                "今日はその続きから、一緒にやっていきましょう🎤"
+            )
+        return [
+            coach_msg("text", first),
+            coach_msg(
+                "text",
+                "録音を送ってくれたら、いまの声の状態を聴いてアドバイスします🎙 "
+                "新しい曲に挑戦するなら、原曲のYouTube URLと区間も教えてくださいね。",
+            ),
+        ]
     return [
         coach_msg(
             "text",
@@ -783,7 +810,8 @@ def _audio_practice_check(
         )
         fallback = f"あと少しです💪 {prac.get('checkpoint','')} を意識して、もう一度録ってみてください😊"
         out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
-    return out, {"phase": LESSON}
+    # _practice_result はカルテ記録用の内部値（ChatSession に同名属性が無いので状態には残らない）
+    return out, {"phase": LESSON, "_practice_result": judge["result"]}
 
 
 def _audio_recheck(

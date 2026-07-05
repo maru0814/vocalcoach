@@ -73,12 +73,30 @@ def would_exceed(est_jpy: float) -> bool:
     return False
 
 
+def zero_base_allowed(is_premium_user: bool, est_jpy: float) -> bool:
+    """zero-base FB を呼んでよいか（docs/52 FR-02）。
+
+    有料ユーザーは月次上限の対象外（無料枠が予算を食っても課金者を格下げしない）。
+    無料ユーザーは従来どおり上限で停止する。
+    """
+    if is_premium_user:
+        return True
+    return not would_exceed(est_jpy)
+
+
+def month_calls() -> int:
+    """当月の zero-base 呼び出し回数（週次の原価・粗利監視用。docs/52 FR-03）。"""
+    with _lock:
+        return int(_load().get("count", 0))
+
+
 def record(est_jpy: float) -> None:
     """実際に1回呼んだ後、当月の概算コストに積む。上限に達したら当月1回だけ通知する。"""
     crossed = False
     with _lock:
         d = _load()
         d["jpy"] = round(float(d.get("jpy", 0.0)) + float(est_jpy), 2)
+        d["count"] = int(d.get("count", 0)) + 1  # 呼び出し回数（監視用。docs/52 FR-03）
         cap = settings.llm_monthly_budget_jpy
         if cap and cap > 0 and d["jpy"] >= cap and not d.get("notified"):
             d["notified"] = True

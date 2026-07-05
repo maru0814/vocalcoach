@@ -59,15 +59,19 @@ class Settings(BaseSettings):
     # 直近何件の会話履歴を文脈として渡すか
     llm_history_turns: int = 12
 
+    # --- 生徒カルテと主観問診（docs/53/54）。falseで全フック無効＝現行動作（即ロールバック） ---
+    enable_student_karte: bool = True
+
     # --- ソラ先生ツール化（docs/44）。ONでチャット返答を function calling 経由にし、
     # 動画リンク等の"事実"はカタログの実データだけをツールで供給する（捏造防止＋自然会話）。
     coach_tools_enabled: bool = True
     # ツール往復の最大回数（暴走・レイテンシ防止）
     coach_tool_loop_max: int = 2
 
-    # --- ゼロベース個人最適FB（docs/43）。既定OFF。ONにするまで本番挙動は不変 ---
+    # --- ゼロベース個人最適FB（docs/43, docs/52）。CEO決定によりON（既定有効）。 ---
     # 録音FBを「カタログ選択」から「証拠＋生音声を聴いて推論生成」へ切替える経路の有効化。
-    enable_zero_base_fb: bool = False
+    # 緊急ロールバックは env に ENABLE_ZERO_BASE_FB=false を置いて再起動（再デプロイ不要）。
+    enable_zero_base_fb: bool = True
     # 分析ターン専用モデル（推論＋音色判断）。雑談は従来の llm_model のまま。
     # 既定 flash: 安定供給＋安価で完全な講評を返す（実測 pro は 503 多発）。最高品質が
     # 要る時だけ env で gemini-2.5-pro に上書き可。

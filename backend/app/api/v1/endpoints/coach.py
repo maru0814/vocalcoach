@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -31,6 +32,8 @@ from app.services.evaluation_service import (
     promote_coach_recording,
 )
 from app.storage.files import ensure_dir
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/coach", tags=["coach"])
 
@@ -144,6 +147,8 @@ def _session_state(s: ChatSession) -> dict:
         "baseline_analysis": s.baseline_analysis,
         "last_analysis": s.last_analysis,
         "d_retry_count": s.d_retry_count,
+        # 生徒カルテの要約（_load_karte_context が事前に載せる。無ければ None＝現行動作）
+        "karte_context": getattr(s, "_karte_context", None),
     }
 
 
@@ -151,6 +156,21 @@ def _apply_updates(s: ChatSession, updates: dict) -> None:
     for k, v in updates.items():
         if hasattr(s, k):
             setattr(s, k, v)
+
+
+def _load_karte_context(db: Session, s: ChatSession) -> None:
+    """生徒カルテの要約をセッションオブジェクトに一時添付する（docs/53 FR-02）。
+
+    失敗しても会話は止めない（カルテはあくまで補助情報）。
+    """
+    if not settings.enable_student_karte:
+        return
+    try:
+        from app.services import karte_service
+        ctx = karte_service.render_context(karte_service.get_or_none(db, s.user_id))
+        s._karte_context = ctx or None
+    except Exception:
+        logger.warning("カルテ文脈の読込に失敗（会話は継続）", exc_info=True)
 
 
 def _persist_coach_messages(db: Session, session_id: int, msgs: list[dict]) -> list[ChatMessage]:
@@ -322,7 +342,15 @@ def create_session(db: Session = Depends(get_db), user=Depends(get_current_user)
     s = ChatSession(user_id=user.id, phase="A")
     db.add(s)
     db.flush()
-    rows = _persist_coach_messages(db, s.id, rule_engine.initial_messages())
+    # 生徒カルテがあれば引き継ぎ挨拶（前回の宿題・久しぶり）に差し替える（docs/53 FR-06）
+    opener = None
+    if settings.enable_student_karte:
+        try:
+            from app.services import karte_service
+            opener = karte_service.session_opener_context(karte_service.get_or_none(db, user.id))
+        except Exception:
+            logger.warning("カルテ引き継ぎの読込に失敗（通常挨拶で開始）", exc_info=True)
+    rows = _persist_coach_messages(db, s.id, rule_engine.initial_messages(opener))
     db.commit()
     for r in rows:
         db.refresh(r)
@@ -415,6 +443,35 @@ def send_message(
 
     user_msg = ChatMessage(session_id=s.id, role="user", type="text", text=body.text)
     db.add(user_msg)
+
+    # 主観問診の回答待ちなら取り込む（docs/53 FR-03/05）。別話題（URL/特別依頼）なら深追いせず流す。
+    if settings.enable_student_karte and s.awaiting_checkin:
+        s.awaiting_checkin = None
+        _answerish = (
+            "http://" not in body.text and "https://" not in body.text
+            and not rule_engine.is_rediagnose_request(body.text)
+            and not rule_engine.is_video_request(body.text)
+        )
+        if _answerish:
+            from app.services import karte_service
+            try:
+                _res = karte_service.record_subjective(db, user.id, body.text)
+            except Exception:
+                logger.warning("主観メモの記録に失敗（会話は継続）", exc_info=True)
+                _res = {"red_flag": False}
+            if _res.get("red_flag"):
+                # レッドフラグ: 練習継続を勧めず、休声と受診目安を案内（FR-05）
+                rows = _persist_coach_messages(
+                    db, s.id, [{"role": "coach", "type": "text", "text": karte_service.RED_FLAG_REPLY}]
+                )
+                db.commit()
+                for r in rows:
+                    db.refresh(r)
+                return ChatResponse(phase=s.phase, current_task=s.current_task,
+                                    messages=[_msg_out(r) for r in rows])
+
+    # カルテ要約を会話文脈に載せる（FR-02。以降の handle_text / LLM が参照）
+    _load_karte_context(db, s)
 
     # 「今の録音で、原曲の◯秒から重ねて再度診断して」→ 直前録音を指定区間で再解析（特別経路）
     if rule_engine.is_rediagnose_request(body.text):
@@ -715,6 +772,11 @@ def send_audio(
         comment_msg = ChatMessage(session_id=s.id, role="user", type="text", text=user_comment)
         db.add(comment_msg)
 
+    # 問診の回答待ち中に録音が来たら深追いしない（docs/53 FR-03 例外）。カルテ文脈は載せる。
+    if settings.enable_student_karte:
+        s.awaiting_checkin = None
+        _load_karte_context(db, s)
+
     ensure_dir(settings.coach_audio_dir)
     user_msg = ChatMessage(session_id=s.id, role="user", type="audio")
     db.add(user_msg)
@@ -820,24 +882,41 @@ def send_audio(
     else:
         s.last_analysis = user_analysis
 
-    # ゼロベース個人最適FB（docs/43）。フラグONの時だけ、強モデル＋生音声＋実測証拠で
+    # ゼロベース個人最適FB（docs/43, docs/52）。ONの時、強モデル＋生音声＋実測証拠で
     # “聴いて推論した”講評を生成する。失敗時は下のルールベースFBにフォールバック。
-    # 月次コスト上限（¥2000）に達しそうなら呼ばず、ルールベースFBに切り替える。
+    # 月次コスト上限（¥2000）は無料ユーザーのみ対象。有料ユーザーは対象外（格下げしない）。
     zero_base_reply = None
     if settings.enable_zero_base_fb and settings.llm_enabled:
         from app.core import llm_budget
+        from app.services import billing_service
         _est = settings.llm_analysis_est_jpy_per_call
-        if llm_budget.would_exceed(_est):  # 上限到達 → 当月1回だけ通知してルールベースFBへ
-            llm_budget.notify_budget_reached_once()
-        else:  # 当月概算+今回 が上限を超えないときだけ呼ぶ
+        # 有料ユーザーは上限の対象外（無料枠が予算を食っても課金者を格下げしない）。docs/52 FR-02
+        _premium = settings.billing_enabled and billing_service.is_premium(db, user.id)
+        if llm_budget.zero_base_allowed(_premium, _est):
+            # 意図文脈（docs/52 FR-04）: モデル自身が「曲か・勧めた基礎練の実演か」を聴いて判定する。
+            _ictx: dict = {"kind_hint": kind}
+            _task = rule_engine.get_task(s.current_task) if s.current_task else None
+            if _task:
+                _ictx["task_label"] = _task["label"]
+                _ictx["practice_name"] = _task["practices"][0]["name"]
             try:
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
-                zero_base_reply = llm.generate_feedback(_session_state(s), user_wav=_uw, ref_wav=_rw)
+                zero_base_reply = llm.generate_feedback(
+                    _session_state(s), user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx
+                )
             except Exception:
                 zero_base_reply = None
             if zero_base_reply:
-                llm_budget.record(_est)  # 成功した呼び出しだけ当月コストに積む
+                # 有料・無料とも原価は記録（週次の原価・粗利監視のため）。docs/52 FR-03
+                llm_budget.record(_est)
+                # 聴いた意図をルーティングに反映: 実演なら基礎練チェック、曲なら歌い直し/診断へ。
+                # （表示テキストと状態遷移が同じ意図で揃う。タグ無しはヒューリスティックのまま）
+                _heard = _ictx.get("heard")
+                if _heard in ("song", "practice"):
+                    kind = _heard
+        else:  # 無料ユーザーが上限到達 → 当月1回だけ通知してルールベースFBへ
+            llm_budget.notify_budget_reached_once()
 
     msgs, updates = rule_engine.handle_audio(
         _session_state(s), user_analysis, compare_data, kind, history=history,
@@ -858,6 +937,42 @@ def send_audio(
                         "（YouTube側の仕様で取得できない動画もあります。別のリンクなら聴き比べできることもあります）",
             }
         ] + msgs
+    # 生徒カルテの更新＋主観問診（docs/53 FR-01/03）。失敗してもFBは止めない（AC-08）。
+    if settings.enable_student_karte:
+        from app.services import karte_service
+        try:
+            _diag = updates.get("current_task")  # 診断で新たに確定した課題（診断時のみ）
+            _prac_res = updates.get("_practice_result")  # 基礎練チェックの判定（pass/fail）
+            _t = rule_engine.get_task(_diag or s.current_task) if (_diag or s.current_task) else None
+            karte_service.update_from_audio(
+                db, user.id,
+                diagnosed_task=_diag,
+                achieved=(_prac_res == "pass") if _prac_res else None,
+                song_title=s.song_title,
+                analysis=user_analysis,
+                practice_name=(_t["practices"][0]["name"] if _t else None),
+            )
+        except Exception:
+            logger.warning("カルテ更新に失敗（FBは継続）", exc_info=True)
+        try:
+            _first_audio = (
+                db.query(ChatMessage)
+                .filter(ChatMessage.session_id == s.id, ChatMessage.role == "user",
+                        ChatMessage.type == "audio")
+                .count() <= 1
+            )
+            _ask = karte_service.should_ask_checkin(
+                s, first_audio_in_session=_first_audio,
+                diagnosed_task=updates.get("current_task"),
+                after_practice_check=bool(updates.get("_practice_result")),
+            )
+            if _ask:
+                msgs = msgs + [{"role": "coach", "type": "text",
+                                "text": karte_service.CHECKIN_QUESTIONS[_ask]}]
+                s.awaiting_checkin = _ask
+                s.checkin_count = (s.checkin_count or 0) + 1
+        except Exception:
+            logger.warning("問診の発火に失敗（FBは継続）", exc_info=True)
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
     if user_comment:
