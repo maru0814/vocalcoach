@@ -1,0 +1,57 @@
+name: SNS Ops
+
+# SNS運用タスクをVPS上で手動実行する（Actions画面 or API から workflow_dispatch）。
+# 用途: リード探索の手動実行・疎通確認。cron（毎朝10時/日曜22:30）の補完で、
+# 初回検証や「今すぐ回したい」時に使う。実行できるタスクは下の固定リストのみ。
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: '実行するタスク'
+        required: true
+        type: choice
+        options:
+          - lead-finder-dry   # リード探索のドライラン（LINE・記録に触れない）
+          - lead-finder       # リード探索の本実行（LINE承認カードが届く）
+          - lead-metrics      # クエリ別フォロバ率の集計
+          - healthz           # /sns/healthz の疎通確認（SSH不要）
+
+concurrency:
+  group: sns-ops
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Healthz (SSH不要)
+        if: inputs.task == 'healthz'
+        run: |
+          curl -sS --max-time 20 https://sora-vocal-ai.duckdns.org/sns/healthz
+          echo
+
+      - name: Prepare SSH
+        if: inputs.task != 'healthz'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Run task on VPS
+        if: inputs.task != 'healthz'
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          case "${{ inputs.task }}" in
+            lead-finder-dry) CMD="python lead_finder.py --dry-run" ;;
+            lead-finder)     CMD="python lead_finder.py" ;;
+            lead-metrics)    CMD="python lead_metrics.py" ;;
+            *) echo "unknown task"; exit 2 ;;
+          esac
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "bash -lc 'cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T sns $CMD'"
