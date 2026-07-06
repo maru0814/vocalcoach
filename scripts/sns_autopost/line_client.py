@@ -120,42 +120,59 @@ def push_approval(draft: dict) -> tuple[bool, str]:
         return False, f"EXC: {e}"
 
 
-def push_lead_approval(rec: dict) -> tuple[bool, str]:
-    """リード承認カードを運用者にpush（docs/58 FR-05）。
-    ①相手ツイート ②プロフ要約 ③提案返信 ④専門家判定 ＋ [✅返信する][⏭スキップ]。
-    承認しても X には投稿されない（実行は運用者の手動）。"""
+def _candidate_line(i: int, c: dict) -> str:
+    followers = c.get("followers")
+    fol = f"{followers:,}人" if isinstance(followers, int) else "不明"
+    reason = c.get("reason", "")
+    excerpt = (c.get("source_text") or "").replace("\n", " ").strip()
+    if len(excerpt) > 50:
+        excerpt = excerpt[:50] + "…"
+    return (f"{i}. @{c.get('handle', '?')}（フォロワー{fol} / {reason}）\n"
+            f"   「{excerpt}」\n"
+            f"   {c.get('url', '')}")
+
+
+_CHUNK_SIZE = 8       # 1メッセージに乗せる候補数（5000字上限に対する安全マージン）
+_MAX_LIST_MSGS = 4    # LINEの1push=最大5メッセージのうち、ボタン用に1枠残す
+
+
+def push_lead_digest(candidates: list[dict], batch_id: str) -> tuple[bool, str]:
+    """フォロー候補の一覧をpushする（docs/58 FR-05改）。
+
+    返信文は含まない。実際のフォローはXアプリで運用者の指で行う前提で、
+    末尾の[✅全員フォローした]は「実行した」という自己申告の記録ボタン
+    （X APIは一切呼ばない。webhook._handle_lead_batch 参照）。
+    候補が多い日でも1push=5メッセージ上限に収まるようチャンク分割する。"""
     if not enabled():
         return False, "LINE_KEYS_MISSING"
     to = os.getenv("LINE_OPERATOR_USER_ID")
     if not to:
         return False, "LINE_OPERATOR_USER_ID_MISSING"
-    lead = rec.get("lead") or {}
-    did = rec.get("id", "")
-    followers = lead.get("followers")
-    prof = f"@{(lead.get('handle') or '?').lstrip('@')}"
-    prof += f"（フォロワー {followers:,}人）" if isinstance(followers, int) else "（フォロワー数 不明）"
-    expert = (rec.get("expert_note") or "").strip()
-    body = (
-        (f"{expert}\n\n" if expert else "")
-        + f"🎯 リード候補（{lead.get('query_id', '?')} / {lead.get('source', '?')}）\n"
-        + f"{prof}\n\n【相手のツイート】\n{'─' * 12}\n{lead.get('source_text', '')}\n\n"
-        + f"【提案する返信】\n{'─' * 12}\n{lead.get('reply_text', '')}"
-    )
-    buttons = {
+    lines = [_candidate_line(i, c) for i, c in enumerate(candidates, 1)]
+    chunks = [lines[i:i + _CHUNK_SIZE] for i in range(0, len(lines), _CHUNK_SIZE)][:_MAX_LIST_MSGS]
+    header = (f"🎯 今日のフォロー候補（{len(candidates)}人）\n"
+              "気になる人のリンクをタップ→Xアプリでご自身の指でフォローしてください。\n"
+              + ("─" * 16))
+    messages = [{"type": "text", "text": header + "\n\n" + "\n\n".join(chunks[0])}]
+    for chunk in chunks[1:]:
+        messages.append({"type": "text", "text": "\n\n".join(chunk)})
+    messages.append({
         "type": "template",
-        "altText": "リード返信の確認（返信する / スキップ）",
+        "altText": "今日のフォロー候補（フォローした / 見送る）",
         "template": {
             "type": "confirm",
-            "text": "この人に返信しますか？（実行はあなたの手で）",
+            "text": "今日の候補、フォローしましたか？（実行はあなたの手で）",
             "actions": [
-                {"type": "postback", "label": "✅ 返信する",
-                 "data": f"act=lead_approve&id={did}", "displayText": "✅ 返信する"},
-                {"type": "postback", "label": "⏭ スキップ",
-                 "data": f"act=lead_skip&id={did}", "displayText": "⏭ スキップ"},
+                {"type": "postback", "label": "✅ 全員フォローした",
+                 "data": f"act=lead_followed_batch&batch={batch_id}",
+                 "displayText": "✅ 全員フォローした"},
+                {"type": "postback", "label": "⏭ 今回は見送る",
+                 "data": f"act=lead_skip_batch&batch={batch_id}",
+                 "displayText": "⏭ 今回は見送る"},
             ],
         },
-    }
-    payload = {"to": to, "messages": [{"type": "text", "text": body}, buttons]}
+    })
+    payload = {"to": to, "messages": messages}
     try:
         r = requests.post(f"{_API}/message/push", headers=_headers(),
                           json=payload, timeout=_TIMEOUT)

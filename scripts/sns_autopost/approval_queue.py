@@ -82,7 +82,7 @@ def enqueue(pillar: str, slot: int, text: str, reply: str | None,
     expert_note: 専門家レビューの判定（LINE本文の先頭に表示する）。"""
     rec = {
         "id": uuid.uuid4().hex[:12],
-        "kind": "post",  # 投稿。リード承認は enqueue_lead()（kind="lead"）
+        "kind": "post",  # 投稿。リード獲得は engaged_log.jsonl を直接使う（suggest_leads()参照）
         "pillar": pillar,
         "slot": slot,
         "text": text,
@@ -136,53 +136,38 @@ def pending(limit: int = 50) -> list[dict]:
     return [r for r in _read_all() if r.get("status") == "pending"][-limit:]
 
 
-# ==== リード獲得（docs/58/59）: 承認キュー相乗り＋engaged_log ========================
-# 既存レコードに kind が無いものは "post" として扱う（後方互換。docs/59 §11）。
+# ==== リード獲得（docs/58/59）: フォロー候補の提示ログ ==============================
+# 返信文は扱わない（2026-07-06 方針転換: 提案返信を廃止し「フォローすべき人」のみ提示）。
+# 承認キュー(pending_queue.jsonl)は使わず、engaged_log.jsonl を直接SSOTとする。
+# レコード: {lead_id, handle, query_id, followers, source_text, url, batch_id,
+#            status(suggested|followed|skipped), suggested_at, followed_back}
 ENGAGED_PATH = os.path.join(_DATA_DIR, "engaged_log.jsonl")
 
 
-def enqueue_lead(lead: dict, expert_note: str = "", status: str = "pending") -> dict:
-    """リード承認カードをキューに積む（kind="lead"）。
+def suggest_leads(candidates: list[dict], batch_id: str) -> list[dict]:
+    """フォロー候補をバッチとして engaged_log に記録する（status="suggested"）。
+    X APIへの書込みはここでは一切行わない（LINEで見せるための記録のみ）。
 
-    lead: {url, handle, query_id, source, source_text, followers, reply_text}
-    承認しても X には投稿しない（実行は運用者の手動。webhook.py 参照）。"""
-    rec = {
-        "id": uuid.uuid4().hex[:12],
-        "kind": "lead",
-        "pillar": "lead",           # 既存表示コードとの互換用
-        "slot": 0,
-        "text": lead.get("reply_text", ""),
-        "reply": None, "link": None, "post_link": False, "image": None,
-        "status": status,
-        "expert_note": expert_note,
-        "lead": dict(lead),
-        "tweet_id": "",
-        "info": "",
-        "created_at": _now(),
-        "decided_at": "",
-    }
-    with _LOCK:
-        with open(QUEUE_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    return rec
-
-
-def leads_today() -> int:
-    """今日キューに積んだリード件数（MAX_LEADS_PER_DAY の判定用）。"""
-    today = _now()[:10]
-    return sum(1 for r in _read_all()
-               if r.get("kind") == "lead" and (r.get("created_at") or "").startswith(today))
-
-
-def append_engaged(rec: dict) -> dict:
-    """engaged_log.jsonl に1件追記する（計測のSSOT。docs/59 §4.2）。"""
-    rec = dict(rec)
-    rec.setdefault("approved_at", _now())
-    rec.setdefault("followed_back", None)
+    candidates の各要素: {handle, query_id, followers, source_text, url}"""
+    recs = []
     with _LOCK:
         with open(ENGAGED_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    return rec
+            for c in candidates:
+                rec = {
+                    "lead_id": uuid.uuid4().hex[:12],
+                    "handle": (c.get("handle") or "").lstrip("@"),
+                    "query_id": c.get("query_id", ""),
+                    "followers": c.get("followers"),
+                    "source_text": c.get("source_text", ""),
+                    "url": c.get("url", ""),
+                    "batch_id": batch_id,
+                    "status": "suggested",
+                    "suggested_at": _now(),
+                    "followed_back": None,
+                }
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                recs.append(rec)
+    return recs
 
 
 def read_engaged() -> list[dict]:
@@ -190,27 +175,30 @@ def read_engaged() -> list[dict]:
 
 
 def engaged_handles() -> set[str]:
-    """対応済み（承認/スキップ問わず）のhandle集合。重複提示の防止に使う。"""
-    out = set()
-    for r in read_engaged():
-        h = (r.get("handle") or "").lstrip("@").lower()
-        if h:
-            out.add(h)
-    # キューでpending中のリードも重複提示しない
-    for r in _read_all():
-        if r.get("kind") == "lead":
-            h = ((r.get("lead") or {}).get("handle") or "").lstrip("@").lower()
-            if h:
-                out.add(h)
-    return out
+    """提示済み（followed/skipped問わず）のhandle集合。重複提示の防止に使う。"""
+    return {h for r in read_engaged()
+            if (h := (r.get("handle") or "").lstrip("@").lower())}
 
 
-def recent_lead_reply_texts(limit: int = 30) -> list[str]:
-    """直近のリード返信文（同文連投の検出用）。engaged_log＋キューの両方から集める。"""
-    texts = [r.get("reply_text", "") for r in read_engaged()]
-    texts += [(r.get("lead") or {}).get("reply_text", "")
-              for r in _read_all() if r.get("kind") == "lead"]
-    return [t for t in texts if t][-limit:]
+def suggested_today() -> int:
+    """今日すでに提示した候補件数（MAX_FOLLOWS_PER_DAY の判定用）。"""
+    today = _now()[:10]
+    return sum(1 for r in read_engaged() if (r.get("suggested_at") or "").startswith(today))
+
+
+def mark_batch_status(batch_id: str, status: str) -> int:
+    """指定バッチの status="suggested" な全件を status に更新する。更新件数を返す。"""
+    with _LOCK:
+        rows = _read_all(ENGAGED_PATH)
+        n = 0
+        for r in rows:
+            if r.get("batch_id") == batch_id and r.get("status") == "suggested":
+                r["status"] = status
+                r["decided_at"] = _now()
+                n += 1
+        if n:
+            _write_all(rows, ENGAGED_PATH)
+        return n
 
 
 def update_engaged(lead_id: str, **fields) -> dict | None:

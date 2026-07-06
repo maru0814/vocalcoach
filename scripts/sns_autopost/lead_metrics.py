@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """リード獲得の計測: クエリ別フォロバ率（docs/58 FR-06）。
 
-engaged_log.jsonl の承認済みリードについて、そのユーザーが自アカウントを
-フォローしているか（＝フォロバ）を自分のフォロワー一覧（owned read ≒$0.001/件）で
-確認し、query_id 別のフォロバ率を出す。他人ツイートの検索APIは使わない。
+engaged_log.jsonl の status="followed"（LINEで[✅全員フォローした]を押した＝
+Xアプリで実際にフォローしたと自己申告された）レコードについて、そのユーザーが
+自アカウントをフォローしているか（＝フォロバ）を自分のフォロワー一覧
+（owned read ≒$0.001/件）で確認し、query_id 別のフォロバ率を出す。
+他人ツイートの検索APIは使わない。
 
 使い方:
-  python lead_metrics.py          # 未計測の承認リードを確認して集計表示
+  python lead_metrics.py          # 未計測のフォロー済みを確認して集計表示
   python lead_metrics.py --all    # 計測済みも含めて再確認
 週次バッチ（growth-operator の週次レポート）に載せる想定。
 """
@@ -63,9 +65,10 @@ def main() -> int:
     ap.add_argument("--all", action="store_true", help="計測済み(followed_back記入済み)も再確認")
     args = ap.parse_args()
 
-    rows = [r for r in q.read_engaged() if r.get("status") == "approved"]
+    rows = [r for r in q.read_engaged() if r.get("status") == "followed"]
     if not rows:
-        print("engaged_log.jsonl に承認済みリードがありません（まず lead_finder.py から）。")
+        print("engaged_log.jsonl に「フォロー実施済み」の記録がありません"
+              "（LINEの[✅全員フォローした]を押すと記録されます）。")
         return 0
 
     oauth = _session()
@@ -92,9 +95,9 @@ def main() -> int:
     for r in rows:
         by_q.setdefault(r.get("query_id", "?"), []).append(r)
     print("=" * 56)
-    print(f"リード計測（承認 {len(rows)}件 / フォロワー {len(followers)}人 / "
+    print(f"リード計測（フォロー実施 {len(rows)}件 / フォロワー {len(followers)}人 / "
           f"read概算 ${meter.usd():.3f}）")
-    print(f"{'クエリ':<14}{'承認':>4}{'フォロバ':>6}{'率':>8}")
+    print(f"{'クエリ':<14}{'実施':>4}{'フォロバ':>6}{'率':>8}")
     summary = []
     for qid, rs in by_q.items():
         done = [r for r in rs if r.get("followed_back") is not None]

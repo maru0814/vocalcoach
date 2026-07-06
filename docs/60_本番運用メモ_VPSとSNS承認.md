@@ -44,17 +44,27 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - 毎日その時刻に下書きがLINEに届く → 承認したものだけ投稿される。
 - 即投稿したいとき（緊急）: `docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --pillar tip --post-now --force`
 
-### リード獲得（docs/58/59。2026-07 追加）
-- **cron**: リード探索=毎朝10時 / フォロバ計測=日曜22:30（ログは `/var/log/sns_leads.log`）。
+### Xフォロー候補（docs/58/59。2026-07 追加、07-06に方針転換）
+- **2026-07-06 方針転換**: 提案返信・専門家ゲート（`lead_reply.py`/返信用ルーブリック）を廃止し、
+  「フォローすべき人だけ」を一覧で届ける形に変更。理由: Xの自動化ポリシーはフォロー/返信の
+  「大量・機械的な実行」自体を禁止しており、人間操作を模した一括自動化はボタン化しても
+  規約リスクが消えないため。**フォローの実行は常にXアプリで運用者本人の指**。
+- **cron**: 探索=毎朝10時 / フォロバ計測=日曜22:30（ログは `/var/log/sns_leads.log`）。
   デプロイ（`remote_deploy.sh`）が冪等登録するので手作業不要。cron一覧の正は
   `setup_approval.sh --cron` と `remote_deploy.sh` の2箇所（変更時は両方揃える）。
-- **毎朝の流れ**: 10時にLINEへ「🎯リード候補」カードが最大10件（`MAX_LEADS_PER_DAY`）届く →
-  [✅返信する] を押すと返信文コピーと相手ツイートURLが返る → **Xアプリで自分の指で返信**。
-  自動では一切返信・フォローされない（コード上writeが存在しない）。
+- **毎朝の流れ**: 10時にLINEへ「🎯今日のフォロー候補」が最大15件（`MAX_FOLLOWS_PER_DAY`）
+  一覧で届く（相手のプロフィール要約・元ツイート抜粋・プロフィールリンク）→
+  気になる人をXアプリで自分の指でフォロー → 最後に[✅全員フォローした]を1回押すと記録される
+  （**このボタンはX APIを一切呼ばない**。押し忘れてもフォロバ計測に載らないだけで実害なし）。
+- **1日の安全なフォロー数（目安。公式な保証値ではない）**: 新規/小規模アカウントは
+  最初の1〜2週間は**10〜15件/日**、様子を見て段階的に25件程度まで。**1日分を数分で
+  一気にタップせず時間を分けて行う**（フォロー速度のスパイクが検知されやすいため）。
+  既定 `MAX_FOLLOWS_PER_DAY=15` はこの経験則に基づく初期値。
 - **前提（人間作業・初回のみ）**: console.x.com で**従量課金クレジット（最低$5）**をチャージ。
-  未チャージだと検索/メンション取得が4xxになり「本日は該当リードなし」通知が続く（落ちはしない）。
+  未チャージだと検索/メンション取得が4xxになり「本日は該当なし」通知が続く（落ちはしない）。
 - **コスト**: read課金は日次予算 `LEAD_DAILY_READ_BUDGET_USD`（既定0.60）で頭打ち。
-  実績は sns コンテナ内 `/data/lead_reads_log.jsonl` に日別記録。
+  実績は sns コンテナ内 `/data/lead_reads_log.jsonl` に日別記録。返信生成・専門家ゲートを
+  廃止したことで Gemini API 課金・処理は完全に発生しなくなった（探索readのみ）。
 - **手動実行**: GitHub Actions の「SNS Ops」（workflow_dispatch）から
   `lead-finder-dry`（安全確認）/`lead-finder`（本実行）/`lead-metrics`/`healthz`/`diag` を選んで実行できる。
   SSH不要でスマホからでも回せる。
@@ -62,16 +72,18 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   ```bash
   tail /var/log/sns_leads.log                     # 探索の実行ログ（除外理由・read概算も出る）
   docker compose -f docker-compose.prod.yml --env-file .env \
-    exec -T sns sh -c "tail -3 /data/engaged_log.jsonl"   # 承認/スキップの記録
+    exec -T sns sh -c "tail -3 /data/engaged_log.jsonl"   # 提示/フォロー実施/見送りの記録
   docker compose -f docker-compose.prod.yml --env-file .env \
     exec -T sns python lead_finder.py --dry-run    # 手動で安全確認（LINE・記録に触れない）
   ```
-- **事例: exit 137（SIGKILL）で探索が落ちる（2026-07-05）**: VPSは960MBで、lead_finder は
-  Gemini SDK 読み込み時に RSS約420MB まで膨らむ。デプロイ直後（ビルドでメモリが荒れている
-  タイミング）に実行すると OOM キラーに殺されることがある（`diag` タスクの dmesg で
-  `Out of memory: Killed process (python)` を確認）。**数分待って再実行すれば通る**
-  （事実: 02:18 の初回は137、02:24 の再実行は成功・$0.291消費）。毎朝10時のcronは
-  デプロイと重ならない限り問題ない。頻発するようなら Gemini呼び出しのREST化（SDK排除）を検討。
+- **事例: exit 137（SIGKILL）で探索が落ちる（2026-07-05）**: VPSは960MBで、当時の実装は
+  返信生成・専門家ゲートで Gemini SDK を読み込み RSS約420MB まで膨らんでいた。デプロイ直後
+  （ビルドでメモリが荒れているタイミング）に実行すると OOM キラーに殺されることがあった
+  （`diag` タスクの dmesg で `Out of memory: Killed process (python)` を確認。数分待てば
+  再実行は成功）。07-06の方針転換で lead_finder は Gemini SDK を一切読み込まなくなり、
+  この経路のメモリ圧はそもそも解消済み（再発時は他要因を疑う）。
+- **旧仕様の名残**: 07-06以前に届いた「✅返信する/⏭スキップ」ボタン付きの古いLINEカードを
+  押しても、対応するpostback処理は削除済みのため「⚠️ 不明な操作です」と返るだけで実害はない。
 
 ## 注意
 - キー類（X / LINE / Gemini）は `.env`（Git除外）にのみ置く。**チャットやスクショに出さない**。
