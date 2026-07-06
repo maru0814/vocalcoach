@@ -60,6 +60,30 @@ check("TC-02k 歌の文脈なしを除外", not ok, f"=> {why}")
 ok, why = leads.select({**ONCHI, "text": "カラオケで音痴って言われた…直したいなあ"}, set())
 check("TC-02l 歌文脈の音痴は通過", ok, f"=> {why}")
 
+# TC-02m〜o: 2026-07-06 追加絞り込み — バズった話題への便乗コメント（第三者の音痴ネタ）を除外
+ok, why = leads.select({**ONCHI, "text": "@shizuki_ap2 完璧超人なのに音楽方面のセンスが壊滅的な先生、"
+                        "本当に愛おしいですね😂ナガノ先生作詞作曲、歌ラッコ先生でガパオライスの"
+                        "うた(音痴ver)聴いてみたい…!!"}, set())
+check("TC-02m 第三者キャラの音痴ネタを除外", not ok, f"=> {why}")
+ok, why = leads.select({**ONCHI, "text": "ラッコさん音痴設定？？？笑 雄馬くんはめちゃくちゃ歌上手いから"
+                        "逆にどう表現するのか気になるじゃん😂"}, set())
+check("TC-02n 便乗リプも除外", not ok, f"=> {why}")
+ok, why = leads.select({**ONCHI, "text": "歌が下手で音痴なのが本当に苦手。カラオケ行くの気まずい"}, set())
+check("TC-02o 本人の悩み（下手/苦手）は通過", ok, f"=> {why}")
+
+# TC-14: 優先3テーマ（歌上達/ミックスボイス/カラオケ上達）が選別を通過する
+ok, why = leads.select({**GOOD, "query_id": "sing_better",
+                        "text": "歌がもっと上手くなりたい。何から練習すればいいんだろう"}, set())
+check("TC-14a sing_better は通過", ok, f"=> {why}")
+ok, why = leads.select({**GOOD, "query_id": "mixvoice_want",
+                        "text": "ミックスボイスをどうしても出したい。地声と裏声が全然繋がらない"}, set())
+check("TC-14b mixvoice_want は通過", ok, f"=> {why}")
+ok, why = leads.select({**GOOD, "query_id": "karaoke_up",
+                        "text": "カラオケでもっと上手く歌いたい。友達に下手って言われた"}, set())
+check("TC-14c karaoke_up は通過", ok, f"=> {why}")
+check("TC-14d PRIORITY_QUERY_IDS に3テーマが定義済み",
+      set(leads.PRIORITY_QUERY_IDS) == {"sing_better", "mixvoice_want", "karaoke_up"})
+
 # TC-10: 返信文モジュールは廃止済み（2026-07-06方針転換）。復活していないことを確認。
 check("TC-10 lead_reply.py は削除済み",
       not os.path.exists(os.path.join(os.path.dirname(__file__), "..", "lead_reply.py")))
@@ -164,6 +188,32 @@ check("TC-01 DRY_RUNで副作用ゼロ・exit0", code == 0 and before == after)
 m = lead_finder.ReadMeter()
 m.add("post_read", 100); m.add("user_read", 10)
 check("TC-08 read概算 100post+10user=$0.60", abs(m.usd() - 0.60) < 1e-9, f"=> ${m.usd():.3f}")
+
+# TC-15: source_search が優先3テーマを日替わりローテーションに関係なく必ず含める
+class _FakeOAuth:
+    def __init__(self):
+        self.queries = []
+
+    def get(self, url, params=None, timeout=None):
+        self.queries.append(params.get("query", ""))
+
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"data": []}
+        return _R()
+
+
+fake = _FakeOAuth()
+os.environ["LEAD_QUERIES_PER_RUN"] = "4"
+lead_finder.source_search(fake, lead_finder.ReadMeter(), want=10)
+priority_texts = [leads.QUERY_BY_ID[i]["query"] for i in leads.PRIORITY_QUERY_IDS]
+check("TC-15 優先3テーマが必ず検索される",
+      all(any(pt in q for q in fake.queries) for pt in priority_texts),
+      f"=> {fake.queries}")
+check("TC-15b per_run=4で計4クエリ（優先3+ローテ1）", len(fake.queries) == 4, f"=> {len(fake.queries)}件")
 
 # TC-09: oEmbedレスポンスのパース（実HTTPはproxy遮断環境でも検証できるよう固定レスポンス）
 class _FakeResp:

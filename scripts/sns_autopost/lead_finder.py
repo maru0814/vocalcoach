@@ -209,13 +209,20 @@ def source_mentions(oauth, meter: ReadMeter, limit: int = 20) -> list[dict]:
 
 
 def source_search(oauth, meter: ReadMeter, want: int) -> list[dict]:
-    """従量API検索（post read $0.005/件）。クエリは日替わりでローテーション。
+    """従量API検索（post read $0.005/件）。優先3テーマ（歌上達/ミックスボイス/カラオケ上達）
+    は毎回必ず実行し、残り枠は他クエリを日替わりでローテーションする（docs/58 FR-01改）。
     フォロワー数/bio はこの段階では取らない（遅延lookup。docs/59 §2.1改）。"""
     out = []
     qs = leads.search_queries()
-    per_run = int(os.getenv("LEAD_QUERIES_PER_RUN", "3"))
-    start = datetime.date.today().toordinal() % len(qs)
-    rotated = [qs[(start + i) % len(qs)] for i in range(min(per_run, len(qs)))]
+    per_run = int(os.getenv("LEAD_QUERIES_PER_RUN", "4"))
+    priority = [q for q in qs if q["id"] in leads.PRIORITY_QUERY_IDS]
+    rest = [q for q in qs if q["id"] not in leads.PRIORITY_QUERY_IDS]
+    remaining = max(0, per_run - len(priority))
+    rotated_rest = []
+    if rest and remaining:
+        start = datetime.date.today().toordinal() % len(rest)
+        rotated_rest = [rest[(start + i) % len(rest)] for i in range(min(remaining, len(rest)))]
+    rotated = priority + rotated_rest
     for spec in rotated:
         if meter.over():
             print(f"[info] read予算に到達したため検索を停止（概算 ${meter.usd():.3f}）")
