@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
-"""Xリード獲得の探索パイプライン（docs/58/59、ハイブリッド版）。
+"""Xリード獲得の探索パイプライン（docs/58/59、フォロー候補版）。
 
-「歌の悩みを実況している人」を集め、選別し、刺さる返信下書きを専門家ゲート込みで
-用意して LINE 承認に回す。**フォロー/返信の実行は常に運用者の手動**（write自動化なし）。
+「歌の悩みを実況している人」を集めて選別し、**フォローすべき人だけ**を
+LINEに一覧で届ける（返信文は生成しない。2026-07-06 方針転換）。
+**フォローの実行は常に運用者がXアプリで自分の指で行う**（write自動化なし）。
+
+自動フォローを実装しない理由: Xの自動化ポリシーはフォロー/アンフォローの
+「大量・機械的な実行」自体を禁止行為として明記しており、これは人間が
+ボタンを1回押しただけかどうかに関係ない（＝一括フォローAPIをボタン化しても
+規約上のリスクは消えない）。LINEの[✅全員フォローした]ボタンは
+「Xアプリで手動フォローした」という自己申告を記録するだけで、
+X APIへのfollow呼び出しはコードのどこにも存在しない。
 
 候補ソース（優先順・安い順）:
   1. --input ファイル（運用者ペースト方式。oEmbed＝無料・無認証）
@@ -11,8 +19,9 @@
 
 コスト・安全ガード:
   - LEAD_DAILY_READ_BUDGET_USD（既定 0.60）… 当日のread概算がこれを超えたら探索停止
-  - MAX_LEADS_PER_DAY（既定 10）… 当日のLINE提示上限（キュー実績でカウント）
-  - 同文連投の検出（too_similar）… ほぼ同じ返信文はゲート前に破棄
+  - MAX_FOLLOWS_PER_DAY（既定 15）… 1日に提案するフォロー候補数の上限
+    （公式に「安全な数」は存在しないが、新規/小規模アカウントの経験則として
+    フォロー速度のスパイクを避ける目安。docs/60 に根拠と運用ガイドを記載）
 
 使い方:
   python lead_finder.py --dry-run                 # 生成のみ表示（既定の安全側）
@@ -41,8 +50,6 @@ except Exception:
 import requests
 
 import approval_queue as q
-import expert_review
-import lead_reply
 import leads
 import line_client
 
@@ -274,19 +281,19 @@ def hydrate_users(oauth, meter: ReadMeter, cands: list[dict]) -> None:
 # --- メイン -----------------------------------------------------------------------
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Xリード探索（write自動化なし）")
+    ap = argparse.ArgumentParser(description="Xフォロー候補の探索（write自動化なし）")
     ap.add_argument("--input", help="運用者ペースト方式の候補ファイル(jsonl)")
     ap.add_argument("--dry-run", action="store_true",
-                    help="生成のみ表示（キュー・LINE・記録に触れない）")
+                    help="生成のみ表示（LINE・記録に触れない）")
     ap.add_argument("--no-search", action="store_true", help="従量API検索を使わない")
     ap.add_argument("--no-mentions", action="store_true", help="メンション取得を使わない")
     args = ap.parse_args()
 
     dry = args.dry_run or _truthy(os.getenv("DRY_RUN", "1"))  # 既定は安全側
-    max_per_day = int(os.getenv("MAX_LEADS_PER_DAY", "10"))
-    slots = max_per_day - (0 if dry else q.leads_today())
+    max_per_day = int(os.getenv("MAX_FOLLOWS_PER_DAY", "15"))
+    slots = max_per_day - (0 if dry else q.suggested_today())
     if slots <= 0:
-        print(f"本日の提示上限（MAX_LEADS_PER_DAY={max_per_day}）に到達済み。終了します。")
+        print(f"本日の提示上限（MAX_FOLLOWS_PER_DAY={max_per_day}）に到達済み。終了します。")
         return 0
 
     meter = ReadMeter()
@@ -338,7 +345,7 @@ def main() -> int:
         final.append(c)
     if len(final) > slots:
         print(f"[info] 上限により {len(final) - slots} 件を切り捨て"
-              f"（MAX_LEADS_PER_DAY={max_per_day}）")
+              f"（MAX_FOLLOWS_PER_DAY={max_per_day}）")
         final = final[:slots]
 
     meter.persist() if not dry else None
@@ -349,49 +356,33 @@ def main() -> int:
         print(f"  - 除外 {who}: {why}")
 
     if not final:
-        msg = "🎯 リード探索: 本日は該当リードなしでした。"
+        msg = "🎯 フォロー候補: 本日は該当なしでした。"
         print(msg)
         if not dry:
             line_client.push_text(msg)
         return 0
 
-    # --- 返信生成 → 同文検出 → 専門家ゲート → 承認カード ---
-    recent_texts = q.recent_lead_reply_texts()
-    sent = 0
-    for c in final:
-        reply_text, generated = lead_reply.draft(c["text"], c["query_id"])
-        if lead_reply.too_similar(reply_text, recent_texts):
-            print(f"  - 破棄 @{c['handle']}: 直近の返信文と酷似（同文連投の防止）")
-            continue
-        gate = expert_review.review_lead_reply(c["text"], reply_text)
-        if not gate["approved"]:
-            print(f"  - 破棄 @{c['handle']}: {gate['report']}")
-            continue
-        reply_text = gate["reply"]
-        note = gate["report"] + ("" if generated else "\n（テンプレ返信＝Gemini未使用）")
-        lead = {"url": c.get("url", ""), "handle": c.get("handle", ""),
-                "query_id": c["query_id"], "source": c["source"],
-                "source_text": c["text"], "followers": c.get("followers"),
-                "reply_text": reply_text}
-        recent_texts.append(reply_text)
-
-        if dry:
-            print("=" * 56)
-            print(f"[DRY] @{lead['handle']}（{lead['query_id']} / {lead['source']} / "
-                  f"followers={lead['followers']}）\n{lead['source_text'][:120]}\n"
-                  f"→ 返信案: {reply_text}\n   判定: {note.splitlines()[0]}")
-            continue
-        rec = q.enqueue_lead(lead, expert_note=note)
-        ok, info = line_client.push_lead_approval(rec)
-        if not ok:
-            print(f"[warn] LINE送信失敗（{info}）。キューには積んだので webhook から確認可能。",
-                  file=sys.stderr)
-        sent += 1
+    digest = [{"handle": c.get("handle", ""), "query_id": c["query_id"],
+              "reason": leads.QUERY_BY_ID.get(c["query_id"], {}).get("intent", ""),
+              "followers": c.get("followers"), "source_text": c["text"],
+              "url": c.get("url", "")} for c in final]
 
     if dry:
-        print("DRY_RUN: 生成のみ。キュー・LINE・記録はいずれも触れていません。")
+        print("=" * 56)
+        for i, c in enumerate(digest, 1):
+            print(f"[DRY] {i}. @{c['handle']}（{c['reason']} / followers={c['followers']}）\n"
+                  f"     {c['source_text'][:100]}\n     {c['url']}")
+        print("DRY_RUN: 生成のみ。LINE・記録はいずれも触れていません。")
+        return 0
+
+    batch_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    q.suggest_leads(digest, batch_id)
+    ok, info = line_client.push_lead_digest(digest, batch_id)
+    if ok:
+        print(f"LINEに {len(digest)} 件のフォロー候補を送りました"
+              "（実行はXアプリでご自身の指で）。")
     else:
-        print(f"LINEに {sent} 件の承認カードを送りました。実行はLINE承認後にあなたの手で。")
+        print(f"[warn] LINE送信失敗（{info}）。候補はengaged_logに記録済み。", file=sys.stderr)
     return 0
 
 

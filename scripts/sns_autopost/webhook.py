@@ -52,36 +52,33 @@ def serve_image(name: str) -> Response:
                         headers={"Cache-Control": "public, max-age=86400"})
 
 
-def _handle_lead_postback(act: str, draft: dict, reply_token: str) -> None:
-    """リード承認/スキップの処理（docs/58 FR-05）。
+def _handle_lead_batch(act: str, batch_id: str, reply_token: str) -> None:
+    """フォロー候補バッチの一括確認（docs/58 FR-05改）。
 
-    バン安全性の不変条件: ここでは X の書込みAPI（返信/フォロー）を一切呼ばない。
-    承認＝engaged_log への記録＋返信文の再表示のみ。実行は運用者がXアプリで手動。"""
-    lead = draft.get("lead") or {}
-    did = draft.get("id", "")
-    base = {"lead_id": did,
-            "handle": (lead.get("handle") or "").lstrip("@"),
-            "query_id": lead.get("query_id", ""),
-            "reply_text": lead.get("reply_text", "")}
-
-    if act == "lead_skip":
-        q.mark_decided(did, "skipped")
-        q.append_engaged({**base, "status": "skipped"})
-        line_client.reply(reply_token, "⏭ スキップしました（返信・フォローはしていません）。")
+    バン安全性の不変条件: ここでは X の書込みAPI（フォロー）を一切呼ばない。
+    ボタンは「Xアプリで自分の指でフォローした」という自己申告を記録するだけ。
+    フォロバ率計測（lead_metrics.py）は status="followed" の件だけを対象にする。"""
+    if not batch_id:
+        line_client.reply(reply_token, "⚠️ 対象のバッチが見つかりませんでした。")
         return
 
-    # lead_approve: 記録して返信文を渡すだけ。X APIは叩かない。
-    q.mark_decided(did, "approved")
-    q.append_engaged({**base, "status": "approved"})
-    url = lead.get("url", "")
+    if act == "lead_skip_batch":
+        n = q.mark_batch_status(batch_id, "skipped")
+        msg = (f"⏭ 今回は見送りとして記録しました（{n}件）。" if n
+              else "この一覧はすでに処理済みです。")
+        line_client.reply(reply_token, msg)
+        return
+
+    # lead_followed_batch: 「フォロー実行済み」を記録するだけ。X APIは叩かない。
+    n = q.mark_batch_status(batch_id, "followed")
+    if n == 0:
+        line_client.reply(reply_token, "この一覧はすでに処理済みです。")
+        return
     line_client.reply(
         reply_token,
-        "✅ 承認を記録しました（自動投稿はしていません）。\n\n"
-        "【返信文（長押しでコピー）】\n"
-        f"{lead.get('reply_text', '')}\n\n"
-        "【相手のツイート】\n"
-        f"{url}\n\n"
-        "Xアプリで開いて、ご自身の指で返信（＋必要ならフォロー）してください。",
+        f"✅ フォロー実施を記録しました（{n}件）。\n"
+        "※このボタンは記録のみです（Xへのフォロー実行は行っていません）。\n"
+        "後日フォロバ率を計測します。",
     )
 
 
@@ -89,6 +86,11 @@ def _handle_postback(data: str, reply_token: str) -> None:
     """承認/却下ボタンの処理。"""
     params = {k: v[0] for k, v in parse_qs(data or "").items()}
     act = params.get("act")
+
+    if act in ("lead_followed_batch", "lead_skip_batch"):
+        _handle_lead_batch(act, params.get("batch", ""), reply_token)
+        return
+
     draft_id = params.get("id", "")
     draft = q.get(draft_id)
 
@@ -98,10 +100,6 @@ def _handle_postback(data: str, reply_token: str) -> None:
     if draft.get("status") != "pending":
         line_client.reply(reply_token,
                           f"この投稿は処理済みです（{draft.get('status')}）。")
-        return
-
-    if act in ("lead_approve", "lead_skip"):
-        _handle_lead_postback(act, draft, reply_token)
         return
 
     if act == "reject":
