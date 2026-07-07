@@ -17,6 +17,7 @@ import {
 import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import { MessageBubble } from "@/components/coach/Bubbles";
 import { PhaseStepper } from "@/components/coach/PhaseStepper";
+import { Icon } from "@/components/site/IconChip";
 import { Composer } from "@/components/coach/Composer";
 import { CoachAvatar, COACH_NAME, COACH_ROLE } from "@/components/character/Coach";
 import UpgradeModal from "@/components/UpgradeModal";
@@ -199,8 +200,8 @@ export default function CoachChatPage() {
       <div className="flex items-center gap-2 border-b border-white/40 bg-white/40 px-3 py-1.5">
         <span className="text-xs text-slate-500">
           {hasReference
-            ? "🎼 お手本セット済み（原曲と聴き比べます）"
-            : "🎼 原曲のYouTubeリンク＋区間（例 0:48-1:13）をチャットに貼ると、音程・リズムを原曲と比べられます"}
+            ? <><Icon name="note" size={12} className="mr-1 inline-block align-[-2px]" />お手本セット済み（原曲と聴き比べます）</>
+            : <><Icon name="note" size={12} className="mr-1 inline-block align-[-2px]" />原曲のYouTubeリンク＋区間（例 0:48-1:13）をチャットに貼ると、音程・リズムを原曲と比べられます</>}
         </span>
         <button
           type="button"
@@ -222,12 +223,12 @@ export default function CoachChatPage() {
       {/* 詳細添削（課金資産）への導線。歌の録音があるときだけ（docs/50 T-2） */}
       {hasRecording && (
         <div className="flex items-center gap-2 border-b border-white/40 bg-white/40 px-3 py-1.5">
-          <span className="text-xs text-slate-500">🎧 この録音を「どこで・何を・どう直すか」まで詳しく</span>
+          <span className="text-xs text-slate-500">この録音を「どこで・何を・どう直すか」まで詳しく</span>
           <button
             type="button"
             disabled={promoting}
             onClick={handleDetailedReport}
-            className="ml-auto shrink-0 rounded-full bg-brand-gradient px-3 py-1.5 text-[11px] font-bold text-white shadow-soft transition active:scale-95 disabled:opacity-50"
+            className="ml-auto shrink-0 rounded-full bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_2px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[1px] active:shadow-none disabled:opacity-50"
           >
             {promoting ? "準備中…" : "詳細添削する（プレミアム）"}
           </button>

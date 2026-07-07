@@ -7,6 +7,8 @@ import { DetailedReport, getReport, startReport } from "@/lib/api";
 import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import UpgradeModal from "@/components/UpgradeModal";
 import { AppHeader } from "@/components/AppHeader";
+import { Icon } from "@/components/site/IconChip";
+import { Button } from "@/components/ui/Button";
 
 type Props = { params: { id: string } };
 
@@ -107,21 +109,18 @@ export default function ReportPage({ params }: Props) {
           </Link>
         </div>
         {error ? (
-          <div className="glass space-y-3 rounded-3xl p-5 shadow-card">
+          <div className="glass space-y-3 rounded-2xl p-5 shadow-card">
             <p className="text-sm text-rose-700">{error}</p>
-            <button
-              className="rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
-              onClick={load}
-            >
+            <Button onClick={load} size="sm">
               再試行する
-            </button>
+            </Button>
           </div>
         ) : null}
 
         {status === "loading" || status === "generating" ? (
-          <div className="glass space-y-3 rounded-3xl p-5 shadow-card">
+          <div className="glass space-y-3 rounded-2xl p-5 shadow-card">
             <p className="text-sm text-slate-700">
-              ソラ先生が聴き込んでいます…（最大3分ほどお待ちください）🎧
+              ソラ先生が聴き込んでいます…（最大3分ほどお待ちください）
             </p>
             <div className="h-4 w-3/4 animate-pulse rounded bg-slate-200" />
             <div className="h-4 w-2/3 animate-pulse rounded bg-slate-200" />
@@ -130,17 +129,14 @@ export default function ReportPage({ params }: Props) {
         ) : null}
 
         {status === "failed" ? (
-          <div className="glass space-y-3 rounded-3xl p-5 shadow-card">
+          <div className="glass space-y-3 rounded-2xl p-5 shadow-card">
             <p className="text-sm text-slate-700">
               レポートの生成に時間がかかっています。少し時間をおいて、もう一度お試しください。
             </p>
             <div className="flex gap-2">
-              <button
-                className="rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
-                onClick={generate}
-              >
+              <Button onClick={generate} size="sm">
                 再試行する
-              </button>
+              </Button>
               <Link
                 className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 transition active:scale-95"
                 href={`/recordings/${params.id}`}
@@ -152,17 +148,17 @@ export default function ReportPage({ params }: Props) {
         ) : null}
 
         {status === "forbidden" ? (
-          <div className="glass space-y-4 rounded-3xl p-5 shadow-card">
+          <div className="glass space-y-4 rounded-2xl p-5 shadow-card">
             {/* S-03 ロックカード: レポートの見出しだけ薄く見せる */}
             <div className="relative">
               <ul className="space-y-2 text-sm text-slate-300">
-                <li>🎯 まずはここから（最優先ポイント）</li>
-                <li>📍 箇所別の指摘</li>
-                <li>🗓 7日間練習メニュー（1日10分）</li>
-                <li>✅ 次の録音でチェックすること</li>
+                <li>まずはここから（最優先ポイント）</li>
+                <li>箇所別の指摘</li>
+                <li>7日間練習メニュー（1日10分）</li>
+                <li>次の録音でチェックすること</li>
               </ul>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-2xl">🔒</span>
+                <span className="text-slate-400"><Icon name="lock" size={26} /></span>
               </div>
             </div>
             <p className="text-sm text-slate-700">
@@ -170,12 +166,9 @@ export default function ReportPage({ params }: Props) {
             </p>
             {/* 行き止まりにしない: アップグレードと「戻る」を両方出す（docs/35 課題3） */}
             <div className="flex gap-2">
-              <button
-                className="rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
-                onClick={() => setShowUpgrade(true)}
-              >
+              <Button onClick={() => setShowUpgrade(true)} size="sm">
                 プレミアムで添削を見る
-              </button>
+              </Button>
               <Link
                 className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 transition active:scale-95"
                 href={`/recordings/${params.id}`}
@@ -190,13 +183,13 @@ export default function ReportPage({ params }: Props) {
 
         {status === "ready" && report ? (
           <div className="space-y-4">
-            <section className="glass space-y-2 rounded-3xl p-5 shadow-card">
-              <h2 className="font-bold text-slate-800">🎯 まずはここから（最優先ポイント）</h2>
-              <p className="rounded-2xl bg-amber-50 p-4 text-sm leading-relaxed text-slate-700">{report.priority}</p>
+            <section className="glass space-y-2 rounded-2xl p-5 shadow-card">
+              <h2 className="font-bold text-slate-800">まずはここから（最優先ポイント）</h2>
+              <p className="rounded-2xl bg-brand-50 p-4 text-sm leading-relaxed text-slate-700">{report.priority}</p>
             </section>
 
-            <section className="glass space-y-2 rounded-3xl p-5 shadow-card">
-              <h2 className="font-bold text-slate-800">📍 箇所別の指摘</h2>
+            <section className="glass space-y-2 rounded-2xl p-5 shadow-card">
+              <h2 className="font-bold text-slate-800">箇所別の指摘</h2>
               {report.issues.map((issue, i) => (
                 <div key={i} className="rounded-2xl border border-slate-200 p-3 text-sm">
                   {issue.time ? <p className="font-mono text-xs text-slate-400">{issue.time}</p> : null}
@@ -206,8 +199,8 @@ export default function ReportPage({ params }: Props) {
               ))}
             </section>
 
-            <section className="glass space-y-2 rounded-3xl p-5 shadow-card">
-              <h2 className="font-bold text-slate-800">🗓 7日間練習メニュー（1日10分）</h2>
+            <section className="glass space-y-2 rounded-2xl p-5 shadow-card">
+              <h2 className="font-bold text-slate-800">7日間練習メニュー（1日10分）</h2>
               <ul className="space-y-2">
                 {report.practice_menu.map((day, i) => (
                   <li key={day.day} className="flex items-start gap-3 text-sm">
@@ -227,7 +220,7 @@ export default function ReportPage({ params }: Props) {
               </ul>
             </section>
 
-            <section className="glass space-y-2 rounded-3xl p-5 shadow-card">
+            <section className="glass space-y-2 rounded-2xl p-5 shadow-card">
               <h2 className="font-bold text-slate-800">✅ 次の録音でチェックすること</h2>
               <ul className="list-inside list-disc text-sm text-slate-700">
                 {report.next_checks.map((c, i) => (

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
+import { Icon } from "@/components/site/IconChip";
 
 /**
  * 「使っている様子」を自動再生するデモ。
@@ -36,15 +37,15 @@ export function AnimatedDemo() {
     <div className="mx-auto w-full max-w-[320px]">
       <div className="relative">
         {/* フローティングバッジ（フレームに対して相対配置） */}
-        <div className="absolute -right-3 -top-3 z-10 animate-floaty rounded-2xl bg-white px-3 py-2 text-xs font-bold text-brand-600 shadow-soft">
-          🎙 録音するだけ
+        <div className="absolute -right-3 -top-3 z-10 flex animate-floaty items-center gap-1 rounded-2xl bg-white px-3 py-2 text-xs font-bold text-brand-600 shadow-soft">
+          <Icon name="mic" size={12} /> 録音するだけ
         </div>
-        <div className="absolute -bottom-3 -left-3 z-10 rounded-2xl bg-white px-3 py-2 text-xs font-bold text-emerald-600 shadow-soft">
-          ✨ その場で添削
+        <div className="absolute -bottom-3 -left-3 z-10 flex items-center gap-1 rounded-2xl bg-white px-3 py-2 text-xs font-bold text-brand-600 shadow-soft">
+          <Icon name="sparkles" size={12} /> その場で添削
         </div>
 
         {/* 端末フレーム */}
-        <div className="rounded-[2.2rem] border-4 border-white/70 bg-white/95 p-3 shadow-2xl">
+        <div className="rounded-[2rem] border-4 border-white/70 bg-white/95 p-3 shadow-2xl">
         {/* ヘッダー */}
         <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2">
           <CoachAvatar size={28} />
@@ -82,7 +83,7 @@ export function AnimatedDemo() {
           {/* ユーザー送信 */}
           {step >= 1 && (
             <div key="user" className="flex animate-pop-in justify-end">
-              <div className="flex items-center gap-2 rounded-2xl rounded-br-md bg-brand-gradient px-3 py-2 text-[11px] text-white">
+              <div className="flex items-center gap-2 rounded-2xl rounded-br-md bg-brand-600 px-3 py-2 text-[11px] text-white">
                 <span className="flex items-center gap-0.5">
                   {[6, 12, 8, 14, 9].map((h, i) => (
                     <span key={i} className="block w-1 rounded-full bg-white/80" style={{ height: h }} />
@@ -122,7 +123,7 @@ export function AnimatedDemo() {
           {step >= 4 && (
             <div key="practice" className="flex animate-pop-in items-end gap-2">
               <CoachAvatar size={28} />
-              <div className="rounded-2xl rounded-bl-md bg-gradient-to-r from-brand-50 to-pink-50 px-3 py-2 text-[11px] leading-relaxed text-slate-700">
+              <div className="rounded-2xl rounded-bl-md bg-brand-50 px-3 py-2 text-[11px] leading-relaxed text-slate-700">
                 コツは3ステップ😊<br />
                 <span className="font-bold text-brand-700">① ハミング</span>で鼻に響かせる →{" "}
                 <span className="font-bold text-brand-700">②「ネイネイ」</span>で細く高音へ →{" "}

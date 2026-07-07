@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { logPaywallEvent, PaywallSource, startCheckout } from "@/lib/api";
 import { PREMIUM_PRICE_YEN } from "@/lib/pricing";
+import { Button } from "@/components/ui/Button";
 
 type Props = {
   source: PaywallSource;
@@ -10,9 +11,9 @@ type Props = {
 };
 
 const HEADINGS: Record<PaywallSource, string> = {
-  limit: "もっと練習したいあなたへ 🎤",
-  report: "録音をもっと深く知りたいあなたへ 🎧",
-  history: "過去の録音も見返したいあなたへ 📚",
+  limit: "もっと練習したいあなたへ",
+  report: "録音をもっと深く知りたいあなたへ",
+  history: "過去の録音も見返したいあなたへ",
 };
 
 const FEATURES: { label: string; free: string; premium: string }[] = [
@@ -52,25 +53,25 @@ export default function UpgradeModal({ source, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl"
+        className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-bold">{HEADINGS[source]}</h2>
 
-        <table className="w-full text-sm">
+        <table className="font-body w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-gray-500">
+            <tr className="border-b text-left text-slate-500">
               <th className="py-1 font-normal"> </th>
               <th className="py-1 font-normal">無料</th>
-              <th className="py-1 font-medium text-blue-700">プレミアム</th>
+              <th className="py-1 font-medium text-brand-700">プレミアム</th>
             </tr>
           </thead>
           <tbody>
             {FEATURES.map((f) => (
               <tr key={f.label} className="border-b last:border-0">
                 <td className="py-1.5">{f.label}</td>
-                <td className="py-1.5 text-gray-500">{f.free}</td>
-                <td className="py-1.5 font-medium text-blue-700">{f.premium}</td>
+                <td className="py-1.5 text-slate-500">{f.free}</td>
+                <td className="py-1.5 font-medium text-brand-700">{f.premium}</td>
               </tr>
             ))}
           </tbody>
@@ -78,20 +79,17 @@ export default function UpgradeModal({ source, onClose }: Props) {
 
         <p className="text-center text-sm">
           <span className="text-xl font-bold">{PREMIUM_PRICE_YEN}</span>
-          <span className="text-gray-500"> / 月</span>
-          <span className="ml-2 text-xs text-gray-500">（いつでも解約OK）</span>
+          <span className="text-slate-500"> / 月</span>
+          <span className="ml-2 text-xs text-slate-500">（いつでも解約OK）</span>
         </p>
 
         <div className="flex flex-col gap-2">
-          <button
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white"
-            onClick={onUpgrade}
-          >
+          <Button onClick={onUpgrade} className="w-full">
             プレミアムをはじめる
-          </button>
-          <button className="rounded px-4 py-2 text-sm text-gray-500" onClick={onClose}>
+          </Button>
+          <Button variant="ghost" onClick={onClose} className="w-full text-slate-500">
             今はやめておく
-          </button>
+          </Button>
         </div>
       </div>
     </div>

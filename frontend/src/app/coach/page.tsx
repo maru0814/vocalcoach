@@ -14,13 +14,13 @@ import { BrandWordmark, Pill } from "@/components/brand/Brand";
 import { PremiumWidget } from "@/components/PremiumWidget";
 import { CoachAvatar } from "@/components/character/Coach";
 import { StageDecor } from "@/components/site/Stage";
-import { IconChip } from "@/components/site/IconChip";
+import { Icon, IconChip } from "@/components/site/IconChip";
 
 const PHASE_LABEL: Record<string, string> = {
   A: "曲を決める", B: "課題を見つける", C: "基礎練中", D: "練習チェック", E: "再録音", done: "完了",
 };
 const PHASE_TONE: Record<string, "brand" | "amber" | "emerald" | "slate"> = {
-  A: "slate", B: "brand", C: "amber", D: "amber", E: "brand", done: "emerald",
+  A: "slate", B: "brand", C: "brand", D: "brand", E: "brand", done: "emerald",
 };
 
 export default function CoachListPage() {
@@ -96,7 +96,7 @@ export default function CoachListPage() {
         <button
           onClick={startNew}
           disabled={creating}
-          className="group bg-stage grain relative w-full overflow-hidden rounded-3xl p-6 text-left text-white shadow-soft transition hover:shadow-card-2 active:scale-[0.99] disabled:opacity-70"
+          className="group bg-stage grain relative w-full overflow-hidden rounded-2xl p-6 text-left text-white shadow-soft transition hover:shadow-card-2 active:scale-[0.99] disabled:opacity-70"
         >
           <StageDecor notes={false} />
           <div className="relative z-10 flex items-center gap-4">
@@ -140,7 +140,7 @@ export default function CoachListPage() {
             ))}
           </div>
         ) : sessions.length === 0 ? (
-          <div className="glass rounded-3xl p-10 text-center shadow-card">
+          <div className="glass rounded-2xl p-10 text-center shadow-card">
             <div className="animate-floaty mx-auto mb-3 inline-flex">
               <CoachAvatar size={64} ring />
             </div>
@@ -199,7 +199,7 @@ export default function CoachListPage() {
                         title="名前を変更"
                         className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-white hover:text-brand-600"
                       >
-                        ✏️
+                        
                       </button>
                       <Link href={`/coach/${s.id}`}>
                         <Pill tone={PHASE_TONE[s.phase] || "slate"}>{PHASE_LABEL[s.phase] || s.phase}</Pill>

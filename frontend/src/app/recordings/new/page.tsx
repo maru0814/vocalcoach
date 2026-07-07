@@ -8,6 +8,8 @@ import {
 } from "@/lib/api";
 import UpgradeModal from "@/components/UpgradeModal";
 import { AppHeader } from "@/components/AppHeader";
+import { Icon } from "@/components/site/IconChip";
+import { Button } from "@/components/ui/Button";
 
 // バックエンド settings.max_audio_mb と一致（超過は送信前に弾いて具体的な文言を出す）
 const MAX_AUDIO_MB = 20;
@@ -73,17 +75,18 @@ export default function NewRecordingPage() {
     <div className="bg-studio min-h-[100dvh]">
       <AppHeader />
       <div className="mx-auto mt-6 max-w-lg px-5">
-        <div className="glass space-y-4 rounded-3xl p-6 shadow-card">
+        <div className="glass space-y-4 rounded-2xl p-6 shadow-card">
           <h1 className="text-xl font-black text-slate-800">録音アップロード</h1>
 
           {done ? (
             /* success */
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-3xl shadow-soft">
-                ✅
+              {/* 成功＝emerald は達成表示のみ許可（docs/61 §3-1） */}
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 shadow-soft">
+                <Icon name="check" size={30} />
               </div>
               <p className="font-bold text-slate-700">アップロードできました！</p>
-              <p className="text-sm text-slate-500">評価を準備しています。履歴へ移動します…</p>
+              <p className="font-body text-sm text-slate-500">評価を準備しています。履歴へ移動します…</p>
             </div>
           ) : (
             <form className="space-y-3" onSubmit={onSubmit}>
@@ -118,13 +121,9 @@ export default function NewRecordingPage() {
                 <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>
               )}
 
-              <button
-                className="w-full rounded-full bg-brand-gradient px-4 py-3 text-sm font-bold text-white shadow-soft transition active:scale-95 disabled:opacity-60"
-                type="submit"
-                disabled={loading}
-              >
+              <Button type="submit" disabled={loading} className="w-full">
                 {loading ? "送信中…" : "アップロードして評価する"}
-              </button>
+              </Button>
             </form>
           )}
         </div>

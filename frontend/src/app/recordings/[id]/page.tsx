@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { getRecording, RecordingDetail } from "@/lib/api";
 import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import { AppHeader } from "@/components/AppHeader";
+import { Button } from "@/components/ui/Button";
 
 type Props = { params: { id: string } };
 
@@ -53,14 +54,14 @@ export default function RecordingDetailPage({ params }: Props) {
           </Link>
         </div>
 
-        {status === "loading" && <div className="shimmer h-48 rounded-3xl bg-white/60" />}
+        {status === "loading" && <div className="shimmer h-48 rounded-2xl bg-white/60" />}
 
         {status === "error" && (
           <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>
         )}
 
         {status === "ready" && data && (
-          <div className="glass space-y-4 rounded-3xl p-5 shadow-card">
+          <div className="glass space-y-4 rounded-2xl p-5 shadow-card">
             <div>
               <p className="text-lg font-black text-slate-800">{data.title}</p>
               <p className="text-xs text-slate-400">メモ: {data.note || "—"}</p>
@@ -80,20 +81,17 @@ export default function RecordingDetailPage({ params }: Props) {
 
                 {/* FB直後（感情のピーク・US-02）に「次にできること」を出す（docs/35 課題3） */}
                 <div className="rounded-2xl border border-brand-100 bg-white/70 p-4">
-                  <p className="text-sm font-bold text-slate-700">次にできること 🎯</p>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  <p className="text-sm font-bold text-slate-700">次にできること</p>
+                  <p className="font-body mt-1 text-xs leading-relaxed text-slate-500">
                     この録音について「どこで・何を・どう直すか」を、7日間の練習メニューつきで詳しく見られます。
                   </p>
-                  <Link
-                    className="mt-3 inline-flex rounded-full bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
-                    href={`/recordings/${params.id}/report`}
-                  >
+                  <Button href={`/recordings/${params.id}/report`} size="sm" className="mt-3">
                     詳細添削レポートを見る →
-                  </Link>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              <p className="rounded-2xl bg-brand-50 px-4 py-3 text-sm text-brand-700">
                 まだ評価が完了していません。少し待ってから開き直してください。
               </p>
             )}

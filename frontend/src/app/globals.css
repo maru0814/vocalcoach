@@ -50,17 +50,6 @@ body {
   }
 }
 
-.bg-brand-gradient {
-  background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 45%, #ec4899 110%);
-}
-
-.text-brand-gradient {
-  background: linear-gradient(120deg, #7c3aed, #ec4899);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
 /* ガラス風カード */
 .glass {
   background: rgba(255, 255, 255, 0.72);

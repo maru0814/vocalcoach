@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CoachMessage, COACH_API_BASE, submitMessageFeedback } from "@/lib/api";
 import { CoachAvatar } from "@/components/character/Coach";
+import { Icon } from "@/components/site/IconChip";
 
 /** 過去ログに残る旧カード（feedback/practice/judge/progress/diagnosis）の互換表示。
  *  点数・◎○△×・表は出さず、課題/練習名だけを淡色テキストで控えめに見せる。
@@ -81,7 +82,7 @@ function FeedbackControl({ sessionId, messageId }: { sessionId: string | number;
   }
 
   if (status === "sent") {
-    return <div className="mt-1 pl-1 text-[11px] text-slate-400">ありがとうございます。改善に役立てます🙏</div>;
+    return <div className="mt-1 pl-1 text-[11px] text-slate-400">ありがとうございます。改善に役立てます。</div>;
   }
 
   if (status === "form") {
@@ -93,8 +94,8 @@ function FeedbackControl({ sessionId, messageId }: { sessionId: string | number;
             <button
               key={r.id}
               onClick={() => setReason(reason === r.id ? null : r.id)}
-              className={`rounded-full px-2.5 py-1 text-xs transition ${
-                reason === r.id ? "bg-brand-gradient text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"
+              className={`rounded-full px-2.5 py-1 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                reason === r.id ? "bg-brand-600 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"
               }`}
             >
               {r.label}
@@ -113,7 +114,7 @@ function FeedbackControl({ sessionId, messageId }: { sessionId: string | number;
           <button
             disabled={busy}
             onClick={() => send("down", reason || undefined, comment.trim() || undefined)}
-            className="rounded-full bg-brand-gradient px-3 py-1 text-xs font-bold text-white disabled:opacity-40"
+            className="rounded-full bg-brand-600 px-3 py-1 text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-40"
           >
             送信
           </button>
@@ -129,17 +130,17 @@ function FeedbackControl({ sessionId, messageId }: { sessionId: string | number;
         disabled={busy}
         onClick={() => send("up")}
         aria-label="役に立った"
-        className="rounded-md px-1.5 py-0.5 text-sm text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-500"
+        className="rounded-md px-1.5 py-0.5 text-slate-400 transition hover:bg-brand-50 hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
       >
-        👍
+        <Icon name="thumbs-up" size={14} />
       </button>
       <button
         disabled={busy}
         onClick={() => setStatus("form")}
         aria-label="間違いを指摘"
-        className="rounded-md px-1.5 py-0.5 text-sm text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+        className="rounded-md px-1.5 py-0.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
       >
-        👎
+        <Icon name="thumbs-down" size={14} />
       </button>
     </div>
   );
@@ -166,7 +167,7 @@ export function MessageBubble({
   if (isUser) {
     return (
       <div className="flex flex-col items-end">
-        <div className="max-w-[82%] rounded-2xl rounded-br-md bg-brand-gradient px-4 py-2.5 text-sm text-white shadow-soft">
+        <div className="max-w-[82%] rounded-2xl rounded-br-md bg-brand-600 px-4 py-2.5 text-sm text-white shadow-soft">
           {m.type === "text" && <span className="whitespace-pre-wrap">{m.text}</span>}
           {m.type === "audio" && m.audio_url && (
             <audio controls src={`${COACH_API_BASE}${m.audio_url}`} className="w-60" />
