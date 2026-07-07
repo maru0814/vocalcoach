@@ -6,7 +6,7 @@ import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
 import { CoachSpotlight } from "@/components/character/CoachSpotlight";
 import { StageDecor } from "@/components/site/Stage";
 import { SectionHeading, Marker } from "@/components/site/SectionHeading";
-import { IconChip, IconName } from "@/components/site/IconChip";
+import { Icon, IconChip, IconName } from "@/components/site/IconChip";
 import { ProductSnippet, SnippetMsg } from "@/components/site/ProductSnippet";
 import { Button } from "@/components/ui/Button";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
@@ -95,9 +95,9 @@ const FOR_YOU = [
 ];
 
 const VOICES = [
-  { emoji: "🧑‍💼", name: "27歳・会社員", quote: "「サビで息が切れてる」って秒数で言われて納得。基礎練を続けたら、前より安定しました。" },
-  { emoji: "🧑‍🎤", name: "21歳・学生", quote: "教室は緊張するけど、これなら家で気軽に。動画つきで練習法に迷わないのが助かる。" },
-  { emoji: "👩", name: "34歳・主婦", quote: "録り直すたびに「ここ良くなった」って言ってくれるのが楽しい。ちゃんと褒めてくれるので続けられます。" },
+  { name: "27歳・会社員", quote: "「サビで息が切れてる」って秒数で言われて納得。基礎練を続けたら、前より安定しました。" },
+  { name: "21歳・学生", quote: "教室は緊張するけど、これなら家で気軽に。動画つきで練習法に迷わないのが助かる。" },
+  { name: "34歳・主婦", quote: "録り直すたびに「ここ良くなった」って言ってくれるのが楽しい。ちゃんと褒めてくれるので続けられます。" },
 ];
 
 const FAQ = [
@@ -126,15 +126,17 @@ function BeforeAfter() {
   return (
     <div className="mx-auto flex max-w-md flex-col gap-3 text-left">
       <div className="flex items-end gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-50 text-sm">🎤</span>
-        <div className="rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-600 shadow-card">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <Icon name="mic" size={14} />
+        </span>
+        <div className="font-body rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-600 shadow-card">
           最初の録音：サビの伸ばしが、後半でゆれて下がりがちですね。
         </div>
       </div>
       <div className="text-center text-xs font-bold text-brand-600">基礎練5日 → 録り直し ↓</div>
       <div className="flex items-end gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-sm">🌤</span>
-        <div className="rounded-2xl rounded-bl-md bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 shadow-card">
+        <CoachAvatar size={28} />
+        <div className="font-body rounded-2xl rounded-bl-md bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 shadow-card">
           伸ばしがまっすぐ安定しましたね！息の支えが効いています✨
         </div>
       </div>
@@ -151,7 +153,7 @@ export default function HomePage() {
 
       <main className="mx-auto max-w-6xl px-5">
         {/* Hero（夜のステージ・開演 docs/55 §7 パイロット） */}
-        <section className="bg-stage grain relative mt-4 overflow-hidden rounded-[2.5rem] p-8 text-white shadow-soft sm:p-14">
+        <section className="bg-stage grain relative mt-4 overflow-hidden rounded-[2rem] p-8 text-white shadow-soft sm:p-14">
           <StageDecor />
           <div className="relative z-10 grid items-center gap-10 lg:grid-cols-2">
             <div className="max-w-xl">
@@ -193,11 +195,11 @@ export default function HomePage() {
 
         {/* 信頼バッジ帯（factualな数字） */}
         <Reveal className="mt-12 sm:mt-16">
-          <div className="grid grid-cols-2 gap-3 rounded-3xl bg-white/80 p-5 shadow-card sm:grid-cols-4 sm:p-6">
+          <div className="grid grid-cols-2 gap-3 rounded-2xl bg-white/80 p-5 shadow-card sm:grid-cols-4 sm:p-6">
             {STATS.map((s) => (
               <div key={s.value} className="text-center">
-                <div className="text-2xl font-black text-brand-gradient sm:text-3xl">{s.value}</div>
-                <div className="mt-1 text-xs text-slate-500">{s.label}</div>
+                <div className="text-2xl font-black text-brand-600 sm:text-3xl">{s.value}</div>
+                <div className="font-body mt-1 text-xs text-slate-500">{s.label}</div>
               </div>
             ))}
           </div>
@@ -213,7 +215,7 @@ export default function HomePage() {
                 STEP 1 ・ まずはここから
               </span>
               <h2 className="mt-3 text-2xl font-black text-white sm:text-4xl">
-                まずは、<span className="bg-gradient-to-r from-brand-200 to-pink-200 bg-clip-text text-transparent">声タイプ診断</span>から。
+                まずは、<span className="text-brand-200">声タイプ診断</span>から。
               </h2>
               <p className="mx-auto mt-3 max-w-xl text-white/80">
                 AIボーカルトレーナー{COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。
@@ -232,12 +234,9 @@ export default function HomePage() {
                   </div>
                 ))}
               </div>
-              <Link
-                href="/voice-type"
-                className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-gradient px-7 py-3.5 font-bold text-white shadow-soft transition hover:scale-[1.02] hover:shadow-glow-neon active:scale-95"
-              >
+              <Button href="/voice-type" className="mt-8">
                 無料登録して、声タイプ診断 →
-              </Link>
+              </Button>
               <p className="mt-3 text-xs text-white/50">※ 診断・発声レッスンとも、無料登録（30秒）で使えます</p>
               <VoiceTypeStats className="mt-3" tone="dark" />
             </div>
@@ -262,9 +261,9 @@ export default function HomePage() {
           <div className="rounded-[2rem] bg-white/80 p-8 text-center shadow-card sm:p-12">
             <p className="text-sm font-bold tracking-wide text-brand-600">SOLUTION</p>
             <h2 className="mt-2 text-2xl font-black text-slate-800 sm:text-4xl">
-              ひとりの練習に、<span className="text-brand-gradient">AIの耳</span>を。
+              ひとりの練習に、<span className="text-brand-600">AIの耳</span>を。
             </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-slate-600">
+            <p className="font-body mx-auto mt-4 max-w-2xl text-slate-600">
               AIボーカルトレーナーのソラ先生が、あなたの録音を解析して
               「良かった点 → 直すところ → 今日の基礎練」までチャットで伴走します。
             </p>
@@ -282,7 +281,7 @@ export default function HomePage() {
               <Reveal key={s.n} delay={i * 120}>
                 <div className="h-full rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-gradient text-sm font-bold text-white">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
                       {s.n}
                     </span>
                     <IconChip icon={s.icon} size={40} />
@@ -322,8 +321,8 @@ export default function HomePage() {
         </section>
 
         {/* Before → After */}
-        <Reveal className="mt-24">
-          <div className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-brand-50 to-pink-50 p-8 text-center shadow-card sm:p-12">
+        <Reveal className="mt-20">
+          <div className="overflow-hidden rounded-[2rem] bg-brand-50/70 p-8 text-center shadow-card sm:p-12">
             <p className="text-sm font-bold tracking-wide text-brand-600">BEFORE → AFTER</p>
             <h2 className="mt-2 text-2xl font-black text-slate-800 sm:text-3xl">
               録り直すたび、変化が分かる。
@@ -339,18 +338,20 @@ export default function HomePage() {
         </Reveal>
 
         {/* こんな人におすすめ */}
-        <Reveal className="mt-24">
+        <Reveal className="mt-20">
           <div className="grid items-center gap-8 rounded-[2rem] bg-white/85 p-8 shadow-card sm:p-12 lg:grid-cols-2">
             <div>
               <h2 className="text-2xl font-black text-slate-800 sm:text-3xl">
-                こんな人に、<span className="text-brand-gradient">ぴったり</span>。
+                こんな人に、<span className="text-brand-600">ぴったり</span>。
               </h2>
-              <p className="mt-3 text-sm text-slate-500">ひとつでも当てはまったら、まず1曲ためしてみてください。</p>
+              <p className="font-body mt-3 text-sm text-slate-500">ひとつでも当てはまったら、まず1曲ためしてみてください。</p>
             </div>
             <ul className="space-y-3">
               {FOR_YOU.map((t) => (
-                <li key={t} className="flex items-start gap-3 rounded-2xl bg-brand-50/60 px-4 py-3 text-sm font-medium text-slate-700">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs text-white">✓</span>
+                <li key={t} className="font-body flex items-start gap-3 rounded-2xl bg-brand-50/60 px-4 py-3 text-sm font-medium text-slate-700">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white">
+                    <Icon name="check" size={12} />
+                  </span>
                   {t}
                 </li>
               ))}
@@ -359,16 +360,18 @@ export default function HomePage() {
         </Reveal>
 
         {/* 利用者の声 */}
-        <Reveal className="mt-24">
+        <Reveal className="mt-20">
           <SectionHeading eyebrow="VOICES" title="使った人の声" />
           <div className="mt-7 grid gap-4 sm:grid-cols-3">
             {VOICES.map((v, i) => (
               <Reveal key={v.name} delay={i * 120}>
                 <div className="h-full rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
-                  <div className="text-amber-400">★★★★★</div>
-                  <p className="mt-3 text-sm text-slate-700">{v.quote}</p>
+                  <div className="text-brand-400">★★★★★</div>
+                  <p className="font-body mt-3 text-sm text-slate-700">{v.quote}</p>
                   <div className="mt-4 flex items-center gap-2">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-lg">{v.emoji}</span>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                      <Icon name="user" size={18} />
+                    </span>
                     <span className="text-xs font-bold text-slate-500">{v.name}</span>
                   </div>
                 </div>
@@ -379,36 +382,38 @@ export default function HomePage() {
         </Reveal>
 
         {/* 料金 */}
-        <Reveal className="mt-24">
+        <Reveal className="mt-20">
           <div className="mx-auto max-w-md overflow-hidden rounded-[2rem] bg-white/90 p-8 text-center shadow-card">
-            <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">いまなら</span>
+            <span className="inline-flex rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">いまなら</span>
             <h2 className="mt-3 text-2xl font-black text-slate-800">ずっと無料で始められる</h2>
-            <div className="mt-4 text-5xl font-black text-brand-gradient">¥0</div>
-            <ul className="mx-auto mt-6 max-w-xs space-y-2 text-left text-sm text-slate-600">
+            <div className="mt-4 text-5xl font-black text-brand-600">¥0</div>
+            <ul className="font-body mx-auto mt-6 max-w-xs space-y-2 text-left text-sm text-slate-600">
               {["登録はメールだけ・30秒", "クレジットカード不要", "専用マイク・機材いらず", "レッスン履歴も保存"].map((t) => (
                 <li key={t} className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-xs text-emerald-600">✓</span>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                    <Icon name="check" size={12} />
+                  </span>
                   {t}
                 </li>
               ))}
             </ul>
-            <Link href="/login" className="mt-7 inline-flex w-full items-center justify-center rounded-full bg-brand-gradient px-6 py-3.5 font-bold text-white shadow-soft transition active:scale-95">
+            <Button href="/login" className="mt-7 w-full">
               無料で始める →
-            </Link>
+            </Button>
           </div>
         </Reveal>
 
         {/* FAQ（アコーディオン） */}
-        <Reveal className="mt-24">
+        <Reveal className="mt-20">
           <SectionHeading eyebrow="FAQ" title="よくある質問" />
           <div className="mx-auto mt-7 max-w-2xl space-y-3">
             {FAQ.map((f) => (
               <details key={f.q} className="group rounded-2xl bg-white/90 px-5 py-4 shadow-card">
-                <summary className="flex cursor-pointer list-none items-center justify-between font-bold text-slate-800">
+                <summary className="flex cursor-pointer list-none items-center justify-between rounded font-bold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
                   <span>Q. {f.q}</span>
                   <span className="text-brand-400 transition group-open:rotate-45">＋</span>
                 </summary>
-                <p className="mt-3 text-sm text-slate-600">A. {f.a}</p>
+                <p className="font-body mt-3 text-sm text-slate-600">A. {f.a}</p>
               </details>
             ))}
           </div>
@@ -416,15 +421,15 @@ export default function HomePage() {
 
         {/* 最後のCTA（夜のステージ・終演＝開演と首尾を揃える） */}
         <Reveal className="mt-24">
-          <div className="bg-stage grain relative overflow-hidden rounded-[2.5rem] p-10 text-center text-white shadow-soft sm:p-16">
+          <div className="bg-stage grain relative overflow-hidden rounded-[2rem] p-10 text-center text-white shadow-soft sm:p-16">
             <StageDecor />
             <h2 className="relative z-10 text-3xl font-black sm:text-4xl">
               上達は、<Marker tone="dark">今日の一歩</Marker>から。
             </h2>
-            <p className="relative z-10 mt-3 text-white/90">まずは1曲、歌って送ってみましょう。AIボーカルトレーナーが待っています。</p>
-            <Link href="/login" className="relative z-10 mt-8 inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 font-bold text-brand-700 shadow-soft transition hover:scale-[1.02] hover:shadow-glow-neon active:scale-95">
+            <p className="font-body relative z-10 mt-3 text-white/90">まずは1曲、歌って送ってみましょう。AIボーカルトレーナーが待っています。</p>
+            <Button href="/login" className="relative z-10 mt-8">
               無料でレッスンを始める →
-            </Link>
+            </Button>
             <p className="relative z-10 mt-3 text-xs text-white/70">専用マイク不要・登録30秒・クレジットカード不要</p>
           </div>
         </Reveal>
@@ -443,10 +448,10 @@ export default function HomePage() {
 
       {/* スマホ用 追従CTAバー */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/40 bg-white/85 p-3 backdrop-blur sm:hidden">
-        <Link href="/login" className="flex flex-col items-center rounded-2xl bg-brand-gradient py-3 font-bold text-white shadow-soft">
+        <Button href="/login" className="w-full flex-col py-3">
           無料でレッスンを始める →
           <span className="text-[11px] font-normal text-white/80">専用マイク不要・登録30秒・無料</span>
-        </Link>
+        </Button>
       </div>
     </div>
   );

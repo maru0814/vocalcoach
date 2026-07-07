@@ -22,7 +22,7 @@ export function PremiumWidget() {
   if (!me || !me.billing_enabled) return null;
 
   if (me.plan === "premium") {
-    return <span className="text-xs font-semibold text-green-600">✓ プレミアム</span>;
+    return <span className="text-xs font-semibold text-emerald-600">✓ プレミアム</span>;
   }
 
   const remaining =
@@ -30,17 +30,17 @@ export function PremiumWidget() {
 
   const badgeClass =
     remaining === 0
-      ? "text-xs font-semibold text-red-600"
+      ? "text-xs font-semibold text-rose-600"
       : remaining != null && remaining <= 3
-      ? "text-xs font-semibold text-amber-600"
-      : "text-xs text-gray-500";
+      ? "text-xs font-semibold text-rose-600"
+      : "text-xs text-slate-500";
 
   const badgeLabel =
     remaining === null
       ? null
       : remaining === 0
       ? "今月 上限"
-      : `今月 残り${remaining}回${remaining <= 3 ? " ⚠" : ""}`;
+      : `今月 残り${remaining}回${remaining <= 3 ? "（残りわずか）" : ""}`;
 
   return (
     <>
@@ -55,7 +55,7 @@ export function PremiumWidget() {
           </button>
         )}
         <button
-          className="rounded-full bg-brand-gradient px-4 py-1.5 text-sm font-bold text-white shadow-soft transition hover:opacity-95 active:scale-95"
+          className="rounded-full bg-brand-600 px-4 py-1.5 text-sm font-bold text-white shadow-[0_3px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[2px] active:shadow-[0_1px_0_#5b21b6]"
           onClick={() => setShowUpgrade(true)}
           aria-label={`プレミアムプランにアップグレード（月額${PREMIUM_PRICE_JPY}円）`}
         >

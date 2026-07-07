@@ -9,9 +9,14 @@ type Variant = "primary" | "secondary" | "ghost";
  * 5状態: default / hover / active(沈む) / focus-visible / disabled。
  */
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-full px-7 py-3.5 font-bold " +
+  "inline-flex items-center justify-center gap-2 rounded-full font-bold " +
   "transition-[transform,box-shadow,background-color,filter] duration-100 " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2";
+
+const SIZES = {
+  md: "px-7 py-3.5",
+  sm: "px-5 py-2 text-sm",
+} as const;
 
 const VARIANTS: Record<Variant, string> = {
   // 下辺影で「押せる物理感」。active で3px沈み影が1pxへ。
@@ -29,6 +34,7 @@ const VARIANTS: Record<Variant, string> = {
 
 type CommonProps = {
   variant?: Variant;
+  size?: keyof typeof SIZES;
   className?: string;
   children: ReactNode;
 };
@@ -42,8 +48,8 @@ type AsButton = CommonProps & {
 };
 
 export function Button(props: AsLink | AsButton) {
-  const { variant = "primary", className = "", children } = props;
-  const cls = `${BASE} ${VARIANTS[variant]} ${className}`;
+  const { variant = "primary", size = "md", className = "", children } = props;
+  const cls = `${BASE} ${SIZES[size]} ${VARIANTS[variant]} ${className}`;
   if ("href" in props && props.href) {
     return (
       <Link href={props.href} className={cls}>

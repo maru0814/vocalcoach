@@ -43,7 +43,7 @@ export function CoachAvatar({
   }
   return (
     <span
-      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-gradient shadow-soft ${
+      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-600 shadow-soft ${
         ring ? "ring-2 ring-white" : ""
       }`}
       style={{ width: size, height: size }}

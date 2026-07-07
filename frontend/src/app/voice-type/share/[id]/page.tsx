@@ -62,11 +62,11 @@ export default function VoiceTypeShareLanding(
   return (
     <div className="bg-studio min-h-[100dvh] pb-16">
       <main className="mx-auto max-w-2xl space-y-5 px-5 pt-6">
-        <div className={`overflow-hidden rounded-3xl bg-gradient-to-br ${grad} text-white shadow-soft`}>
+        <div className={`overflow-hidden rounded-2xl bg-gradient-to-br ${grad} text-white shadow-soft`}>
           <div className="relative aspect-[16/9] w-full">
             <VoiceTypeArt id={params.id} className="h-full w-full" />
             <div className="absolute left-3 top-3 rounded-full bg-black/35 px-2 py-0.5 text-[11px] font-bold tracking-wide backdrop-blur-sm">
-              🎤 ソラ先生 声タイプ診断
+              ソラ先生 声タイプ診断
             </div>
           </div>
           <div className="p-5">
@@ -80,7 +80,7 @@ export default function VoiceTypeShareLanding(
           </div>
         </div>
 
-        <div className="rounded-3xl bg-white/90 p-6 text-center shadow-card">
+        <div className="rounded-2xl bg-white/90 p-6 text-center shadow-card">
           <h1 className="text-xl font-black text-slate-800">あなたの声は、どのタイプ？</h1>
           <p className="mt-2 text-sm text-slate-600">
             AIボーカルトレーナー「ソラ先生」が、15秒歌うだけであなたの声を8タイプで診断します。
@@ -95,7 +95,7 @@ export default function VoiceTypeShareLanding(
           </div>
           <Link
             href="/voice-type"
-            className="mt-6 inline-flex items-center gap-2 rounded-full bg-brand-gradient px-7 py-3.5 font-bold text-white shadow-soft transition hover:scale-[1.02] active:scale-95"
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-brand-600 px-7 py-3.5 font-bold text-white shadow-[0_4px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] active:shadow-[0_1px_0_#5b21b6]"
           >
             無料で自分の声タイプを診断する →
           </Link>

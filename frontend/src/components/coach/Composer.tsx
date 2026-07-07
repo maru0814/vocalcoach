@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Recorder } from "./Recorder";
+import { Icon } from "@/components/site/IconChip";
 
 // 録音の種類はユーザーに選ばせず、サーバー側が音声から自動判定する（"auto"）。
 type Kind = "song" | "practice" | "auto";
@@ -100,8 +101,8 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
     return (
       <div className="glass border-t border-white/40 p-3">
         {pendingCommentRef.current && (
-          <div className="mb-2 truncate rounded-xl bg-brand-50 px-3 py-1.5 text-xs text-brand-700">
-            💬 {pendingCommentRef.current}
+          <div className="mb-2 flex items-center gap-1 truncate rounded-lg bg-brand-50 px-3 py-1.5 text-xs text-brand-700">
+            <Icon name="chat" size={12} className="shrink-0" /> {pendingCommentRef.current}
           </div>
         )}
         <div className="flex items-center gap-3 rounded-2xl bg-rose-50 px-4 py-3">
@@ -112,10 +113,17 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
           <span className="font-bold text-rose-600">録音中</span>
           <span className="font-mono text-sm text-rose-500">{mm}:{ss} / 1:00</span>
           <div className="ml-auto flex gap-2">
-            <button onClick={cancelRecording} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
-              ✕
+            <button
+              onClick={cancelRecording}
+              aria-label="録音をやめる"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            >
+              <Icon name="x" size={14} />
             </button>
-            <button onClick={stopRecording} className="rounded-xl bg-brand-gradient px-4 py-2 text-sm font-bold text-white shadow-soft">
+            <button
+              onClick={stopRecording}
+              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-[0_3px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[2px] active:shadow-[0_1px_0_#5b21b6]"
+            >
               ■ 送信
             </button>
           </div>
@@ -135,9 +143,9 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
           disabled={disabled}
           onClick={startRecording}
           title="録音"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-lg text-white shadow-soft transition active:scale-90 disabled:opacity-40"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:scale-90 disabled:opacity-40"
         >
-          🎙
+          <Icon name="mic" size={20} />
         </button>
         <button
           type="button"
@@ -145,9 +153,9 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
           title="アップロード"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-lg transition active:scale-90 disabled:opacity-40"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:scale-90 disabled:opacity-40"
         >
-          📎
+          <Icon name="paperclip" size={20} />
         </button>
         <input ref={fileInputRef} type="file" accept="audio/*" onChange={onFile} className="hidden" />
         <textarea
@@ -162,17 +170,17 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
             }
           }}
           rows={1}
-          placeholder={`質問や一言を書いてから🎙録音・📎アップロードするとコメント付きで送れます（${isMac ? "⌘+Enter" : "Shift+Enter"}で文章のみ送信）`}
+          placeholder={`質問や一言を書いてから録音・アップロードするとコメント付きで送れます（${isMac ? "⌘+Enter" : "Shift+Enter"}で文章のみ送信）`}
           disabled={disabled}
           className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:shadow-glow disabled:opacity-40"
         />
         <button
           onClick={submitText}
           disabled={disabled || !text.trim()}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-soft transition active:scale-90 disabled:opacity-40"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:scale-90 disabled:opacity-40"
           aria-label="送信"
         >
-          ➤
+          <Icon name="send" size={18} />
         </button>
       </div>
     </div>

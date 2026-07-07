@@ -11,6 +11,7 @@ import { analyzeVoiceType, getMe, VoiceTypeResult } from "@/lib/api";
 import { BrandWordmark } from "@/components/brand/Brand";
 import { CoachAvatar } from "@/components/character/Coach";
 import { StageDecor } from "@/components/site/Stage";
+import { Icon } from "@/components/site/IconChip";
 
 const LOGIN_URL = "/login?next=/voice-type";
 
@@ -70,7 +71,7 @@ export default function VoiceTypePage() {
         });
       }, 1000);
     } catch {
-      setError("マイクの使用を許可してください🎤");
+      setError("マイクの使用を許可してください");
     }
   }
 
@@ -115,7 +116,7 @@ export default function VoiceTypePage() {
 
       <main className="mx-auto max-w-2xl space-y-5 px-5">
         {/* ヒーロー（夜のステージ docs/55 Phase 3） */}
-        <section className="bg-stage grain relative overflow-hidden rounded-3xl p-6 text-white shadow-soft">
+        <section className="bg-stage grain relative overflow-hidden rounded-2xl p-6 text-white shadow-soft">
           <StageDecor notes={false} />
           <div className="relative z-10">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
@@ -127,7 +128,7 @@ export default function VoiceTypePage() {
             </h1>
             <p className="mt-2 text-sm text-white/90">
               15秒くらい歌うだけ。AIが発声を解析して、8つの声タイプから診断します。
-              似た声質のアーティストつき。結果はそのままシェアできます😊
+              似た声質のアーティストつき。結果はそのままシェアできます。
             </p>
           </div>
         </section>
@@ -135,7 +136,7 @@ export default function VoiceTypePage() {
         {/* 8タイプギャラリー */}
         <VoiceTypeStats />
 
-        <section className="rounded-3xl bg-white/85 p-4 shadow-card">
+        <section className="rounded-2xl bg-white/85 p-4 shadow-card">
           <div className="px-1 text-xs font-bold text-slate-500">あなたはどれ？ — 8つの声タイプ</div>
           <div className="mt-3 grid grid-cols-4 gap-2">
             {VOICE_TYPE_LIST.map((t) => (
@@ -151,7 +152,7 @@ export default function VoiceTypePage() {
 
         {/* 診断アクション or 結果 */}
         {!result && (
-          <section className="rounded-3xl bg-white/90 p-5 shadow-card">
+          <section className="rounded-2xl bg-white/90 p-5 shadow-card">
             {auth === "checking" ? (
               <div className="flex flex-col items-center gap-3 py-6">
                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-500" />
@@ -160,7 +161,7 @@ export default function VoiceTypePage() {
             ) : loading ? (
               <div className="flex flex-col items-center gap-3 py-6">
                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-500" />
-                <p className="text-sm font-bold text-slate-600">声を解析しています…🎧</p>
+                <p className="text-sm font-bold text-slate-600">声を解析しています…</p>
                 <p className="text-xs text-slate-400">10秒ほどで結果が出ます</p>
               </div>
             ) : recording ? (
@@ -172,27 +173,27 @@ export default function VoiceTypePage() {
                 <span className="font-bold text-rose-600">録音中</span>
                 <span className="font-mono text-sm text-rose-500">{mm}:{ss} / 0:{String(MAX_SEC).padStart(2, "0")}</span>
                 <div className="ml-auto flex gap-2">
-                  <button onClick={cancelRecording} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">✕</button>
-                  <button onClick={stopRecording} className="rounded-xl bg-brand-gradient px-4 py-2 text-sm font-bold text-white shadow-soft">■ 診断する</button>
+                  <button onClick={cancelRecording} aria-label="録音をやめる" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><Icon name="x" size={14} /></button>
+                  <button onClick={stopRecording} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-[0_3px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[2px] active:shadow-[0_1px_0_#5b21b6]">■ 診断する</button>
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
                 <button
                   onClick={startRecording}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient px-6 py-4 text-base font-bold text-white shadow-soft transition active:scale-95"
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-600 px-6 py-4 text-base font-bold text-white shadow-[0_4px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 active:translate-y-[3px] active:shadow-[0_1px_0_#5b21b6]"
                 >
-                  🎙 録音して診断する
+                  <Icon name="mic" size={18} /> 録音して診断する
                 </button>
                 <button
                   onClick={() => fileRef.current?.click()}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-bold text-slate-600 transition active:scale-95"
+                  className="flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-bold text-slate-600 shadow-[0_4px_0_#cbd5e1] transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 active:translate-y-[3px] active:shadow-[0_1px_0_#cbd5e1]"
                 >
-                  📎 音源をアップロードして診断
+                  <Icon name="paperclip" size={16} /> 音源をアップロードして診断
                 </button>
                 <input ref={fileRef} type="file" accept="audio/*" onChange={onFile} className="hidden" />
                 <p className="px-1 text-center text-[11px] text-slate-400">
-                  サビなど、しっかり声を出している部分を15秒ほど歌うのがおすすめです🎤
+                  サビなど、しっかり声を出している部分を15秒ほど歌うのがおすすめです
                 </p>
               </div>
             )}
@@ -203,7 +204,7 @@ export default function VoiceTypePage() {
         {/* 結果カード */}
         {result && auth === "in" && (
           <section className="space-y-3">
-            <div className="rounded-3xl bg-white/90 p-4 shadow-card">
+            <div className="rounded-2xl bg-white/90 p-4 shadow-card">
               <div ref={shareRef} className="space-y-0">
                 <VoiceTypeBlock vt={result.voice_type} score={result.score} />
               </div>
@@ -215,15 +216,15 @@ export default function VoiceTypePage() {
             <div className="flex gap-2">
               <button
                 onClick={() => { setResult(null); setError(null); }}
-                className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 transition active:scale-95"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 shadow-[0_4px_0_#cbd5e1] transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] active:shadow-[0_1px_0_#cbd5e1]"
               >
-                🔁 もう一度診断
+                <Icon name="refresh" size={15} /> もう一度診断
               </button>
               <Link
                 href="/coach"
-                className="flex-1 rounded-full bg-brand-gradient px-4 py-3 text-center text-sm font-bold text-white shadow-soft transition active:scale-95"
+                className="flex-1 rounded-full bg-brand-600 px-4 py-3 text-center text-sm font-bold text-white shadow-[0_4px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] active:shadow-[0_1px_0_#5b21b6]"
               >
-                🎤 レッスンを受ける
+                レッスンを受ける →
               </Link>
             </div>
             <p className="px-1 text-center text-[11px] text-slate-400">
@@ -236,20 +237,20 @@ export default function VoiceTypePage() {
             「見る・シェアする」瞬間に無料登録へ誘導する。 */}
         {result && auth !== "in" && (
           <section className="space-y-3">
-            <div className="relative overflow-hidden rounded-3xl bg-white/90 p-4 shadow-card">
+            <div className="relative overflow-hidden rounded-2xl bg-white/90 p-4 shadow-card">
               <div className="pointer-events-none select-none blur-[7px]" aria-hidden="true">
                 <VoiceTypeBlock vt={result.voice_type} score={result.score} />
               </div>
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/45 px-6 text-center backdrop-blur-[2px]">
-                <span className="text-3xl">🎉</span>
+                <CoachAvatar size={72} pose="clap" />
                 <p className="text-base font-black text-slate-800">あなたの声タイプが出ました！</p>
                 <p className="text-xs leading-relaxed text-slate-600">
                   無料登録すると、結果カード（似た声のアーティスト・スコア）が見られて、
-                  そのままシェアもできます。声に合わせた発声レッスンもぜんぶ無料です😊
+                  そのままシェアもできます。声に合わせた発声レッスンもぜんぶ無料です。
                 </p>
                 <Link
                   href={LOGIN_URL}
-                  className="inline-flex items-center justify-center rounded-full bg-brand-gradient px-6 py-3 font-bold text-white shadow-soft transition active:scale-95"
+                  className="inline-flex items-center justify-center rounded-full bg-brand-600 px-6 py-3 font-bold text-white shadow-[0_4px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] active:shadow-[0_1px_0_#5b21b6]"
                 >
                   無料登録して結果を見る →
                 </Link>
@@ -261,7 +262,7 @@ export default function VoiceTypePage() {
               onClick={() => { setResult(null); setError(null); }}
               className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 transition active:scale-95"
             >
-              🔁 もう一度ためす
+              <Icon name="refresh" size={15} /> もう一度ためす
             </button>
             <p className="px-1 text-center text-[11px] text-slate-400">
               声タイプは「傾向」の推定です。録音の歌い方や録音環境で変わることがあります。

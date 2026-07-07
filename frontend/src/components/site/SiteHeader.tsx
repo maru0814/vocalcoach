@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BrandWordmark } from "@/components/brand/Brand";
+import { Button } from "@/components/ui/Button";
 
 /** スクロールで透明→白に変化する追従ヘッダー（To C LPの定番） */
 export function SiteHeader() {
@@ -24,15 +25,15 @@ export function SiteHeader() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
         <BrandWordmark size={40} />
         <div className="hidden items-center gap-3 sm:flex">
-          <Link href="/login" className="text-sm font-medium text-slate-500 transition hover:text-brand-600">
-            ログイン
-          </Link>
           <Link
             href="/login"
-            className="rounded-full bg-brand-gradient px-5 py-2 text-sm font-bold text-white shadow-soft transition hover:opacity-95 active:scale-95"
+            className="rounded text-sm font-medium text-slate-500 transition hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
           >
-            無料で始める
+            ログイン
           </Link>
+          <Button href="/login" size="sm">
+            無料で始める
+          </Button>
         </div>
         <Link href="/login" className="text-sm font-medium text-slate-500 sm:hidden">
           ログイン

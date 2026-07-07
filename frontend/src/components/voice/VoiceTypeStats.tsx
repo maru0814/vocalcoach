@@ -23,7 +23,7 @@ export function VoiceTypeStats({
   const accent = tone === "dark" ? "text-brand-200" : "text-brand-600";
   return (
     <div className={`text-center text-xs ${base} ${className}`}>
-      🎤 これまで <b className={strong}>{s.total.toLocaleString()}</b> 人が診断
+      これまで <b className={strong}>{s.total.toLocaleString()}</b> 人が診断
       {s.top ? (
         <> ・いま人気は <b className={accent}>{s.top.name}</b></>
       ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { VoiceTypeArt } from "./VoiceTypeArt";
+import { Icon } from "@/components/site/IconChip";
 import { VTYPE_STYLE } from "./voiceTypes";
 
 // 声タイプ診断の結果表示（独立機能・チャット双方で再利用）。
@@ -20,7 +21,7 @@ export function VoiceTypeBlock({ vt, score, shareRef }: { vt: any; score: number
       <div className="relative aspect-[16/9] w-full">
         <VoiceTypeArt id={vt.id} fallbackMascotSize={88} className="h-full w-full" />
         <div className="absolute left-3 top-3 rounded-full bg-black/35 px-2 py-0.5 text-[11px] font-bold tracking-wide backdrop-blur-sm">
-          🎤 ソラ先生 声タイプ診断
+          <Icon name="mic" size={11} className="mr-1 inline-block align-[-1px]" />ソラ先生 声タイプ診断
         </div>
       </div>
       <div className="p-4">
@@ -80,7 +81,7 @@ export function ShareButtons({ vt, score, shareRef }: { vt: any; score: number; 
   return (
     <div className="space-y-1.5">
       <p className="px-1 text-center text-[11px] font-bold text-slate-500">
-        友達と結果を見せ合うと盛り上がります🎶 シェアして「君は何タイプ？」
+        友達と結果を見せ合うと盛り上がります。シェアして「君は何タイプ？」
       </p>
       <div className="flex gap-2">
         <a
@@ -93,7 +94,7 @@ export function ShareButtons({ vt, score, shareRef }: { vt: any; score: number; 
           type="button" onClick={saveImage}
           className="flex items-center justify-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 transition active:scale-95"
         >
-          🖼 画像で保存
+          <Icon name="image" size={15} /> 画像で保存
         </button>
       </div>
     </div>

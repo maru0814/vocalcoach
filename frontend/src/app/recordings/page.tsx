@@ -8,7 +8,8 @@ import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import UpgradeModal from "@/components/UpgradeModal";
 import { AppHeader } from "@/components/AppHeader";
 import { CoachAvatar } from "@/components/character/Coach";
-import { IconChip } from "@/components/site/IconChip";
+import { Icon, IconChip } from "@/components/site/IconChip";
+import { Button } from "@/components/ui/Button";
 
 export default function RecordingsPage() {
   const router = useRouter();
@@ -84,34 +85,29 @@ export default function RecordingsPage() {
 
         {/* error（再試行つき） */}
         {status === "error" && (
-          <div className="glass rounded-3xl p-8 text-center shadow-card">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-3xl">
-              😢
+          <div className="glass rounded-2xl p-8 text-center shadow-card">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-500">
+              <Icon name="frown" size={28} />
             </div>
             <p className="font-bold text-slate-700">{error}</p>
-            <button
-              onClick={load}
-              className="mt-4 rounded-full bg-brand-gradient px-6 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
-            >
+            <Button onClick={load} size="sm" className="mt-4">
               再試行する
-            </button>
+            </Button>
           </div>
         )}
 
         {/* empty */}
         {isEmpty && (
-          <div className="glass rounded-3xl p-10 text-center shadow-card">
+          <div className="glass rounded-2xl p-10 text-center shadow-card">
+            {/* 空状態＝応援のポーズ（docs/61 §3-6: cheer） */}
             <div className="animate-floaty mx-auto mb-3 inline-flex">
-              <CoachAvatar size={64} ring />
+              <CoachAvatar size={96} pose="cheer" />
             </div>
             <p className="font-bold text-slate-700">まだ評価がありません</p>
-            <p className="mt-1 text-sm text-slate-500">まずは「レッスン」で1曲歌うと、ここに評価が並びます。</p>
-            <Link
-              href="/coach"
-              className="mt-4 inline-flex rounded-full bg-brand-gradient px-6 py-2.5 text-sm font-bold text-white shadow-soft transition active:scale-95"
-            >
+            <p className="font-body mt-1 text-sm text-slate-500">まずは「レッスン」で1曲歌うと、ここに評価が並びます。</p>
+            <Button href="/coach" size="sm" className="mt-4">
               レッスンを始める →
-            </Link>
+            </Button>
           </div>
         )}
 
@@ -139,7 +135,8 @@ export default function RecordingsPage() {
             ))}
             {lockedCount > 0 && (
               <li className="rounded-2xl border border-dashed border-brand-200 bg-white/60 p-4 text-center text-sm text-slate-600">
-                🔒 ほか {lockedCount} 件の録音は
+                <Icon name="lock" size={13} className="mr-1 inline-block align-[-2px] text-slate-400" />
+                ほか {lockedCount} 件の録音は
                 <button
                   className="mx-1 font-bold text-brand-600 underline-offset-2 hover:underline"
                   onClick={() => setShowUpgrade(true)}

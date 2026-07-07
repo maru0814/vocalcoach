@@ -6,7 +6,7 @@ export function Marker({ children, tone = "light" }: { children: ReactNode; tone
     <span className="relative inline-block">
       <span
         className={`absolute inset-x-0 bottom-[0.06em] h-[0.36em] rounded-full ${
-          tone === "dark" ? "bg-brand-500/60" : "bg-gradient-to-r from-brand-200 to-pink-200"
+          tone === "dark" ? "bg-brand-500/60" : "bg-brand-200/80"
         }`}
         aria-hidden
       />
