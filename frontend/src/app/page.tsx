@@ -3,12 +3,11 @@ import { SiteHeader } from "@/components/site/SiteHeader";
 import { Reveal } from "@/components/site/Reveal";
 import { AnimatedDemo } from "@/components/site/AnimatedDemo";
 import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
-import { CoachSpotlight } from "@/components/character/CoachSpotlight";
 import { StageDecor } from "@/components/site/Stage";
 import { SectionHeading, Marker } from "@/components/site/SectionHeading";
 import { IconChip, IconName } from "@/components/site/IconChip";
 import { ProductSnippet, SnippetMessage } from "@/components/site/ProductSnippet";
-import { Button } from "@/components/ui/Button";
+import { HeroA, HeroB, HeroC } from "@/components/site/heroes";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
@@ -140,7 +139,9 @@ function BeforeAfter() {
   );
 }
 
-export default function HomePage() {
+export default function HomePage({ searchParams }: { searchParams?: { hero?: string } }) {
+  // ヒーロー3案の比較用スイッチ（/?hero=a|b|c）。方向確定後は採用案だけ残す
+  const heroVariant = searchParams?.hero === "a" ? "a" : searchParams?.hero === "c" ? "c" : "b";
   return (
     <div className="bg-studio min-h-[100dvh] overflow-hidden pb-24 sm:pb-0">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
@@ -148,42 +149,8 @@ export default function HomePage() {
       <SiteHeader />
 
       <main className="mx-auto max-w-6xl px-5">
-        {/* Hero（夜のステージ・開演 docs/55 §7 パイロット） */}
-        <section className="bg-stage grain relative mt-4 overflow-hidden rounded-[2.5rem] p-8 text-white shadow-soft sm:p-14">
-          <StageDecor />
-          <div className="relative z-10 grid items-center gap-10 lg:grid-cols-2">
-            <div className="max-w-xl">
-              <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
-                <span className="inline-flex"><CoachAvatar size={18} /></span>
-                AIボーカルトレーナー {COACH_NAME}が担当
-              </p>
-              <h1 className="text-4xl font-black leading-[1.12] tracking-tight sm:text-6xl lg:text-7xl">
-                その歌、<br className="hidden sm:block" />
-                <Marker tone="dark">あと一歩。</Marker>
-              </h1>
-              <p className="mt-4 text-lg font-bold text-white/95 sm:text-xl">
-                録って送るだけ。{COACH_NAME}が、今日直すところを教えます。
-              </p>
-              <p className="mt-4 max-w-md text-white/85">
-                音程・リズム・表現を解析して、あなた専用の基礎練メニューまで
-                チャットでお届け。原曲を入れれば、音を外していないかも聴き比べ。
-                教室に通わなくても、家でスマホひとつ。
-              </p>
-              <div className="mt-7 flex flex-wrap items-center gap-3">
-                <Button href="/login" variant="secondary" size="lg">
-                  無料で始める <span className="text-sm font-normal text-slate-400">30秒</span>
-                </Button>
-                <span className="text-sm text-white/80">専用マイク不要・クレカ不要</span>
-              </div>
-            </div>
-            <div className="flex flex-col items-center gap-10">
-              <CoachSpotlight size={140} bubble="今日はどこを直す？" />
-              <div className="hidden lg:block">
-                <AnimatedDemo />
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* Hero（マーケFB対応: 見出し＋1行＋CTAに削減。3案比較中） */}
+        {heroVariant === "a" ? <HeroA /> : heroVariant === "c" ? <HeroC /> : <HeroB />}
 
         <div className="mt-12 lg:hidden">
           <AnimatedDemo />
@@ -252,23 +219,6 @@ export default function HomePage() {
                 <p className="mt-3 text-sm font-medium text-slate-600">{p.text}</p>
               </div>
             ))}
-          </div>
-        </Reveal>
-
-        {/* ソリューション */}
-        <Reveal className="mt-20">
-          <div className="rounded-[2rem] bg-white/80 p-8 text-center shadow-card sm:p-12">
-            <p className="text-sm font-bold tracking-wide text-brand-600">SOLUTION</p>
-            <h2 className="mt-2 text-2xl font-black text-slate-800 sm:text-4xl">
-              ひとりの練習に、<span className="text-brand-gradient">AIの耳</span>を。
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-slate-600">
-              AIボーカルトレーナーのソラ先生が、あなたの録音を解析して
-              「良かった点 → 直すところ → 今日の基礎練」までチャットで伴走します。
-            </p>
-            <p className="mx-auto mt-3 max-w-2xl text-sm font-medium text-brand-600">
-              しかも、点数はつけません。友だちのコーチみたいに、できる・難しいを会話で正直にお伝えします。
-            </p>
           </div>
         </Reveal>
 
