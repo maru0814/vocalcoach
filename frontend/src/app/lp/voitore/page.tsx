@@ -1,0 +1,25 @@
+import type { Metadata } from "next";
+import { SiteHeader } from "@/components/site/SiteHeader";
+import { HeroVoitore } from "@/components/site/heroes";
+import { LpBody, StickyCta } from "@/components/site/LpBody";
+
+// 流入別LP（ボイトレ・高音の悩み訴求の広告・SNS投稿から）。広告バリアントのため noindex
+export const metadata: Metadata = {
+  title: "その高音、出るようになる。",
+  description:
+    "サビで苦しい・裏返る。原因と直し方を、AIボーカルトレーナーが言葉にします。無料・専用マイク不要。",
+  robots: { index: false, follow: true },
+};
+
+export default function LpVoitore() {
+  return (
+    <div className="bg-studio min-h-[100dvh] overflow-hidden pb-24 sm:pb-0">
+      <SiteHeader />
+      <main className="mx-auto max-w-6xl px-5">
+        <HeroVoitore />
+        <LpBody />
+      </main>
+      <StickyCta />
+    </div>
+  );
+}
