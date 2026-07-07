@@ -5,6 +5,18 @@
 {$DOMAIN} {
 	encode gzip
 
+	# アクセスログ（プロフィールリンク→LP到達数の週次計測用）。
+	# JSON形式で永続volume(/data)に記録。ローテーションで最大約50MiBに頭打ち。
+	# ページ閲覧→/api/voice-type/stats→診断POST までファネル全体を1本のログで追える。
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
+		format json
+	}
+
 	# バックエンドAPI
 	@api path /api/* /healthz
 	handle @api {
