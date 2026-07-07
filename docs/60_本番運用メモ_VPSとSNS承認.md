@@ -179,3 +179,24 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   注: JSON各行に `uri`・`client_ip`・`status`・`ts`（epoch秒）があるので、日付で絞るなら `jq` を
   使うのが確実（例: `jq -r 'select(.request.uri|test("^/($|\\?)")) | .ts'`）。将来リンクに UTM を
   付ければ `uri` のクエリ文字列で流入元を分離できる。
+
+## LP到達ファネルの週次自動集計ルーチン（2026-07-08 追加 / PR#145）
+- **目的**: 上記の手集計を毎週自動化。LLMを使わず（コスト0）、既存のsns計測cronと同じホストcron方式。
+- **スクリプト**: `scripts/ops/access_funnel.py`。ホストで `python3` 実行し、`docker exec` で
+  caddy(アクセスログ) と backend(SQLite) から集計 → `/var/log/access_funnel.jsonl` に1行追記。
+  - 集計項目: 直近7日の `page_views`(HTMLページ相当のGETのみ) / `unique_ips` /
+    `diagnoses_total`・`diagnoses_window` / `users_real_total`・`users_real_window`
+    （`users_real` は `@example.com` のテストアカウントを除外した実会員）。
+  - host実行なのは、sns コンテナ内からは兄弟コンテナ(caddy/backend)を `docker exec` できないため。
+- **cron**: `45 22 * * 0`（日曜22:45。lead_metrics=22:30 の直後で、週次レポート時に数字が揃う）。
+  登録は `scripts/deploy/remote_deploy.sh` と `scripts/sns_autopost/setup_approval.sh` の両方に冪等登録
+  （文字列完全一致で重複判定。両ファイルの一覧は必ず揃える）。
+- **growth-operator の読み方**（週次レポートで使う）:
+  ```bash
+  # 最新の週次スナップショット
+  ssh root@160.251.177.227 'tail -1 /var/log/access_funnel.jsonl' | jq .
+  # 推移（直近8週）
+  ssh root@160.251.177.227 'tail -8 /var/log/access_funnel.jsonl' | jq -c '{ts,page_views,unique_ips,diagnoses_window,users_real_window}'
+  ```
+- **本番実証**: PR#145 デプロイ後に手動1回実行して `/var/log/access_funnel.jsonl` に初回行が入ることを確認済み
+  （初回はログ蓄積前のため page_views=0。診断・実会員はDB既知値と一致）。

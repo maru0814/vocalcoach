@@ -51,6 +51,8 @@ CRON_LINES=(
   "0 23 * * * $C fetch_metrics.py >> /var/log/sns_metrics.log 2>&1"
   "0 10 * * * $C lead_finder.py >> /var/log/sns_leads.log 2>&1"
   "30 22 * * 0 $C lead_metrics.py >> /var/log/sns_leads.log 2>&1"
+  # LP到達ファネルの週次集計（host実行。caddy/backendをexecするためコンテナ内ではなくhost python3で回す）
+  "45 22 * * 0 python3 $REPO/scripts/ops/access_funnel.py >> /var/log/access_funnel.log 2>&1"
 )
 CUR="$(crontab -l 2>/dev/null || true)"
 ADDED=0
