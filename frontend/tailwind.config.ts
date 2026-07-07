@@ -12,6 +12,8 @@ const config: Config = {
           "system-ui",
           "sans-serif",
         ],
+        // 本文・説明文用（docs/61 §3-2）
+        body: ["var(--font-body)", "Hiragino Kaku Gothic ProN", "system-ui", "sans-serif"],
       },
       colors: {
         brand: {
