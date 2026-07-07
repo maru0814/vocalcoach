@@ -22,7 +22,11 @@ CARD_TYPES = {"feedback", "practice", "judge", "progress", "diagnosis"}
 
 def setUpModule():
     # LLMを無効化 → _llm_or / generate_reply は確定的なテンプレ文へフォールバック。
+    # _complete だけでなく tools 経路（_complete_with_tools）も遮断すること。
+    # 実キー（GEMINI_API_KEY）がある環境では generate_reply が tools 経路を通り、
+    # スタブを素通りして本物の API を叩いてしまう（課金・不安定・偽の失敗の原因）。
     llm._complete = lambda *a, **k: None  # type: ignore
+    llm._complete_with_tools = lambda *a, **k: None  # type: ignore
 
 
 def _state(**over):

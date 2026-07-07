@@ -58,13 +58,14 @@
 ### 3-3. CI（P4）
 PR/main push で backend-tests（pytest）＋ frontend-typecheck（tsc --noEmit）。`frontend/package-lock.json` は package.json と不整合で `npm ci` 不能だったため同期済み。
 
-## 4. 発見した既存バグ（要・仕様裁定）
+## 4. 発見した既存バグ（解決済み・2026-07-07 訂正）
 
-`tests/test_conversational_fb.py::ConversationalFBContract::test_chat_llm_down_honest_not_hedge` が **main 時点で失敗**。LLM停止時は正直フォールバック（「うまく言葉が出せませんでした」）を返す契約（docs/51 系）に対し、実装はルールエンジンが実質回答（ジッター40cents＋練習継続の案内）を返す。
+`tests/test_conversational_fb.py::ConversationalFBContract::test_chat_llm_down_honest_not_hedge` が GEMINI_API_KEY のある環境で失敗していた件。
 
-- ci.yml では理由コメント付きで deselect 済み
-- **裁定候補**: (a) 契約どおり正直フォールバックに修正（backend-engineer）／(b) ルールベース回答を正としてテスト側を更新（qa-engineer＋docs/51 改定）
-- 裁定後、ci.yml の deselect を必ず外す
+**訂正**: 当初「LLM停止時の正直フォールバック契約に実装が違反」と診断し仕様裁定（a/b）を提案したが、**誤診**だった。真因は**テストの密閉性バグ**: `setUpModule` が `llm._complete` だけをスタブし、tools 経路（`_complete_with_tools`）を遮断していなかったため、実キーがある環境では `generate_reply` が**本物の Gemini API を呼び**、その実回答がフォールバック文言のアサーションを壊していた。製品の正直フォールバック契約（docs/51 系）は**壊れておらず**、キー無し環境（GitHub Actions）では元から合格する。
+
+- **修正**: `setUpModule` で `_complete_with_tools` も遮断（テスト中の実API呼び出し＝課金・不安定要因も同時に解消）。docs/51 の契約は不変更
+- ci.yml の deselect は解除済み（キーあり/なし両環境で 50 passed を確認）
 
 ## 5. 残タスク（ユーザー側アクション）
 

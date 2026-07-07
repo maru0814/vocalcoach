@@ -22,16 +22,9 @@ jobs:
       - name: Install deps
         run: pip install -r backend/requirements.txt pytest
 
-      # 既知の失敗1件を明示的に除外している:
-      #   test_chat_llm_down_honest_not_hedge
-      #   （LLM停止時は正直フォールバックを返す契約だが、現状ルールエンジンが
-      #     実質回答を返すため失敗する。仕様裁定＝pdm/qa の follow-up 対象。
-      #     裁定が済んだらこの deselect を必ず外すこと）
       - name: Run tests
         working-directory: backend
-        run: >-
-          python -m pytest tests/ -q
-          --deselect tests/test_conversational_fb.py::ConversationalFBContract::test_chat_llm_down_honest_not_hedge
+        run: python -m pytest tests/ -q
 
   frontend-typecheck:
     runs-on: ubuntu-latest
