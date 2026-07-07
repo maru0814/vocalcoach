@@ -903,7 +903,8 @@ def send_audio(
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
                 zero_base_reply = llm.generate_feedback(
-                    _session_state(s), user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx
+                    _session_state(s), user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx,
+                    user_comment=user_comment,
                 )
             except Exception:
                 zero_base_reply = None
