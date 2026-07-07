@@ -4,6 +4,8 @@
 
 :root {
   --font-rounded: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", system-ui, sans-serif;
+  /* 本文用（docs/61 §3-2）。まる文字は見出し・ソラ先生の台詞用に分離する */
+  --font-body: "Noto Sans JP", "Hiragino Kaku Gothic ProN", system-ui, sans-serif;
 }
 
 body {

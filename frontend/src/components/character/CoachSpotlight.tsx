@@ -1,10 +1,19 @@
-import { CoachAvatar } from "./Coach";
+import { CoachAvatar, CoachPoseName } from "./Coach";
 
 /**
  * スポットライトを浴びる大型ソラ先生（docs/55 §5-6）。
  * 主役サイズ（120px+）での登場は1画面1箇所だけ。暗面（bg-stage）の上で使う。
+ * pose 指定時は全身ポーズ画像で立たせる（docs/61 §3-6。LPヒーローは singing）。
  */
-export function CoachSpotlight({ size = 140, bubble }: { size?: number; bubble?: string }) {
+export function CoachSpotlight({
+  size = 140,
+  bubble,
+  pose,
+}: {
+  size?: number;
+  bubble?: string;
+  pose?: CoachPoseName;
+}) {
   return (
     <div className="relative flex flex-col items-center pt-16">
       {/* スポットライトの光条 */}
@@ -21,8 +30,8 @@ export function CoachSpotlight({ size = 140, bubble }: { size?: number; bubble?:
           />
         </div>
       )}
-      <div className="relative z-10 animate-floaty rounded-full shadow-glow-spot">
-        <CoachAvatar size={size} ring />
+      <div className={`relative z-10 animate-floaty ${pose ? "" : "rounded-full shadow-glow-spot"}`}>
+        <CoachAvatar size={size} ring={!pose} pose={pose} />
       </div>
       {/* ステージ床の照り返し */}
       <div className="mt-5 h-3 w-36 rounded-[100%] bg-neon-amber/25 blur-md" aria-hidden />

@@ -7,6 +7,8 @@ import { CoachSpotlight } from "@/components/character/CoachSpotlight";
 import { StageDecor } from "@/components/site/Stage";
 import { SectionHeading, Marker } from "@/components/site/SectionHeading";
 import { IconChip, IconName } from "@/components/site/IconChip";
+import { ProductSnippet, SnippetMsg } from "@/components/site/ProductSnippet";
+import { Button } from "@/components/ui/Button";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
@@ -24,13 +26,24 @@ const PROBLEMS: Array<{ icon: IconName; text: string }> = [
   { icon: "trend-down", text: "練習してるのに 上達した実感がない" },
 ];
 
-const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string; bullets: string[] }> = [
+const FEATURES: Array<{
+  icon: IconName;
+  tag: string;
+  title: string;
+  desc: string;
+  bullets: string[];
+  snippet: SnippetMsg[];
+}> = [
   {
     icon: "mic",
     tag: "AI声診断",
     title: "声が、見える化される。",
     desc: "あなたの声をAIが解析して、「この曲で出した音域」「使っている声（地声・ミックス・裏声）」「換声点」「声の共鳴」まで“声診断”。「なんとなく下手」が「サビ後半で息が切れている」みたいに、言葉で分かります。",
     bullets: ["音程の安定・強弱・ビブラートまで解析", "音域・声区・換声点まで“声診断”（推定）", "秒数つきで「どこを」直すか分かる"],
+    snippet: [
+      { from: "user", text: "🎤 録音を送信しました（0:58）" },
+      { from: "coach", text: "録音ありがとうございます😊 出だしの声、まっすぐ響いていていいですね。サビの伸ばしは後半で少しゆれて下がりがちなので、今日はそこを一緒に整えましょう。" },
+    ],
   },
   {
     icon: "headphones",
@@ -38,6 +51,10 @@ const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string
     title: "原曲と、聴き比べる。",
     desc: "お手本の音源をアップロードすると、音を外していないか（音程の正確さ）とリズムの走り／モタりを原曲と聴き比べて実測。同じ曲を同じキーで歌うほど、ズレがぴたっと分かります。",
     bullets: ["音程の正確さを原曲と照合", "リズムの走り・モタりを秒数で指摘", "原曲なしでも、録音だけでFB"],
+    snippet: [
+      { from: "user", text: "原曲もアップしました！リズム合ってますか？" },
+      { from: "coach", text: "聴き比べました😊 サビの入りが原曲より少し早めに走っています。頭の「サ」を拍にそろえる意識だけで、ぐっと原曲に近づきますよ。" },
+    ],
   },
   {
     icon: "target",
@@ -45,6 +62,10 @@ const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string
     title: "今日の課題と、基礎練。",
     desc: "あなたの弱点に合わせて、今日やるべき基礎練を1つだけ提案。お手本のYouTube動画つきだから、迷わず練習できます。道具はいりません、声と体だけ。",
     bullets: ["弱点に合わせた練習を1つに絞る", "お手本動画つきで真似しやすい", "ドッグブレス等、家でできる練習"],
+    snippet: [
+      { from: "user", text: "どんな練習をすればいいですか？" },
+      { from: "coach", text: "今日はリップロールを1つだけやりましょう。唇をブルブル震わせながら低い音から上がると、力まずに音程を支える感覚がつかめます。やり方はこの動画がわかりやすいですよ →" },
+    ],
   },
   {
     icon: "chart",
@@ -52,6 +73,10 @@ const FEATURES: Array<{ icon: IconName; tag: string; title: string; desc: string
     title: "上達が、記録に残る。",
     desc: "レッスンごとに自動で保存。録り直すと「前回より伸ばしが安定した」を、ソラ先生が会話で教えてくれます。見えなかった成長が、ちゃんと分かる。",
     bullets: ["レッスンを自動で履歴に保存", "前回より良くなった点を会話で伝える", "良くなった点をソラ先生が褒めてくれる"],
+    snippet: [
+      { from: "user", text: "🎤 同じ曲を録り直しました！" },
+      { from: "coach", text: "聴きました！サビの伸ばし、前回よりまっすぐ安定しましたね✨ 息の支えが効いてきています。この調子で、次は語尾の処理を磨いていきましょう。" },
+    ],
   },
 ];
 
@@ -141,23 +166,20 @@ export default function HomePage() {
               <p className="mt-4 text-lg font-bold text-white/95 sm:text-xl">
                 録って送るだけ。{COACH_NAME}が、今日直すところを教えます。
               </p>
-              <p className="mt-4 max-w-md text-white/85">
+              <p className="font-body mt-4 max-w-md text-white/85">
                 音程・リズム・表現を解析して、あなた専用の基礎練メニューまで
                 チャットでお届け。原曲を入れれば、音を外していないかも聴き比べ。
                 教室に通わなくても、家でスマホひとつ。
               </p>
               <div className="mt-7 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-7 py-3.5 font-bold text-brand-700 shadow-soft transition hover:scale-[1.02] hover:shadow-glow-neon active:scale-95"
-                >
-                  無料で始める <span className="text-sm font-normal text-slate-400">30秒</span>
-                </Link>
-                <span className="text-sm text-white/80">★ 専用マイク不要・クレカ不要</span>
+                <Button href="/login">
+                  無料で始める <span className="text-sm font-normal text-white/70">30秒</span>
+                </Button>
+                <span className="font-body text-sm text-white/80">★ 専用マイク不要・クレカ不要</span>
               </div>
             </div>
             <div className="flex flex-col items-center gap-10">
-              <CoachSpotlight size={140} bubble="今日はどこを直す？" />
+              <CoachSpotlight size={200} pose="singing" bubble="今日はどこを直す？" />
               <div className="hidden lg:block">
                 <AnimatedDemo />
               </div>
@@ -273,27 +295,21 @@ export default function HomePage() {
           </div>
         </Reveal>
 
-        {/* 機能紹介（ジグザグ・パネルは実写でなくブランドの夜ステージ） */}
+        {/* 機能紹介（ジグザグ・パネルは製品そのもの＝実物調のチャットUI docs/61 §3-7） */}
         <section className="mt-24 space-y-16">
           <SectionHeading eyebrow="FEATURES" title={<>登録すると、<Marker>できること</Marker></>} />
           {FEATURES.map((f, i) => (
             <Reveal key={f.title}>
               <div className={`grid items-center gap-8 lg:grid-cols-2 ${i % 2 === 1 ? "lg:[&>div:first-child]:order-2" : ""}`}>
-                <div className="bg-stage grain relative flex h-60 items-center justify-center overflow-hidden rounded-3xl shadow-card sm:h-72">
-                  <StageDecor notes={false} />
-                  <IconChip icon={f.icon} size={88} className="relative z-10 shadow-glow-neon" />
-                  <span className="absolute left-4 top-4 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-brand-600">
-                    {f.tag}
-                  </span>
-                </div>
+                <ProductSnippet messages={f.snippet} label={f.tag} />
                 <div>
                   <IconChip icon={f.icon} size={48} />
                   <h3 className="mt-4 text-2xl font-black text-slate-800">{f.title}</h3>
-                  <p className="mt-3 text-slate-600">{f.desc}</p>
+                  <p className="font-body mt-3 text-slate-600">{f.desc}</p>
                   <ul className="mt-4 space-y-2">
                     {f.bullets.map((b) => (
-                      <li key={b} className="flex items-center gap-2 text-sm text-slate-600">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs text-emerald-600">✓</span>
+                      <li key={b} className="font-body flex items-center gap-2 text-sm text-slate-600">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs text-brand-600">✓</span>
                         {b}
                       </li>
                     ))}
@@ -302,6 +318,7 @@ export default function HomePage() {
               </div>
             </Reveal>
           ))}
+          <p className="text-center text-xs text-slate-400">※ 画面は体験イメージです。</p>
         </section>
 
         {/* Before → After */}
