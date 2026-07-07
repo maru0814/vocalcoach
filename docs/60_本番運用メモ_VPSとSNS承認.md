@@ -156,3 +156,26 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   `POST /voice-type/analyze`（無認証）=**400**（401でない＝匿名トライアル稼働）。
 - 教訓: スキーマ変更PRでも段取りは「マージ→自動デプロイ→上記curlで200を確認」で完結。手動SSHは
   502になった時だけ（その場合 `docker compose ... logs backend` で alembic のエラーを見る）。
+
+## アクセスログ（LP到達数の週次計測）（2026-07-08 追加 / PR#143）
+- 背景: それまで Caddyfile に `log` が無く、プロフィールリンク→LP到達の**訪問数が一切取れなかった**。
+  唯一の間接指標は声タイプ診断のDB記録（匿名・累計7件）のみで、ファネルが繋がっていなかった。
+- 設定: `docker/Caddyfile` のサイト直下に `log`（`output file /data/access.log` / `format json` /
+  `roll_size 10MiB` / `roll_keep 5` / `roll_keep_for 720h`）。ログは caddy_data volume(`/data`)に
+  永続し、`--force-recreate caddy` をまたいでも残る。ディスクは最大約50MiBで頭打ち。
+- 本番実証: PR#143 マージ→自動デプロイ green。`caddy` up・`/`=200 を確認後、`/data/access.log` に
+  リクエストがJSON1行で記録されることを確認済み。
+- **週次の集計クエリ**（growth-operator が週次レポートで使う。VPS上で実行）:
+  ```bash
+  # 直近ログの「ページ閲覧」到達数（静的アセット/API/sns を除外＝HTMLページ相当のみ）
+  ssh root@160.251.177.227 'docker exec docker-caddy-1 sh -c "
+    cat /data/access.log* 2>/dev/null | \
+    grep -vE \"\\\"uri\\\":\\\"/(api|sns|_next|favicon|.*\\.(css|js|png|jpg|svg|ico|woff2?))\" | \
+    wc -l"'
+  # ユニーク訪問者数の目安（client_ip でユニーク化。厳密なUUではないが週次の傾向把握には十分）
+  ssh root@160.251.177.227 'docker exec docker-caddy-1 sh -c "
+    cat /data/access.log* 2>/dev/null | grep -oE \"\\\"client_ip\\\":\\\"[^\\\"]+\" | sort -u | wc -l"'
+  ```
+  注: JSON各行に `uri`・`client_ip`・`status`・`ts`（epoch秒）があるので、日付で絞るなら `jq` を
+  使うのが確実（例: `jq -r 'select(.request.uri|test("^/($|\\?)")) | .ts'`）。将来リンクに UTM を
+  付ければ `uri` のクエリ文字列で流入元を分離できる。
