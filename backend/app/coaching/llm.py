@@ -122,7 +122,7 @@ SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}
 
 def _phase_label(phase: Optional[str]) -> str:
     return {
-        "A": "曲・練習したい箇所の指定中",
+        "A": "はじめの録音を待っている段階（曲・区間・原曲は未指定でもそのまま受け付ける）",
         "B": "課題を見つける段階",
         "C": "基礎練に取り組む段階",
         "D": "基礎練ができたかの確認段階",

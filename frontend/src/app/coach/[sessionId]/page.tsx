@@ -201,7 +201,7 @@ export default function CoachChatPage() {
         <span className="text-xs text-slate-500">
           {hasReference
             ? <><Icon name="note" size={12} className="mr-1 inline-block align-[-2px]" />お手本セット済み（原曲と聴き比べます）</>
-            : <><Icon name="note" size={12} className="mr-1 inline-block align-[-2px]" />原曲のYouTubeリンク＋区間（例 0:48-1:13）をチャットに貼ると、音程・リズムを原曲と比べられます</>}
+            : <><Icon name="note" size={12} className="mr-1 inline-block align-[-2px]" />（任意）原曲のYouTubeリンクを貼ると、音程・リズムまで原曲と聴き比べできます — あとからでもOK</>}
         </span>
         <button
           type="button"
