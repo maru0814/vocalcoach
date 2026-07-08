@@ -1,5 +1,5 @@
 import { SiteHeader } from "@/components/site/SiteHeader";
-import { HeroA, HeroB, HeroC } from "@/components/site/heroes";
+import { HeroTop } from "@/components/site/heroes";
 import { LpBody, StickyCta } from "@/components/site/LpBody";
 
 const JSON_LD = {
@@ -14,9 +14,8 @@ const JSON_LD = {
   offers: { "@type": "Offer", price: "0", priceCurrency: "JPY" },
 };
 
-export default function HomePage({ searchParams }: { searchParams?: { hero?: string } }) {
-  // ヒーロー3案の比較用スイッチ（/?hero=a|b|c）。方向確定後は採用案だけ残す
-  const heroVariant = searchParams?.hero === "a" ? "a" : searchParams?.hero === "c" ? "c" : "b";
+// WHO=歌が上手くなりたい一般 / WHAT=録って送れば直すところが分かる / HOW=レッスン主導線＋診断の副導線
+export default function HomePage() {
   return (
     <div className="bg-studio min-h-[100dvh] overflow-hidden pb-24 sm:pb-0">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
@@ -24,7 +23,7 @@ export default function HomePage({ searchParams }: { searchParams?: { hero?: str
       <SiteHeader />
 
       <main className="mx-auto max-w-6xl px-5">
-        {heroVariant === "a" ? <HeroA /> : heroVariant === "c" ? <HeroC /> : <HeroB />}
+        <HeroTop />
         <LpBody />
       </main>
 

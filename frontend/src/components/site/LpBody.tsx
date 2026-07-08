@@ -15,8 +15,11 @@ import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
  * コピー・構成の変更はここ1箇所で全LPに反映される。
  */
 
+/** 流入別の本体バリアント。takane = 高音・ミックスボイス訴求（/lp/voitore） */
+export type LpVariant = "default" | "takane";
+
 const STATS = [
-  { value: "会話型", label: "点数でなく、チャットでフィードバック" },
+  { value: "秒数で指摘", label: "どこが問題か、場所つきで分かる" },
   { value: "最短1分", label: "録って送れば、すぐFBが届く" },
   { value: "道具ゼロ", label: "専用マイク・機材は不要" },
   { value: "¥0", label: "登録だけで無料で始められる" },
@@ -26,6 +29,12 @@ const PROBLEMS: Array<{ icon: IconName; text: string }> = [
   { icon: "frown", text: "自分の歌の どこがダメか分からない" },
   { icon: "search", text: "練習法を調べても 自分に合うのか不安で続かない" },
   { icon: "trend-down", text: "練習してるのに 上達した実感がない" },
+];
+
+const PROBLEMS_TAKANE: Array<{ icon: IconName; text: string }> = [
+  { icon: "frown", text: "サビの高音で 喉が締まって苦しくなる" },
+  { icon: "trend-down", text: "高音で声が裏返る のが怖くてキーを下げている" },
+  { icon: "search", text: "ミックスボイスを調べても やり方が分からない" },
 ];
 
 const FEATURES: Array<{
@@ -80,6 +89,19 @@ const FEATURES: Array<{
   },
 ];
 
+/** takane 版は機能紹介の筆頭を「換声点・声区」に差し替える（声区・換声点は音響からの推定＝誇大禁止） */
+const FEATURE_TAKANE_FIRST: (typeof FEATURES)[number] = {
+  icon: "mic",
+  tag: "換声点チェック",
+  title: "裏返る場所が、見える化される。",
+  desc: "高音が苦しいのは根性の問題ではなく、地声のまま換声点を越えようとしているのが典型です。AIが録音から声区（地声・ミックス・裏声）と換声点の傾向を推定し、「どこで・なぜ裏返るか」を言葉にします。",
+  bullets: ["声区・換声点の傾向を推定", "裏返り・苦しさの原因を秒数つきで指摘", "ミックスボイスへ向かう練習を1つ提案"],
+  chat: [
+    { from: "sora", text: "2:10、地声のままF4を越えようとして裏返りかけています。まずは“ネイネイ”でミックスの入り口を作りましょう" },
+    { from: "user", text: "原因がわかるとやる気出ます…！" },
+  ],
+};
+
 const STEPS: Array<{ n: string; icon: IconName; title: string; desc: string }> = [
   { n: "1", icon: "mic", title: "歌って送る", desc: "スマホでそのまま録音、または音源をアップロード。原曲がなくてもOK。" },
   { n: "2", icon: "chat", title: "AIから添削が届く", desc: "良かったところ・直すところ・今日の基礎練が、会話みたいにチャットで届きます。" },
@@ -92,6 +114,14 @@ const FOR_YOU = [
   "ボイトレ教室に通うほどではないけど上手くなりたい",
   "YouTubeの練習法が自分に合っているか分からない",
   "録音を聞いても自分のどこが悪いか分からない",
+];
+
+const FOR_YOU_TAKANE = [
+  "カラオケでサビの高音が苦しくなる・裏返る",
+  "高音が怖くて、いつもキーを下げて歌っている",
+  "ミックスボイスを独学で調べたが、感覚が分からない",
+  "原曲キーで歌えるようになりたい",
+  "録音を聞いても、高音の何が悪いのか分からない",
 ];
 
 const VOICES = [
@@ -110,27 +140,39 @@ const FAQ = [
 ];
 
 /** Before → After の変化（点数でなく、ソラ先生の会話で示す） */
-function BeforeAfter() {
+function BeforeAfter({ variant = "default" }: { variant?: LpVariant }) {
+  const before =
+    variant === "takane"
+      ? "最初の録音：サビの高音、地声で押し上げて苦しくなっていますね。"
+      : "最初の録音：サビの伸ばしが、後半でゆれて下がりがちですね。";
+  const after =
+    variant === "takane"
+      ? "高音がすっと当たるようになりましたね！ミックスの入り口に立てています✨"
+      : "伸ばしがまっすぐ安定しましたね！息の支えが効いています✨";
   return (
     <div className="mx-auto flex max-w-md flex-col gap-3 text-left">
       <div className="flex items-end gap-2">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-50 text-sm">🎤</span>
         <div className="rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-600 shadow-card">
-          最初の録音：サビの伸ばしが、後半でゆれて下がりがちですね。
+          {before}
         </div>
       </div>
       <div className="text-center text-xs font-bold text-brand-600">基礎練5日 → 録り直し ↓</div>
       <div className="flex items-end gap-2">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-sm">🌤</span>
         <div className="rounded-2xl rounded-bl-md bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 shadow-card">
-          伸ばしがまっすぐ安定しましたね！息の支えが効いています✨
+          {after}
         </div>
       </div>
     </div>
   );
 }
 
-export function LpBody() {
+export function LpBody({ variant = "default" }: { variant?: LpVariant }) {
+  const takane = variant === "takane";
+  const problems = takane ? PROBLEMS_TAKANE : PROBLEMS;
+  const features = takane ? [FEATURE_TAKANE_FIRST, ...FEATURES.slice(1)] : FEATURES;
+  const forYou = takane ? FOR_YOU_TAKANE : FOR_YOU;
   return (
     <>
       <div className="mt-12 lg:hidden">
@@ -156,17 +198,24 @@ export function LpBody() {
           <div className="relative z-10">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-brand-600">
               <span className="inline-flex"><CoachAvatar size={16} /></span>
-              STEP 1 ・ まずはここから
+              STEP 1 ・ {takane ? "まずは現在地チェック" : "まずはここから"}
             </span>
             <h2 className="mt-3 text-2xl font-black text-white sm:text-4xl">
-              まずは、<span className="bg-gradient-to-r from-brand-200 to-pink-200 bg-clip-text text-transparent">声タイプ診断</span>から。
+              {takane ? (
+                <>まず、<span className="bg-gradient-to-r from-brand-200 to-pink-200 bg-clip-text text-transparent">あなたの換声点</span>を知ろう。</>
+              ) : (
+                <>まずは、<span className="bg-gradient-to-r from-brand-200 to-pink-200 bg-clip-text text-transparent">声タイプ診断</span>から。</>
+              )}
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-white/80">
-              AIボーカルトレーナー{COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。
-              15秒ほど歌うだけ。似た声質のアーティストつきで、結果はそのままシェアできます。
+              {takane
+                ? "15秒歌うだけ。AIがあなたの声タイプと、高音がきつくなるポイント（声区の傾向）を見立てます。"
+                : `AIボーカルトレーナー${COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。15秒ほど歌うだけ。結果はそのままシェアできます。`}
             </p>
             <p className="mx-auto mt-2 max-w-xl text-sm font-bold text-brand-200">
-              診断のあとは、その声に合った発声レッスンへ。だから“いまの自分”から始められます。
+              {takane
+                ? "診断のあとは、高音・ミックスボイスに絞った発声レッスンへ。"
+                : "診断のあとは、その声に合った発声レッスンへ。だから“いまの自分”から始められます。"}
             </p>
             <div className="mx-auto mt-8 grid max-w-2xl grid-cols-4 gap-2.5 sm:gap-3">
               {VOICE_TYPE_LIST.map((t) => (
@@ -182,9 +231,9 @@ export function LpBody() {
               href="/voice-type"
               className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-gradient px-7 py-3.5 font-bold text-white shadow-soft transition hover:scale-[1.02] hover:shadow-glow-neon active:scale-95"
             >
-              無料登録して、声タイプ診断 →
+              登録なしで、15秒診断 →
             </Link>
-            <p className="mt-3 text-xs text-white/50">※ 診断・発声レッスンとも、無料登録（30秒）で使えます</p>
+            <p className="mt-3 text-xs text-white/50">※ 診断は登録なしで試せます。結果の保存・シェアと発声レッスンは無料登録（30秒）</p>
             <VoiceTypeStats className="mt-3" tone="dark" />
           </div>
         </div>
@@ -194,7 +243,7 @@ export function LpBody() {
       <Reveal className="mt-20 text-center">
         <SectionHeading eyebrow="PROBLEM" title={<>こんな悩み、<Marker>ありませんか？</Marker></>} />
         <div className="mt-7 grid gap-4 sm:grid-cols-3">
-          {PROBLEMS.map((p) => (
+          {problems.map((p) => (
             <div key={p.text} className="rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
               <IconChip icon={p.icon} size={48} />
               <p className="mt-3 text-sm font-medium text-slate-600">{p.text}</p>
@@ -227,7 +276,7 @@ export function LpBody() {
       {/* 機能紹介（ジグザグ・パネルは実写でなくブランドの夜ステージ） */}
       <section className="mt-24 space-y-16">
         <SectionHeading eyebrow="FEATURES" title={<>登録すると、<Marker>できること</Marker></>} />
-        {FEATURES.map((f, i) => (
+        {features.map((f, i) => (
           <Reveal key={f.title}>
             <div className={`grid items-center gap-8 lg:grid-cols-2 ${i % 2 === 1 ? "lg:[&>div:first-child]:order-2" : ""}`}>
               <div className="bg-stage grain relative flex items-center justify-center overflow-hidden rounded-[2rem] p-6 shadow-card sm:p-10">
@@ -266,7 +315,7 @@ export function LpBody() {
             課題に合った基礎練をこなして再録音すると、ソラ先生が「ここが良くなった」と会話で教えてくれます。
           </p>
           <div className="mt-8">
-            <BeforeAfter />
+            <BeforeAfter variant={variant} />
           </div>
           <p className="mt-6 text-xs text-slate-400">※ 体験イメージです。</p>
         </div>
@@ -282,7 +331,7 @@ export function LpBody() {
             <p className="mt-3 text-sm text-slate-500">ひとつでも当てはまったら、まず1曲ためしてみてください。</p>
           </div>
           <ul className="space-y-3">
-            {FOR_YOU.map((t) => (
+            {forYou.map((t) => (
               <li key={t} className="flex items-start gap-3 rounded-2xl bg-brand-50/60 px-4 py-3 text-sm font-medium text-slate-700">
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs text-white">✓</span>
                 {t}
@@ -310,6 +359,29 @@ export function LpBody() {
           ))}
         </div>
         <p className="mt-4 text-center text-xs text-slate-400">※ 体験イメージです。</p>
+      </Reveal>
+
+      {/* 開発者の思想（信頼の壁への回答。個人開発を隠さず、正直さを担保にする） */}
+      <Reveal className="mt-24">
+        <div className="mx-auto max-w-2xl rounded-[2rem] bg-white/85 p-8 shadow-card sm:p-10">
+          <SectionHeading eyebrow="MAKER'S NOTE" title="なぜ、点数をつけないのか。" />
+          <div className="mt-6 flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+            <CoachAvatar size={72} pose="bow" ring />
+            <div className="text-sm leading-relaxed text-slate-600">
+              <p>
+                このサービスは、個人開発で作り、運営しています。だからこそ正直に作っています——
+                AIの音声解析には“推定”が含まれます。それを100点満点の断定に変換するより、
+                「1:24の伸ばしが下がっている」と場所と直し方を言葉で伝えるほうが、練習は前に進む。
+                ソラ先生が点数をつけないのは、そういう設計です。
+              </p>
+              <p className="mt-3">
+                できること・できないことは、このページとFAQに書いたとおりです。
+                まず15秒の診断から、気軽に試してみてください。
+              </p>
+              <p className="mt-3 text-xs text-slate-400">— 開発・運営 Vocal Coach Inc.（個人開発）</p>
+            </div>
+          </div>
+        </div>
       </Reveal>
 
       {/* 料金 */}
@@ -377,13 +449,21 @@ export function LpBody() {
   );
 }
 
-/** スマホ用 追従CTAバー（トップ・流入別LPで共有） */
-export function StickyCta() {
+/** スマホ用 追従CTAバー。ヒーローの主CTAとWHATを揃える（1画面に別の行き先の主CTAを並べない） */
+export function StickyCta({
+  href = "/login",
+  label = "無料でレッスンを始める →",
+  sub = "専用マイク不要・登録30秒・無料",
+}: {
+  href?: string;
+  label?: string;
+  sub?: string;
+}) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/40 bg-white/85 p-3 backdrop-blur sm:hidden">
-      <Link href="/login" className="flex flex-col items-center rounded-2xl bg-brand-gradient py-3 font-bold text-white shadow-soft">
-        無料でレッスンを始める →
-        <span className="text-[11px] font-normal text-white/80">専用マイク不要・登録30秒・無料</span>
+      <Link href={href} className="flex flex-col items-center rounded-2xl bg-brand-gradient py-3 font-bold text-white shadow-soft">
+        {label}
+        <span className="text-[11px] font-normal text-white/80">{sub}</span>
       </Link>
     </div>
   );
