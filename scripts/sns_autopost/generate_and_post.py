@@ -166,22 +166,29 @@ def build_image(pillar: str, slot: int, day_index: int, app_url: str,
     - 全ピラーを図解インフォグラフィック（Playwright）で生成。
       tip/contrarian=手順図解＋キャラ、診断導線=各タイプの実画像を使う声タイプ図鑑。
     - 図解レンダリング不可（playwright未導入等）のときのみ、従来のカードにフォールバック。
-    - override 指定時（--text の完成稿）も図解を優先する。
-      A(auto)={"mode":"auto","text":..,"reply":..}=本文/リプを自動構造化、
-      B(spec)={"mode":"spec","data":{誤解/鍵…}}=運用者が図解を制御。失敗時のみカード。"""
+    - 完成稿(--text)の画像は B(spec) で図解を作る。
+      B(spec)={"mode":"spec","data":{誤解/鍵…}} → 運用者が制御した図解（失敗時のみカード）。
+      card={"mode":"card","text":..,"reply":..} → スペック無しの完成稿は“崩れた自動図解”を
+        避け、その文言の見出しから安全なカードを焼く。"""
     if not _truthy(os.getenv("SNS_IMAGE", "1")):
         return None
     name = (f"{datetime.date.today().isoformat()}_s{slot}_{pillar}_"
             f"{uuid.uuid4().hex[:6]}.png")
     out = os.path.join(IMG_DIR, name)
-    p = infographic.generate(pillar, day_index, app_url, out, override=override)
+    mode = override.get("mode") if override else None
+    # スペック無しの完成稿 → 自動図解(A)は広告化しやすいのでカードに落とす。
+    if mode == "card":
+        headline = images.build_headline(pillar, override.get("text", ""), override.get("reply"))
+        return images.generate_image(pillar, headline, out)
+    # B(spec) は図解を、通常(None)は themes 図解を試す。
+    ig = override if mode == "spec" else None
+    p = infographic.generate(pillar, day_index, app_url, out, override=ig)
     if p:
         return p
     # 図解不可 → カードにフォールバック（必ず画像は出す）
-    if override is not None:  # 完成稿: その文言の見出しからカード
-        spec = override.get("data") if override.get("mode") == "spec" else None
-        htext = (spec or {}).get("title") if spec else override.get("text", "")
-        headline = images.build_headline(pillar, htext or "", override.get("reply"))
+    if mode == "spec":
+        htext = (override.get("data") or {}).get("title", "")
+        headline = images.build_headline(pillar, htext, None)
     else:
         base = themes.template_post(pillar, day_index, app_url)
         headline = images.build_headline(pillar, base.get("text", ""), base.get("reply"))
@@ -282,11 +289,11 @@ def main() -> int:
     ap.add_argument("--reply",
                     help="--text と併用。自己リプに置く本体（任意）。省略時は単発。")
     ap.add_argument("--image-spec",
-                    help="--text と併用。図解を構造化して制御(B)するJSON。"
+                    help="--text と併用。図解を構造化して作る(B)ためのJSON。"
                          'contrarian例: \'{"title":"誤解","verdict":"半分ウソ",'
                          '"reasons":[{"title":"鍵1","body":".."},{"title":"鍵2","body":".."}],'
                          '"summary":".."}\''
-                         "。未指定なら本文/リプを自動構造化(A)。")
+                         "。未指定なら図解は作らず安全なカードにする。")
     args = ap.parse_args()
 
     app_url = os.getenv("APP_URL", themes.APP_URL_DEFAULT).rstrip("/")
@@ -303,7 +310,8 @@ def main() -> int:
         if not args.pillar:
             print(f"[note] --pillar 未指定 → '{pillar}' として扱います（画像/採点/ログの型）")
         post = {"text": args.text, "reply": args.reply or None, "link": None}
-        # 図解の作り方: --image-spec があれば B(構造化), 無ければ A(本文/リプを自動構造化)。
+        # 図解は B(構造化) で作る: --image-spec があればその図解。
+        # 無ければ“崩れた自動図解”を避けて安全なカードに落とす（mode=card）。
         if args.image_spec:
             try:
                 spec = json.loads(args.image_spec)
@@ -312,7 +320,9 @@ def main() -> int:
                 return 2
             ig_override = {"mode": "spec", "data": spec}
         else:
-            ig_override = {"mode": "auto", "text": args.text, "reply": args.reply}
+            print("[note] --image-spec 未指定 → 図解は作らずカードにします"
+                  "（図解にするなら --image-spec で誤解/鍵を渡す）")
+            ig_override = {"mode": "card", "text": args.text, "reply": args.reply}
     else:
         pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
         post = generate_post(pillar, day_index, app_url)
