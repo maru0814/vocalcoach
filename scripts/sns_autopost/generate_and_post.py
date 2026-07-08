@@ -160,22 +160,38 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         return post
 
 
-def build_image(pillar: str, slot: int, day_index: int, app_url: str) -> str | None:
+def build_image(pillar: str, slot: int, day_index: int, app_url: str,
+                override: dict | None = None) -> str | None:
     """投稿に添付するブランド画像を生成してパスを返す（作れなければ None）。
     - 全ピラーを図解インフォグラフィック（Playwright）で生成。
       tip/contrarian=手順図解＋キャラ、診断導線=各タイプの実画像を使う声タイプ図鑑。
-    - 図解レンダリング不可（playwright未導入等）のときのみ、従来のカードにフォールバック。"""
+    - 図解レンダリング不可（playwright未導入等）のときのみ、従来のカードにフォールバック。
+    - 完成稿(--text)の画像は B(spec) で図解を作る。
+      B(spec)={"mode":"spec","data":{誤解/鍵…}} → 運用者が制御した図解（失敗時のみカード）。
+      card={"mode":"card","text":..,"reply":..} → スペック無しの完成稿は“崩れた自動図解”を
+        避け、その文言の見出しから安全なカードを焼く。"""
     if not _truthy(os.getenv("SNS_IMAGE", "1")):
         return None
     name = (f"{datetime.date.today().isoformat()}_s{slot}_{pillar}_"
             f"{uuid.uuid4().hex[:6]}.png")
     out = os.path.join(IMG_DIR, name)
-    p = infographic.generate(pillar, day_index, app_url, out)
+    mode = override.get("mode") if override else None
+    # スペック無しの完成稿 → 自動図解(A)は広告化しやすいのでカードに落とす。
+    if mode == "card":
+        headline = images.build_headline(pillar, override.get("text", ""), override.get("reply"))
+        return images.generate_image(pillar, headline, out)
+    # B(spec) は図解を、通常(None)は themes 図解を試す。
+    ig = override if mode == "spec" else None
+    p = infographic.generate(pillar, day_index, app_url, out, override=ig)
     if p:
         return p
     # 図解不可 → カードにフォールバック（必ず画像は出す）
-    base = themes.template_post(pillar, day_index, app_url)
-    headline = images.build_headline(pillar, base.get("text", ""), base.get("reply"))
+    if mode == "spec":
+        htext = (override.get("data") or {}).get("title", "")
+        headline = images.build_headline(pillar, htext, None)
+    else:
+        base = themes.template_post(pillar, day_index, app_url)
+        headline = images.build_headline(pillar, base.get("text", ""), base.get("reply"))
     return images.generate_image(pillar, headline, out)
 
 
@@ -267,20 +283,55 @@ def main() -> int:
                     help="生成して本文を表示するだけ（キューにもLINEにも送らない）")
     ap.add_argument("--post-now", action="store_true",
                     help="承認を挟まず即投稿する（APPROVAL_MODEを無視。手動・緊急用）")
+    ap.add_argument("--text",
+                    help="完成稿の本文をそのまま流す（テンプレ生成/Geminiリライトを行わない）。"
+                         "戦略家ゲート通過済みの完成稿を一言一句保って投入する用。")
+    ap.add_argument("--reply",
+                    help="--text と併用。自己リプに置く本体（任意）。省略時は単発。")
+    ap.add_argument("--image-spec",
+                    help="--text と併用。図解を構造化して作る(B)ためのJSON。"
+                         'contrarian例: \'{"title":"誤解","verdict":"半分ウソ",'
+                         '"reasons":[{"title":"鍵1","body":".."},{"title":"鍵2","body":".."}],'
+                         '"summary":".."}\''
+                         "。未指定なら図解は作らず安全なカードにする。")
     args = ap.parse_args()
 
     app_url = os.getenv("APP_URL", themes.APP_URL_DEFAULT).rstrip("/")
     today = datetime.date.today()
     day_index = today.toordinal()
     slot = args.slot or int(os.getenv("POST_SLOT", "1"))
-    pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
 
-    post = generate_post(pillar, day_index, app_url)
+    ig_override = None
+    if args.text:
+        # 完成稿をそのまま投入: 生成/リライトは一切せず、指定文言を本投稿に使う。
+        # pillar は画像分岐・ゲート採点・ログ型別集計に使うため必須。未指定は contrarian 扱い
+        # （曜日既定だと型を誤タグしログ/画像が崩れるため、意図の明確な既定に寄せる）。
+        pillar = args.pillar or "contrarian"
+        if not args.pillar:
+            print(f"[note] --pillar 未指定 → '{pillar}' として扱います（画像/採点/ログの型）")
+        post = {"text": args.text, "reply": args.reply or None, "link": None}
+        # 図解は B(構造化) で作る: --image-spec があればその図解。
+        # 無ければ“崩れた自動図解”を避けて安全なカードに落とす（mode=card）。
+        if args.image_spec:
+            try:
+                spec = json.loads(args.image_spec)
+            except json.JSONDecodeError as e:
+                print(f"[err] --image-spec のJSONが不正: {e}", file=sys.stderr)
+                return 2
+            ig_override = {"mode": "spec", "data": spec}
+        else:
+            print("[note] --image-spec 未指定 → 図解は作らずカードにします"
+                  "（図解にするなら --image-spec で誤解/鍵を渡す）")
+            ig_override = {"mode": "card", "text": args.text, "reply": args.reply}
+    else:
+        pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
+        post = generate_post(pillar, day_index, app_url)
     text, reply, link = post["text"], post.get("reply"), post.get("link")
     # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
     post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
     # 全投稿にブランド画像を添付（tip/contrarian=図解 / 診断導線=カード。SNS_IMAGE=0で無効）。
-    image_path = build_image(pillar, slot, day_index, app_url)
+    # 完成稿(--text)も図解を優先（A=自動 / B=--image-spec で制御）。失敗時のみカード。
+    image_path = build_image(pillar, slot, day_index, app_url, override=ig_override)
 
     print("─" * 48)
     print(f"[{today}] slot={slot} pillar={pillar}")
