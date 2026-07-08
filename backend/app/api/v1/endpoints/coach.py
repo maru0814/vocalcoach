@@ -967,6 +967,10 @@ def send_audio(
                 diagnosed_task=updates.get("current_task"),
                 after_practice_check=bool(updates.get("_practice_result")),
             )
+            # 問いかけは1ターン1問（docs/42 §8）: zero-base講評は末尾にL1オファーを
+            # 含むため、初回問診を同じターンに重ねない（問診は以降のターンに譲る）
+            if _ask == "first_audio" and zero_base_reply:
+                _ask = None
             if _ask:
                 msgs = msgs + [{"role": "coach", "type": "text",
                                 "text": karte_service.CHECKIN_QUESTIONS[_ask]}]
