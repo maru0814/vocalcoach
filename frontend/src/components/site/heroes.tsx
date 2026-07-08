@@ -3,7 +3,7 @@ import Link from "next/link";
 import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
 import { StageDecor } from "@/components/site/Stage";
 import { Marker } from "@/components/site/SectionHeading";
-import { ProductSnippet } from "@/components/site/ProductSnippet";
+import { HeroLessonDemo } from "@/components/site/HeroLessonDemo";
 import { Button } from "@/components/ui/Button";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
@@ -90,17 +90,7 @@ function HeroBadge() {
 /** `/` トップ — 総合入口。レッスン主導線＋診断の副導線 */
 export function HeroTop() {
   return (
-    <HeroKeyartShell
-      cardLabel="BEFORE → AFTER"
-      card={
-        <ProductSnippet
-          messages={[
-            { from: "sora", text: "1:24の伸ばし、後半でゆれて下がっています。息の支えから直しましょう" },
-            { from: "sora", text: "（5日後）伸ばしがまっすぐ安定しましたね。息の支え、効いています👏" },
-          ]}
-        />
-      }
-    >
+    <HeroKeyartShell cardLabel="BEFORE → AFTER（実際のレッスンの流れ）" card={<HeroLessonDemo />}>
       <HeroBadge />
       <h1 className="mt-4 text-5xl font-black leading-[1.15] tracking-tight sm:text-6xl lg:text-7xl">
         歌は、<Marker tone="dark">直せる。</Marker>
@@ -124,20 +114,45 @@ export function HeroTop() {
   );
 }
 
+/** 診断結果のティザー: 近い歌手名を伏せて登録誘導（未登録は結果ぼかし→登録で開く、という実挙動と一致） */
+function ShindanTeaserCard() {
+  return (
+    <div className="rounded-2xl bg-white p-3 shadow-card">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-1 pb-2">
+        <CoachAvatar size={24} />
+        <span className="text-xs font-bold text-slate-700">{COACH_NAME}</span>
+        <span className="ml-auto inline-flex items-center gap-1 text-xs text-slate-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+          オンライン
+        </span>
+      </div>
+      <div className="space-y-2 px-1 pb-1 pt-3">
+        <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-3 py-2 text-xs leading-relaxed text-white">
+          15秒だけ歌ってみました！
+        </p>
+        <div className="flex items-end gap-1.5">
+          <CoachAvatar size={20} />
+          <p className="max-w-[85%] rounded-2xl rounded-bl-md bg-slate-100 px-3 py-2 text-xs leading-relaxed text-slate-700">
+            あなたは <b className="text-brand-700">Crystal Voice</b> タイプ✨ 歌手でいうと
+            <span
+              className="mx-1 inline-block select-none rounded bg-slate-300 px-4 align-middle text-transparent [filter:blur(4px)]"
+              aria-label="（無料登録でひらく）"
+            >
+              ●●●●
+            </span>
+            さんに近い声です
+          </p>
+        </div>
+        <p className="pt-1 text-center text-xs font-bold text-brand-600">→ 近い歌手の名前は、無料登録でひらきます</p>
+      </div>
+    </div>
+  );
+}
+
 /** `/lp/shindan` — 診断訴求の流入先。見出し・CTA・遷移先を診断に一本化 */
 export function HeroShindan() {
   return (
-    <HeroKeyartShell
-      cardLabel="診断結果のイメージ"
-      card={
-        <ProductSnippet
-          messages={[
-            { from: "user", text: "15秒だけ歌ってみました！" },
-            { from: "sora", text: "あなたは Crystal Voice タイプ✨ 透きとおる高音が武器の声です。この声に合う発声レッスンも用意していますよ" },
-          ]}
-        />
-      }
-    >
+    <HeroKeyartShell cardLabel="診断結果のイメージ" card={<ShindanTeaserCard />}>
       <HeroBadge />
       <h1 className="mt-4 text-5xl font-black leading-[1.15] tracking-tight sm:text-6xl lg:text-7xl">
         あなたの声、<br className="hidden sm:block" />
@@ -159,17 +174,7 @@ export function HeroShindan() {
 /** `/lp/voitore` — 高音×ミックスボイス訴求の流入先 */
 export function HeroVoitore() {
   return (
-    <HeroKeyartShell
-      cardLabel="秒数つきで、原因がわかる"
-      card={
-        <ProductSnippet
-          messages={[
-            { from: "user", text: "サビの高音がきついです…（録音を送信）" },
-            { from: "sora", text: "2:10、地声のまま押し上げて裏返りかけています。ミックスボイスに切り替える“ネイネイ”練習から始めましょう" },
-          ]}
-        />
-      }
-    >
+    <HeroKeyartShell cardLabel="秒数つきで原因がわかり、直るまで伴走" card={<HeroLessonDemo />}>
       <HeroBadge />
       <h1 className="mt-4 text-4xl font-black leading-[1.18] tracking-tight sm:text-5xl lg:text-6xl">
         その高音、<br />
