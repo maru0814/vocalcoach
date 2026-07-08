@@ -1,0 +1,469 @@
+import Link from "next/link";
+import { Reveal } from "@/components/site/Reveal";
+import { AnimatedDemo } from "@/components/site/AnimatedDemo";
+import { CoachAvatar, COACH_NAME } from "@/components/character/Coach";
+import { StageDecor } from "@/components/site/Stage";
+import { SectionHeading, Marker } from "@/components/site/SectionHeading";
+import { Icon, IconChip, IconName } from "@/components/site/IconChip";
+import { ProductSnippet, SnippetMsg } from "@/components/site/ProductSnippet";
+import { Button } from "@/components/ui/Button";
+import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
+import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
+import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
+
+/**
+ * LPのヒーロー以下（信頼帯〜フッター）。トップ／流入別LP（/lp/*）で共有する。
+ * variant="takane" は高音・ミックスボイス訴求（/lp/voitore）用に本体を差し替える。
+ * コピー・構成の変更はここ1箇所で全LPに反映される。
+ */
+
+export type LpVariant = "default" | "takane";
+
+const STATS = [
+  { value: "秒数で指摘", label: "どこが問題か、場所つきで分かる" },
+  { value: "最短1分", label: "録って送れば、すぐFBが届く" },
+  { value: "道具ゼロ", label: "専用マイク・機材は不要" },
+  { value: "¥0", label: "登録だけで無料で始められる" },
+];
+
+const PROBLEMS: Array<{ icon: IconName; text: string }> = [
+  { icon: "frown", text: "自分の歌の どこがダメか分からない" },
+  { icon: "search", text: "練習法を調べても 自分に合うのか不安で続かない" },
+  { icon: "trend-down", text: "練習してるのに 上達した実感がない" },
+];
+
+const PROBLEMS_TAKANE: Array<{ icon: IconName; text: string }> = [
+  { icon: "frown", text: "サビの高音で 喉が締まって苦しくなる" },
+  { icon: "trend-down", text: "高音で声が裏返る のが怖くてキーを下げている" },
+  { icon: "search", text: "ミックスボイスを調べても やり方が分からない" },
+];
+
+type Feature = { icon: IconName; tag: string; title: string; desc: string; bullets: string[]; snippet: SnippetMsg[] };
+
+const FEATURES: Feature[] = [
+  {
+    icon: "mic",
+    tag: "AI声診断",
+    title: "声が、見える化される。",
+    desc: "あなたの声をAIが解析して、「この曲で出した音域」「使っている声（地声・ミックス・裏声）」「換声点」「声の共鳴」まで“声診断”。「なんとなく下手」が「サビ後半で息が切れている」みたいに、言葉で分かります。",
+    bullets: ["音程の安定・強弱・ビブラートまで解析", "音域・声区・換声点まで“声診断”（推定）", "秒数つきで「どこを」直すか分かる"],
+    snippet: [
+      { from: "user", text: "🎤 録音を送信しました（0:58）" },
+      { from: "coach", text: "録音ありがとうございます😊 出だしの声、まっすぐ響いていていいですね。サビの伸ばしは後半で少しゆれて下がりがちなので、今日はそこを一緒に整えましょう。" },
+    ],
+  },
+  {
+    icon: "headphones",
+    tag: "原曲と聴き比べ",
+    title: "原曲と、聴き比べる。",
+    desc: "お手本の音源をアップロードすると、音を外していないか（音程の正確さ）とリズムの走り／モタりを原曲と聴き比べて実測。同じ曲を同じキーで歌うほど、ズレがぴたっと分かります。",
+    bullets: ["音程の正確さを原曲と照合", "リズムの走り・モタりを秒数で指摘", "原曲なしでも、録音だけでFB"],
+    snippet: [
+      { from: "user", text: "原曲もアップしました！リズム合ってますか？" },
+      { from: "coach", text: "聴き比べました😊 サビの入りが原曲より少し早めに走っています。頭の「サ」を拍にそろえる意識だけで、ぐっと原曲に近づきますよ。" },
+    ],
+  },
+  {
+    icon: "target",
+    tag: "個別メニュー",
+    title: "今日の課題と、基礎練。",
+    desc: "あなたの弱点に合わせて、今日やるべき基礎練を1つだけ提案。お手本のYouTube動画つきだから、迷わず練習できます。道具はいりません、声と体だけ。",
+    bullets: ["弱点に合わせた練習を1つに絞る", "お手本動画つきで真似しやすい", "ドッグブレス等、家でできる練習"],
+    snippet: [
+      { from: "user", text: "どんな練習をすればいいですか？" },
+      { from: "coach", text: "今日はリップロールを1つだけやりましょう。唇をブルブル震わせながら低い音から上がると、力まずに音程を支える感覚がつかめます。やり方はこの動画がわかりやすいですよ →" },
+    ],
+  },
+  {
+    icon: "chart",
+    tag: "成長記録",
+    title: "上達が、記録に残る。",
+    desc: "レッスンごとに自動で保存。録り直すと「前回より伸ばしが安定した」を、ソラ先生が会話で教えてくれます。見えなかった成長が、ちゃんと分かる。",
+    bullets: ["レッスンを自動で履歴に保存", "前回より良くなった点を会話で伝える", "良くなった点をソラ先生が褒めてくれる"],
+    snippet: [
+      { from: "user", text: "🎤 同じ曲を録り直しました！" },
+      { from: "coach", text: "聴きました！サビの伸ばし、前回よりまっすぐ安定しましたね✨ 息の支えが効いてきています。この調子で、次は語尾の処理を磨いていきましょう。" },
+    ],
+  },
+];
+
+// takane（高音×ミックス）版は機能の筆頭を「換声点チェック」に差し替え（声区・換声点は音響からの推定＝誇大禁止）
+const FEATURE_TAKANE_FIRST: Feature = {
+  icon: "mic",
+  tag: "換声点チェック",
+  title: "裏返る場所が、見える化される。",
+  desc: "高音が苦しいのは根性の問題ではなく、地声のまま換声点を越えようとしているのが典型です。AIが録音から声区（地声・ミックス・裏声）と換声点の傾向を推定し、「どこで・なぜ裏返るか」を言葉にします。",
+  bullets: ["声区・換声点の傾向を推定", "裏返り・苦しさの原因を秒数つきで指摘", "ミックスボイスへ向かう練習を1つ提案"],
+  snippet: [
+    { from: "user", text: "🎤 サビの高音がきついです…（録音を送信）" },
+    { from: "coach", text: "2:10、地声のままF4を越えようとして裏返りかけています。まずは“ネイネイ”でミックスの入り口を作りましょう。息の支えがあると、ぐっと楽に当たりますよ。" },
+  ],
+};
+
+const STEPS: Array<{ n: string; icon: IconName; title: string; desc: string }> = [
+  { n: "1", icon: "mic", title: "歌って送る", desc: "スマホでそのまま録音、または音源をアップロード。原曲がなくてもOK。" },
+  { n: "2", icon: "chat", title: "AIから添削が届く", desc: "良かったところ・直すところ・今日の基礎練が、会話みたいにチャットで届きます。" },
+  { n: "3", icon: "headphones", title: "お手本と聴き比べ（任意）", desc: "原曲をアップロードすると、音程の正確さ・リズムをより正確に。" },
+];
+
+const FOR_YOU = [
+  "カラオケでサビの高音が苦しくなる",
+  "音痴かもと思って人前で歌うのが不安",
+  "ボイトレ教室に通うほどではないけど上手くなりたい",
+  "YouTubeの練習法が自分に合っているか分からない",
+  "録音を聞いても自分のどこが悪いか分からない",
+];
+
+const FOR_YOU_TAKANE = [
+  "カラオケでサビの高音が苦しくなる・裏返る",
+  "高音が怖くて、いつもキーを下げて歌っている",
+  "ミックスボイスを独学で調べたが、感覚が分からない",
+  "原曲キーで歌えるようになりたい",
+  "録音を聞いても、高音の何が悪いのか分からない",
+];
+
+const VOICES = [
+  { name: "27歳・会社員", quote: "「サビで息が切れてる」って秒数で言われて納得。基礎練を続けたら、前より安定しました。" },
+  { name: "21歳・学生", quote: "教室は緊張するけど、これなら家で気軽に。動画つきで練習法に迷わないのが助かる。" },
+  { name: "34歳・主婦", quote: "録り直すたびに「ここ良くなった」って言ってくれるのが楽しい。ちゃんと褒めてくれるので続けられます。" },
+];
+
+const FAQ = [
+  { q: "本当に無料ですか？", a: "はい。メール登録だけで、すぐに始められます。クレジットカードも不要です。" },
+  { q: "マイクや機材は必要ですか？", a: "専用マイクは不要です。お使いのスマホやPCで録音、または手持ちの音源をアップロードするだけでOK。" },
+  { q: "音痴でも大丈夫ですか？", a: "むしろそういう方向けです。AIボーカルトレーナーが、やさしく具体的にお伝えします。" },
+  { q: "録った歌は誰かに見られますか？", a: "いいえ。あなた専用に安全に保存され、他の人には見えません。" },
+  { q: "原曲がなくても使えますか？", a: "はい。録音だけでもフィードバックできます。お手本の音源をアップロードすると、音程の正確さやリズムを原曲と聴き比べて、より正確に見られます。" },
+  { q: "プロみたいに正確に判定できますか？", a: "解析には“目安・推定”を含みます。だからこそ点数はつけず、できること・難しいことを正直に、言葉でお伝えします。音程の正確さやリズムは、原曲をアップロードするとより正確に見られます。" },
+];
+
+/** Before → After の変化（点数でなく、ソラ先生の会話で示す） */
+function BeforeAfter({ variant }: { variant: LpVariant }) {
+  const before =
+    variant === "takane"
+      ? "最初の録音：サビの高音、地声で押し上げて苦しくなっていますね。"
+      : "最初の録音：サビの伸ばしが、後半でゆれて下がりがちですね。";
+  const after =
+    variant === "takane"
+      ? "高音がすっと当たるようになりましたね！ミックスの入り口に立てています✨"
+      : "伸ばしがまっすぐ安定しましたね！息の支えが効いています✨";
+  return (
+    <div className="mx-auto flex max-w-md flex-col gap-3 text-left">
+      <div className="flex items-end gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <Icon name="mic" size={14} />
+        </span>
+        <div className="font-body rounded-2xl rounded-bl-md bg-white px-4 py-2.5 text-sm text-slate-600 shadow-card">
+          {before}
+        </div>
+      </div>
+      <div className="text-center text-xs font-bold text-brand-600">基礎練5日 → 録り直し ↓</div>
+      <div className="flex items-end gap-2">
+        <CoachAvatar size={28} />
+        <div className="font-body rounded-2xl rounded-bl-md bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 shadow-card">
+          {after}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function LpBody({ variant = "default" }: { variant?: LpVariant }) {
+  const takane = variant === "takane";
+  const problems = takane ? PROBLEMS_TAKANE : PROBLEMS;
+  const features = takane ? [FEATURE_TAKANE_FIRST, ...FEATURES.slice(1)] : FEATURES;
+  const forYou = takane ? FOR_YOU_TAKANE : FOR_YOU;
+
+  return (
+    <>
+      <div className="mt-12 lg:hidden">
+        <AnimatedDemo />
+      </div>
+
+      {/* 信頼バッジ帯（factualな数字） */}
+      <Reveal className="mt-12 sm:mt-16">
+        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-white/80 p-5 shadow-card sm:grid-cols-4 sm:p-6">
+          {STATS.map((s) => (
+            <div key={s.value} className="text-center">
+              <div className="text-2xl font-black text-brand-600 sm:text-3xl">{s.value}</div>
+              <div className="font-body mt-1 text-xs text-slate-500">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </Reveal>
+
+      {/* 声タイプ診断 = AIボイトレの入口 */}
+      <Reveal className="mt-20">
+        <div className="bg-stage grain relative overflow-hidden rounded-[2rem] p-8 text-center shadow-card sm:p-12">
+          <StageDecor />
+          <div className="relative z-10">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-brand-600">
+              <span className="inline-flex"><CoachAvatar size={16} /></span>
+              STEP 1 ・ {takane ? "まずは現在地チェック" : "まずはここから"}
+            </span>
+            <h2 className="mt-3 text-2xl font-black text-white sm:text-4xl">
+              {takane ? (
+                <>まず、<span className="text-brand-200">あなたの換声点</span>を知ろう。</>
+              ) : (
+                <>まずは、<span className="text-brand-200">声タイプ診断</span>から。</>
+              )}
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-white/80">
+              {takane
+                ? "15秒歌うだけ。AIがあなたの声タイプと、高音がきつくなるポイント（声区の傾向）を見立てます。"
+                : `AIボーカルトレーナー${COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。15秒ほど歌うだけ。似た声質のアーティストつきで、結果はそのままシェアできます。`}
+            </p>
+            <p className="mx-auto mt-2 max-w-xl text-sm font-bold text-brand-200">
+              {takane
+                ? "診断のあとは、高音・ミックスボイスに絞った発声レッスンへ。"
+                : "診断のあとは、その声に合った発声レッスンへ。だから“いまの自分”から始められます。"}
+            </p>
+            <div className="mx-auto mt-8 grid max-w-2xl grid-cols-4 gap-2.5 sm:gap-3">
+              {VOICE_TYPE_LIST.map((t) => (
+                <div key={t.id} className="relative aspect-square overflow-hidden rounded-2xl shadow-soft ring-1 ring-white/15 transition hover:-translate-y-0.5 hover:ring-white/40">
+                  <VoiceTypeArt id={t.id} fallbackMascotSize={42} className="h-full w-full" />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-1 pb-1 pt-3 text-center">
+                    <span className="text-[10px] font-bold text-white drop-shadow">{t.name}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button href="/voice-type" className="mt-8">
+              登録なしで、15秒診断 →
+            </Button>
+            <p className="mt-3 text-xs text-white/50">※ 診断は登録なしで試せます。結果の保存・シェアと発声レッスンは無料登録（30秒）</p>
+            <VoiceTypeStats className="mt-3" tone="dark" />
+          </div>
+        </div>
+      </Reveal>
+
+      {/* 課題提起 */}
+      <Reveal className="mt-20 text-center">
+        <SectionHeading eyebrow="PROBLEM" title={<>こんな悩み、<Marker>ありませんか？</Marker></>} />
+        <div className="mt-7 grid gap-4 sm:grid-cols-3">
+          {problems.map((p) => (
+            <div key={p.text} className="rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
+              <IconChip icon={p.icon} size={48} />
+              <p className="mt-3 text-sm font-medium text-slate-600">{p.text}</p>
+            </div>
+          ))}
+        </div>
+      </Reveal>
+
+      {/* 使い方 3ステップ */}
+      <Reveal className="mt-20">
+        <SectionHeading eyebrow="HOW IT WORKS" title={<>使い方は、<Marker>3ステップ</Marker></>} />
+        <div className="mt-7 grid gap-4 sm:grid-cols-3">
+          {STEPS.map((s, i) => (
+            <Reveal key={s.n} delay={i * 120}>
+              <div className="h-full rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
+                    {s.n}
+                  </span>
+                  <IconChip icon={s.icon} size={40} />
+                </div>
+                <div className="mt-3 font-bold text-slate-800">{s.title}</div>
+                <div className="mt-1 text-sm text-slate-500">{s.desc}</div>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </Reveal>
+
+      {/* 機能紹介（ジグザグ・パネルは製品そのもの＝実物調のチャットUI docs/61 §3-7） */}
+      <section className="mt-24 space-y-16">
+        <SectionHeading eyebrow="FEATURES" title={<>登録すると、<Marker>できること</Marker></>} />
+        {features.map((f, i) => (
+          <Reveal key={f.title}>
+            <div className={`grid items-center gap-8 lg:grid-cols-2 ${i % 2 === 1 ? "lg:[&>div:first-child]:order-2" : ""}`}>
+              <ProductSnippet messages={f.snippet} label={f.tag} />
+              <div>
+                <IconChip icon={f.icon} size={48} />
+                <h3 className="mt-4 text-2xl font-black text-slate-800">{f.title}</h3>
+                <p className="font-body mt-3 text-slate-600">{f.desc}</p>
+                <ul className="mt-4 space-y-2">
+                  {f.bullets.map((b) => (
+                    <li key={b} className="font-body flex items-center gap-2 text-sm text-slate-600">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs text-brand-600">✓</span>
+                      {b}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </Reveal>
+        ))}
+        <p className="text-center text-xs text-slate-400">※ 画面は体験イメージです。</p>
+      </section>
+
+      {/* Before → After */}
+      <Reveal className="mt-20">
+        <div className="overflow-hidden rounded-[2rem] bg-brand-50/70 p-8 text-center shadow-card sm:p-12">
+          <p className="text-sm font-bold tracking-wide text-brand-600">BEFORE → AFTER</p>
+          <h2 className="mt-2 text-2xl font-black text-slate-800 sm:text-3xl">
+            録り直すたび、変化が分かる。
+          </h2>
+          <p className="mx-auto mt-3 max-w-md text-sm text-slate-600">
+            課題に合った基礎練をこなして再録音すると、ソラ先生が「ここが良くなった」と会話で教えてくれます。
+          </p>
+          <div className="mt-8">
+            <BeforeAfter variant={variant} />
+          </div>
+          <p className="mt-6 text-xs text-slate-400">※ 体験イメージです。</p>
+        </div>
+      </Reveal>
+
+      {/* こんな人におすすめ */}
+      <Reveal className="mt-20">
+        <div className="grid items-center gap-8 rounded-[2rem] bg-white/85 p-8 shadow-card sm:p-12 lg:grid-cols-2">
+          <div>
+            <h2 className="text-2xl font-black text-slate-800 sm:text-3xl">
+              こんな人に、<span className="text-brand-600">ぴったり</span>。
+            </h2>
+            <p className="font-body mt-3 text-sm text-slate-500">ひとつでも当てはまったら、まず1曲ためしてみてください。</p>
+          </div>
+          <ul className="space-y-3">
+            {forYou.map((t) => (
+              <li key={t} className="font-body flex items-start gap-3 rounded-2xl bg-brand-50/60 px-4 py-3 text-sm font-medium text-slate-700">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white">
+                  <Icon name="check" size={12} />
+                </span>
+                {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Reveal>
+
+      {/* 利用者の声 */}
+      <Reveal className="mt-20">
+        <SectionHeading eyebrow="VOICES" title="使った人の声" />
+        <div className="mt-7 grid gap-4 sm:grid-cols-3">
+          {VOICES.map((v, i) => (
+            <Reveal key={v.name} delay={i * 120}>
+              <div className="h-full rounded-2xl bg-white/90 p-6 shadow-card transition hover:-translate-y-0.5 hover:shadow-card-2">
+                <div className="text-brand-400">★★★★★</div>
+                <p className="font-body mt-3 text-sm text-slate-700">{v.quote}</p>
+                <div className="mt-4 flex items-center gap-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                    <Icon name="user" size={18} />
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">{v.name}</span>
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+        <p className="mt-4 text-center text-xs text-slate-400">※ 体験イメージです。</p>
+      </Reveal>
+
+      {/* 開発者の思想（信頼の壁への回答。個人開発を隠さず、正直さを担保にする） */}
+      <Reveal className="mt-20">
+        <div className="mx-auto max-w-2xl rounded-[2rem] bg-white/85 p-8 shadow-card sm:p-10">
+          <SectionHeading eyebrow="MAKER'S NOTE" title="なぜ、点数をつけないのか。" />
+          <div className="mt-6 flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+            <CoachAvatar size={72} pose="bow" ring />
+            <div className="font-body text-sm leading-relaxed text-slate-600">
+              <p>
+                このサービスは、個人開発で作り、運営しています。だからこそ正直に作っています——
+                AIの音声解析には“推定”が含まれます。それを100点満点の断定に変換するより、
+                「1:24の伸ばしが下がっている」と場所と直し方を言葉で伝えるほうが、練習は前に進む。
+                ソラ先生が点数をつけないのは、そういう設計です。
+              </p>
+              <p className="mt-3">
+                できること・できないことは、このページとFAQに書いたとおりです。
+                まず15秒の診断から、気軽に試してみてください。
+              </p>
+              <p className="mt-3 text-xs text-slate-400">— 開発・運営 Vocal Coach Inc.（個人開発）</p>
+            </div>
+          </div>
+        </div>
+      </Reveal>
+
+      {/* 料金 */}
+      <Reveal className="mt-20">
+        <div className="mx-auto max-w-md overflow-hidden rounded-[2rem] bg-white/90 p-8 text-center shadow-card">
+          <span className="inline-flex rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">いまなら</span>
+          <h2 className="mt-3 text-2xl font-black text-slate-800">ずっと無料で始められる</h2>
+          <div className="mt-4 text-5xl font-black text-brand-600">¥0</div>
+          <ul className="font-body mx-auto mt-6 max-w-xs space-y-2 text-left text-sm text-slate-600">
+            {["登録はメールだけ・30秒", "クレジットカード不要", "専用マイク・機材いらず", "レッスン履歴も保存"].map((t) => (
+              <li key={t} className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+                  <Icon name="check" size={12} />
+                </span>
+                {t}
+              </li>
+            ))}
+          </ul>
+          <Button href="/login" className="mt-7 w-full">
+            無料で始める →
+          </Button>
+        </div>
+      </Reveal>
+
+      {/* FAQ（アコーディオン） */}
+      <Reveal className="mt-20">
+        <SectionHeading eyebrow="FAQ" title="よくある質問" />
+        <div className="mx-auto mt-7 max-w-2xl space-y-3">
+          {FAQ.map((f) => (
+            <details key={f.q} className="group rounded-2xl bg-white/90 px-5 py-4 shadow-card">
+              <summary className="flex cursor-pointer list-none items-center justify-between rounded font-bold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+                <span>Q. {f.q}</span>
+                <span className="text-brand-400 transition group-open:rotate-45">＋</span>
+              </summary>
+              <p className="font-body mt-3 text-sm text-slate-600">A. {f.a}</p>
+            </details>
+          ))}
+        </div>
+      </Reveal>
+
+      {/* 最後のCTA（夜のステージ・終演＝開演と首尾を揃える） */}
+      <Reveal className="mt-24">
+        <div className="bg-stage grain relative overflow-hidden rounded-[2rem] p-10 text-center text-white shadow-soft sm:p-16">
+          <StageDecor />
+          <h2 className="relative z-10 text-3xl font-black sm:text-4xl">
+            上達は、<Marker tone="dark">今日の一歩</Marker>から。
+          </h2>
+          <p className="font-body relative z-10 mt-3 text-white/90">まずは1曲、歌って送ってみましょう。AIボーカルトレーナーが待っています。</p>
+          <Button href="/login" className="relative z-10 mt-8">
+            無料でレッスンを始める →
+          </Button>
+          <p className="relative z-10 mt-3 text-xs text-white/70">専用マイク不要・登録30秒・クレジットカード不要</p>
+        </div>
+      </Reveal>
+
+      {/* フッター */}
+      <footer className="mt-16 border-t border-slate-200 py-10 text-center">
+        <p className="text-sm font-bold text-slate-600">AIボーカルトレーナー ソラ先生</p>
+        <p className="mt-1 text-xs text-slate-400">歌をAIが解析・添削するボイトレアプリ</p>
+        <div className="mt-4 flex justify-center gap-5 text-xs text-slate-400">
+          <Link href="/login" className="hover:text-brand-600">ログイン</Link>
+          <Link href="/login" className="hover:text-brand-600">無料で始める</Link>
+        </div>
+        <p className="mt-6 text-[11px] text-slate-300">© AIボーカルトレーナー ソラ先生</p>
+      </footer>
+    </>
+  );
+}
+
+/** スマホ用 追従CTAバー。ヒーローの主CTAとWHATを揃える（ページ別に出し分け） */
+export function StickyCta({
+  href = "/login",
+  label = "無料でレッスンを始める →",
+  sub = "専用マイク不要・登録30秒・無料",
+}: {
+  href?: string;
+  label?: string;
+  sub?: string;
+}) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/40 bg-white/85 p-3 backdrop-blur sm:hidden">
+      <Button href={href} className="w-full flex-col py-3">
+        {label}
+        <span className="text-[11px] font-normal text-white/80">{sub}</span>
+      </Button>
+    </div>
+  );
+}

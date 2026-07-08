@@ -8,8 +8,19 @@ import { VTYPE_STYLE } from "./voiceTypes";
 // スクショ映え＆Xシェアを通じたゼロ円集客の入口。
 export { VTYPE_STYLE };
 
-/** 声タイプ診断（シェアの目玉）。モチーフ画像のバナー＋スコア。スクショ映えする1枚に。 */
-export function VoiceTypeBlock({ vt, score, shareRef }: { vt: any; score: number; shareRef?: any }) {
+/** 声タイプ診断（シェアの目玉）。モチーフ画像のバナー＋スコア。スクショ映えする1枚に。
+ *  maskArtists=true は近い歌手名を伏せ字にして登録誘導（LPのティザー用。実名はDOMに出さない）。 */
+export function VoiceTypeBlock({
+  vt,
+  score,
+  shareRef,
+  maskArtists = false,
+}: {
+  vt: any;
+  score: number;
+  shareRef?: any;
+  maskArtists?: boolean;
+}) {
   if (!vt) return null;
   const grad = VTYPE_STYLE[vt.id] || "from-brand-500 to-pink-500";
   const ax = vt.axes_jp || {};
@@ -35,7 +46,7 @@ export function VoiceTypeBlock({ vt, score, shareRef }: { vt: any; score: number
             <span key={i} className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">{t}</span>
           ))}
         </div>
-        {vt.artists && (vt.artists.female || vt.artists.male) && (
+        {vt.artists && (vt.artists.female || vt.artists.male) && !maskArtists && (
           <div className="mt-2 space-y-0.5 text-[11px] text-white/95">
             <div className="text-white/70">声質が近い例</div>
             {Array.isArray(vt.artists.female) && vt.artists.female.length > 0 && (
@@ -44,6 +55,17 @@ export function VoiceTypeBlock({ vt, score, shareRef }: { vt: any; score: number
             {Array.isArray(vt.artists.male) && vt.artists.male.length > 0 && (
               <div>♂ {vt.artists.male.join("・")}</div>
             )}
+          </div>
+        )}
+        {maskArtists && (
+          <div className="mt-2 rounded-xl bg-black/20 px-3 py-2 text-[11px]">
+            <div className="text-white/70">声質が近い歌手</div>
+            <div className="mt-1 flex items-center gap-2">
+              <span aria-hidden className="font-bold tracking-widest text-white/50">●●●● ・ ●●●●</span>
+              <span className="ml-auto whitespace-nowrap rounded-full bg-white px-2.5 py-0.5 text-[11px] font-bold text-brand-700">
+                🔒 無料登録でひらく
+              </span>
+            </div>
           </div>
         )}
         <div className="mt-2 text-[9px] text-white/60">※ 声の傾向からの推定です（優劣ではありません）</div>
