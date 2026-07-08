@@ -160,16 +160,23 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         return post
 
 
-def build_image(pillar: str, slot: int, day_index: int, app_url: str) -> str | None:
+def build_image(pillar: str, slot: int, day_index: int, app_url: str,
+                override: dict | None = None) -> str | None:
     """投稿に添付するブランド画像を生成してパスを返す（作れなければ None）。
     - 全ピラーを図解インフォグラフィック（Playwright）で生成。
       tip/contrarian=手順図解＋キャラ、診断導線=各タイプの実画像を使う声タイプ図鑑。
-    - 図解レンダリング不可（playwright未導入等）のときのみ、従来のカードにフォールバック。"""
+    - 図解レンダリング不可（playwright未導入等）のときのみ、従来のカードにフォールバック。
+    - override={text, reply} 指定時（--text の完成稿）は、任意文言を図解(themes構造)で
+      表現できないため、その文言の見出しからカードを焼く（infographic は使わない）。"""
     if not _truthy(os.getenv("SNS_IMAGE", "1")):
         return None
     name = (f"{datetime.date.today().isoformat()}_s{slot}_{pillar}_"
             f"{uuid.uuid4().hex[:6]}.png")
     out = os.path.join(IMG_DIR, name)
+    if override is not None:
+        headline = images.build_headline(pillar, override.get("text", ""),
+                                         override.get("reply"))
+        return images.generate_image(pillar, headline, out)
     p = infographic.generate(pillar, day_index, app_url, out)
     if p:
         return p
@@ -267,20 +274,36 @@ def main() -> int:
                     help="生成して本文を表示するだけ（キューにもLINEにも送らない）")
     ap.add_argument("--post-now", action="store_true",
                     help="承認を挟まず即投稿する（APPROVAL_MODEを無視。手動・緊急用）")
+    ap.add_argument("--text",
+                    help="完成稿の本文をそのまま流す（テンプレ生成/Geminiリライトを行わない）。"
+                         "戦略家ゲート通過済みの完成稿を一言一句保って投入する用。")
+    ap.add_argument("--reply",
+                    help="--text と併用。自己リプに置く本体（任意）。省略時は単発。")
     args = ap.parse_args()
 
     app_url = os.getenv("APP_URL", themes.APP_URL_DEFAULT).rstrip("/")
     today = datetime.date.today()
     day_index = today.toordinal()
     slot = args.slot or int(os.getenv("POST_SLOT", "1"))
-    pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
 
-    post = generate_post(pillar, day_index, app_url)
+    if args.text:
+        # 完成稿をそのまま投入: 生成/リライトは一切せず、指定文言を本投稿に使う。
+        # pillar は画像分岐・ゲート採点・ログ型別集計に使うため必須。未指定は contrarian 扱い
+        # （曜日既定だと型を誤タグしログ/画像が崩れるため、意図の明確な既定に寄せる）。
+        pillar = args.pillar or "contrarian"
+        if not args.pillar:
+            print(f"[note] --pillar 未指定 → '{pillar}' として扱います（画像/採点/ログの型）")
+        post = {"text": args.text, "reply": args.reply or None, "link": None}
+    else:
+        pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
+        post = generate_post(pillar, day_index, app_url)
     text, reply, link = post["text"], post.get("reply"), post.get("link")
     # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
     post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
     # 全投稿にブランド画像を添付（tip/contrarian=図解 / 診断導線=カード。SNS_IMAGE=0で無効）。
-    image_path = build_image(pillar, slot, day_index, app_url)
+    # 完成稿(--text)は任意文言なので図解ではなくカードで焼く（override で分岐）。
+    image_path = build_image(pillar, slot, day_index, app_url,
+                             override=post if args.text else None)
 
     print("─" * 48)
     print(f"[{today}] slot={slot} pillar={pillar}")
