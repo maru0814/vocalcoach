@@ -258,18 +258,66 @@ def render(data: dict, out_path: str) -> str | None:
         return None
 
 
-def generate(pillar: str, day_index: int, app_url: str, out_path: str) -> str | None:
-    """pillar に応じてコンテンツを構造化→（tip/contrarianはキャラ添付）→レンダリング。失敗で None。"""
+def _steps_from_spec(steps: list) -> list:
+    """B(spec)のtip: 生文字列 or 完成dict のどちらでも受け、描画用stepに正規化。"""
+    norm = []
+    for i, s in enumerate(steps or []):
+        if isinstance(s, str):
+            raw = _NUM_RE.sub("", s).strip()
+            pill, body = _split_pill(raw)
+            norm.append({"pill": pill, "body": body, "tag": _tag_for(raw),
+                         "icon": _icon_for(raw, i)})
+        else:
+            norm.append(s)
+    return norm
+
+
+def _data_from_override(pillar: str, override: dict) -> dict:
+    """完成稿(--text)用の描画データを作る。
+    A: {"mode":"auto","text":..,"reply":..} → 本文/リプを自動構造化（parse_*）。
+    B: {"mode":"spec","data":{..}} → 運用者が渡した構造をそのまま使う（誤解/鍵を制御）。"""
+    if override.get("mode") == "spec":
+        data = dict(override.get("data") or {})
+        data.setdefault("type", pillar)
+        if data.get("type") == "tip":
+            data["steps"] = _steps_from_spec(data.get("steps", []))
+        if not data.get("highlight") and data.get("summary"):
+            data["highlight"] = _pick_highlight(data["summary"])
+        data.setdefault("hashtags",
+                        "#ボイトレ #高音" if pillar == "contrarian" else "#ボイトレ #ボイストレーニング")
+        return data
+    # A: auto
+    text = override.get("text") or ""
+    reply = override.get("reply")
+    if pillar == "contrarian":
+        return parse_contrarian(text, reply or text)
+    return parse_tip(text)
+
+
+def build_data(pillar: str, day_index: int, override: dict | None = None) -> dict:
+    """レンダリング用データを構築（render は呼ばない＝テスト可能）。
+    override があり tip/contrarian のときは完成稿(--text)用に A/B で組む。"""
+    if override is not None and pillar in ("tip", "contrarian"):
+        data = _data_from_override(pillar, override)
+        data["character"] = _char_data_uri("explain")
+        return data
     if pillar in ("voice_type", "self_type", "visual"):
-        data = parse_diagnosis(pillar, day_index)  # 各タイプの実画像を使う図鑑（キャラは無し）
-    elif pillar == "contrarian":
+        return parse_diagnosis(pillar, day_index)  # 各タイプの実画像を使う図鑑（キャラは無し）
+    if pillar == "contrarian":
         hook, body = themes.CONTRARIAN[day_index % len(themes.CONTRARIAN)]
         data = parse_contrarian(hook, body)
-        data["character"] = _char_data_uri("explain")
     else:  # tip
         tip = themes.TIPS[day_index % len(themes.TIPS)]
         data = parse_tip(tip)
-        data["character"] = _char_data_uri("explain")
+    data["character"] = _char_data_uri("explain")
+    return data
+
+
+def generate(pillar: str, day_index: int, app_url: str, out_path: str,
+             override: dict | None = None) -> str | None:
+    """pillar に応じてコンテンツを構造化→（tip/contrarianはキャラ添付）→レンダリング。失敗で None。
+    override 指定時（--text の完成稿）は A(auto)/B(spec) で描画データを組む。"""
+    data = build_data(pillar, day_index, override)
     return render(data, out_path)
 
 

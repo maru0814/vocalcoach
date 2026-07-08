@@ -122,6 +122,43 @@ finally:
     q.enqueue, line_client.push_approval = _orig_enqueue, _orig_push
 
 
+# ---- 図解の A(自動) / B(構造化) 描画データ（renderは呼ばず build_data で検証） ----
+import infographic
+
+# TC-05: A(auto) contrarian = 本文/リプを自動構造化。見出しは本文1行目、鍵はリプ由来。
+a = infographic.build_data("contrarian", 0,
+                           {"mode": "auto", "text": CUSTOM_TEXT, "reply": CUSTOM_REPLY})
+check("TC-05 A: type=contrarian", a.get("type") == "contrarian")
+check("TC-05 A: 見出し=本文1行目", a.get("title") == "厳しいことを言います。", f"=> {a.get('title')!r}")
+check("TC-05 A: 鍵は2枚", len(a.get("reasons", [])) == 2)
+
+# TC-06: B(spec) contrarian = 運用者の構造をそのまま。誤解/鍵を制御でき、highlightは自動補完。
+SPEC = {"title": "音痴は、カラオケで歌い込めば直る", "verdict": "半分ウソ",
+        "reasons": [{"title": "耳", "body": "原因は喉ではなく耳。"},
+                    {"title": "可視化", "body": "ズレを見てから直す。"}],
+        "summary": "必要なのは練習量より、ズレの可視化。"}
+b = infographic.build_data("contrarian", 0, {"mode": "spec", "data": SPEC})
+check("TC-06 B: 見出し=指定の誤解", b.get("title") == SPEC["title"])
+check("TC-06 B: 判定=指定", b.get("verdict") == "半分ウソ")
+check("TC-06 B: 鍵1=耳 / 鍵2=可視化",
+      [r["title"] for r in b.get("reasons", [])] == ["耳", "可視化"])
+check("TC-06 B: highlight自動補完", bool(b.get("highlight")))
+
+# TC-07: A と B は明確に異なる出力（見出し・鍵ラベルが別物）
+check("TC-07 A≠B: 見出しが違う", a.get("title") != b.get("title"))
+check("TC-07 A≠B: 鍵ラベルが違う",
+      [r["title"] for r in a.get("reasons", [])] != [r["title"] for r in b.get("reasons", [])])
+
+# TC-08: --image-spec 不正JSON → rc=2（安全に停止）
+gp.generate_post = _boom
+try:
+    rc, out = run_main(["--text", CUSTOM_TEXT, "--pillar", "contrarian",
+                        "--image-spec", "{not json", "--dry-run"])
+    check("TC-08 不正spec→rc=2", rc == 2)
+finally:
+    gp.generate_post = _orig_generate_post
+
+
 failed = [tc for tc, ok, _ in results if not ok]
 print("\n" + "─" * 40)
 print(f"{len(results) - len(failed)}/{len(results)} PASS")
