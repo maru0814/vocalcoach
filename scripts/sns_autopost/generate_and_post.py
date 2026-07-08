@@ -15,6 +15,8 @@
   APP_URL=https://...       … 誘導先（未設定なら本番URL）
   GEMINI_API_KEY=...        … あれば文面をAI生成（無くてもテンプレで動く）
   X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_SECRET … X投稿用（OAuth1.0a）
+  THREADS_ENABLED=0         … 1でThreadsにも同時投稿（docs/63/64。無料。既定OFF）
+  THREADS_ACCESS_TOKEN / THREADS_USER_ID … Threads投稿用（threads_client.py 参照）
   POST_LINK=0               … 1で自己リプにURLを付与。URL投稿は$0.20と高い＆reach減のため既定OFF
   POST_SLOT=1               … 1=昼枠/2=夜枠。1日2投稿で別の型を出すため（--slot でも指定可）
   MAX_POSTS_PER_DAY=2       … 1日の投稿上限（予算ガード）
@@ -46,6 +48,7 @@ import uuid
 import images
 import infographic
 import themes
+import threads_client
 
 try:
     from dotenv import load_dotenv  # 任意。無ければ環境変数だけ使う
@@ -83,9 +86,10 @@ def _read_jsonl(path: str) -> list:
     return rows
 
 
-def _log_post(tweet_id: str, pillar: str, had_link: bool, had_reply: bool = False) -> None:
+def _log_post(tweet_id: str, pillar: str, had_link: bool, had_reply: bool = False,
+              threads_id: str = "") -> None:
     rec = {"tweet_id": tweet_id, "pillar": pillar, "link": bool(had_link),
-           "reply": bool(had_reply),
+           "reply": bool(had_reply), "threads_id": threads_id,
            "ts": datetime.datetime.now().isoformat(timespec="seconds")}
     with open(POSTS_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -254,6 +258,27 @@ def post_to_x(text: str, reply: str | None, link: str | None,
         return False, "", f"EXC: {e}"
 
 
+def post_all(text: str, reply: str | None, link: str | None,
+             post_link: bool, image_path: str | None = None) -> tuple[bool, str, str, str]:
+    """X→Threads の順に投稿する（docs/63/64）。呼び出しは webhook 承認経路と即投稿経路の2箇所。
+    - X が主戦場: X 失敗なら Threads は呼ばず全体失敗。
+    - Threads は追加チャネル: 失敗しても全体は成功のまま info に追記（分離失敗設計）。
+    - THREADS_ENABLED が無効なら Threads API は一切呼ばない（完全に従来動作）。
+    returns (ok, tweet_id, threads_id, info)。"""
+    ok, tweet_id, info = post_to_x(text, reply, link, post_link, image_path)
+    if not ok:
+        return False, "", "", info
+    threads_id = ""
+    if threads_client.flag_enabled():
+        t_ok, threads_id, t_info = threads_client.post(text, reply, link, post_link, image_path)
+        if t_ok:
+            info += f" / Threads: {t_info}"
+        else:
+            threads_id = ""
+            info += f" / Threads失敗: {t_info}"
+    return True, tweet_id, threads_id, info
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pillar",
@@ -353,10 +378,12 @@ def main() -> int:
         print(f"⏸ 予算/上限ガードで停止: {why}")
         return 0
 
-    ok, tweet_id, info = post_to_x(text, reply, link, post_link, image_path)
+    ok, tweet_id, threads_id, info = post_all(text, reply, link, post_link, image_path)
     if ok:
-        _log_post(tweet_id, pillar, post_link, bool(reply))
-        print(f"✅ 投稿しました: id={tweet_id} ({info})  [{why}]")
+        _log_post(tweet_id, pillar, post_link, bool(reply), threads_id)
+        print(f"✅ 投稿しました: id={tweet_id}"
+              + (f" / Threads id={threads_id}" if threads_id else "")
+              + f" ({info})  [{why}]")
         return 0
     print(f"❌ 投稿に失敗: {info}", file=sys.stderr)
     return 1

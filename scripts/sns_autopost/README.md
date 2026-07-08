@@ -17,6 +17,7 @@
   - 設計: `docs/46_デザイン仕様_X投稿インフォグラフィック.md`
 - 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日2投稿（`MAX_POSTS_PER_DAY=2`）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥450前後（投稿60件＋計測）。
 - 🚀 **X Premium（Web版が安い）** に入るとインプレ約6倍。これが最大の費用対効果（docs/29）。
+- ✅ **Threadsへの同時投稿（任意・無料）**: `THREADS_ENABLED=1` で承認1回でX+Threads両方に投稿（後述）。
 - ⚠️ Instagram/TikTok の完全自動投稿は制限が厳しく非推奨（半自動）。
 
 ## セットアップ（5分）
@@ -36,6 +37,18 @@ cp .env.example .env      # 値を入れる（.env はGitに入らない）
 1. https://developer.x.com で開発者登録 → アプリ作成
 2. アプリの **User authentication settings** で権限を **Read and write** に
 3. **API Key/Secret**（Consumer）と **Access Token/Secret** を発行し `.env` に貼る
+
+### Threads にも同時投稿する（任意・無料。docs/63/64）
+`THREADS_ENABLED=1` にすると、**LINEの承認1回で X と Threads の両方**に投稿する
+（承認操作は増えない）。Threads の投稿APIは**無料**で、失敗しても X 投稿は止まらない
+（LINE返信に ⚠ で明記）。既定は `0`＝完全に従来どおり。
+1. https://developers.facebook.com/ でアプリ作成 → ユースケース **Threads API** を追加
+2. 自分のThreadsアカウントをテスターとして連携（Threadsアプリ側で承認。自分に投稿するだけなら審査不要）
+3. **長期アクセストークン**（約60日）と **ThreadsユーザーID** を `.env` に貼る
+   （トークンは45日経過で投稿時に自動リフレッシュ → `{SNS_DATA_DIR}/threads_token.json` に保存。手動再発行は不要）
+- 画像添付には `SNS_PUBLIC_BASE_URL` が必要（ThreadsのAPIは公開URL渡しのため。LINEプレビューと同じ `GET /sns/img/` を使う）。未設定ならテキストのみ投稿
+- Threads の本文上限は500字（超過分は自動で「…」切り詰め）。予算ガードは従来どおりX費用のみを数える
+- Docker / Caddy / cron の変更は不要。`.env` 編集＋コンテナ再起動だけで有効化・無効化できる
 
 ## 専門家ゲート（出稿前レビュー / skill: sns-strategist）
 生成した投稿（本文＋自己リプ＋画像）は、**世界水準SNSマーケの採点ゲート**（`expert_review.py`）を
