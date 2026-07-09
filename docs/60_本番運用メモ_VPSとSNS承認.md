@@ -200,3 +200,27 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   ```
 - **本番実証**: PR#145 デプロイ後に手動1回実行して `/var/log/access_funnel.jsonl` に初回行が入ることを確認済み
   （初回はログ蓄積前のため page_views=0。診断・実会員はDB既知値と一致）。
+
+## 毎朝の定例メトリクスLINE通知（daily_metrics_line.py）（2026-07-09 追加）
+- **目的**: 毎朝、前日(JST)の「サービスページ訪問者数(非会員含む)・新規登録者・ログインUU」を
+  運用者のLINEに1通プッシュする。上の週次ファネルの日次・自動通知版。
+- **スクリプト**: `scripts/ops/daily_metrics_line.py`。host で `python3` 実行。集計元は週次ファネルと同じ:
+  - 訪問者(非会員含む) = Caddyアクセスログ(`/data/access.log*`)の**前日のユニーク訪問IP**（＋ページ閲覧PV）。
+    静的アセット/API/sns を除外した「HTMLページ相当のGET」だけを数える（access_funnel と同一規則）。
+  - 新規登録 = 本番SQLite `users`（`@example.com` のテストを除外＝実会員）の前日 `created_at` 件数。
+  - ログインUU = **その日に認証必須の操作(チャット作成/更新・録音・FB)をしたユニーク実会員**。
+    login を記録するテーブルが無いための代替値（＝実質デイリーアクティブ会員）。真のログイン数が要るなら
+    backend にログインイベント記録を足す（backend-engineer）。
+  - 送信は sns コンテナ内 `line_client.push_text()` を `docker exec` で叩いて再利用（LINEキーは sns の env）。
+  - host実行なのは access_funnel と同じ（sns コンテナから兄弟の caddy/backend を exec できないため）。
+  - 履歴は `/var/log/daily_metrics.jsonl` に1行/日で追記（推移を後から追える）。
+- **cron**: `0 8 * * *`（毎朝8:00。サーバTZ=JST）。`remote_deploy.sh` と `setup_approval.sh` の両方に冪等登録。
+- **注意**: Caddyログは 2026-07-08 08:40 から記録開始（PR#143）なので、7/8ぶんの訪問者数は午前欠けの部分集計。
+  7/9 以降は丸1日ぶん。ユニークIPは NAT/動的IPで厳密なUUではないが、週次と定義を揃えた傾向把握用。
+- **手動実行 / 動作確認**:
+  ```bash
+  ssh root@160.251.177.227 'DRY_RUN=1 python3 /opt/vocalcoach/scripts/ops/daily_metrics_line.py'  # 集計だけ(LINE送信なし)
+  ssh root@160.251.177.227 'python3 /opt/vocalcoach/scripts/ops/daily_metrics_line.py'            # 実送信
+  ```
+- **本番実証**: 2026-07-09、前日(7/8)ぶんを実DB/実ログで集計→LINE実送信まで確認済み
+  （訪問者16・PV79・新規登録1・ログインUU2、`[LINE] OK`）。

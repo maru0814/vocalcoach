@@ -137,6 +137,8 @@ if [ "$DO_CRON" = 1 ]; then
     "30 22 * * 0 $C lead_metrics.py >> /var/log/sns_leads.log 2>&1"
     # LP到達ファネルの週次集計（host実行。caddy/backendをexecするためコンテナ内ではなくhost python3で回す）
     "45 22 * * 0 python3 $REPO_ROOT/scripts/ops/access_funnel.py >> /var/log/access_funnel.log 2>&1"
+    # 毎朝の定例メトリクス（前日の訪問者/登録/ログインUUをLINE通知。host実行）
+    "0 8 * * * python3 $REPO_ROOT/scripts/ops/daily_metrics_line.py >> /var/log/daily_metrics.log 2>&1"
   )
   CUR="$(crontab -l 2>/dev/null || true)"
   for l in "${LINES[@]}"; do
