@@ -211,6 +211,9 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   - ログインUU = **その日に認証必須の操作(チャット作成/更新・録音・FB)をしたユニーク実会員**。
     login を記録するテーブルが無いための代替値（＝実質デイリーアクティブ会員）。真のログイン数が要るなら
     backend にログインイベント記録を足す（backend-engineer）。
+  - **メール同送**: 新規登録者と ログインUU本人の**メールアドレス**を、それぞれの見出しの下に列挙して
+    LINE本文に載せる（運用者が「誰が」を追えるように）。件数0なら見出しのみ。
+    PII蓄積を避けるため `/var/log/daily_metrics.jsonl` の履歴には件数のみ記録し、メールは残さない。
   - 送信は sns コンテナ内 `line_client.push_text()` を `docker exec` で叩いて再利用（LINEキーは sns の env）。
   - host実行なのは access_funnel と同じ（sns コンテナから兄弟の caddy/backend を exec できないため）。
   - 履歴は `/var/log/daily_metrics.jsonl` に1行/日で追記（推移を後から追える）。

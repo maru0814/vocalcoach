@@ -73,37 +73,57 @@ def access_stats(start: datetime, end: datetime) -> dict:
     return {"page_views": views, "visitors": len(ips)}
 
 
-def db_counts(start: datetime, end: datetime) -> dict | None:
-    """本番SQLiteから前日(JST)の新規登録(実会員)とアクティビティUUを取る。
+# backend コンテナ内で走らせるDB集計。窓の境界は US/UE 環境変数で渡す（文字列クォート事故を避ける）。
+# @example.com のテストアカウントは登録数・UU・メール一覧の全てから除外（access_funnel の実会員定義）。
+_DB_SCRIPT = r"""
+import sqlite3, json, os
+c = sqlite3.connect('/data/app.db').cursor()
+us, ue = os.environ["US"], os.environ["UE"]
+# 実会員(@example.com のテスト除外)の id->email
+id2email = dict(c.execute("SELECT id, email FROM users WHERE email NOT LIKE '%@example.com'"))
+# 新規登録（実会員）の email 一覧（登録順）
+reg_emails = [e for (_i, e) in c.execute(
+    "SELECT id, email FROM users WHERE email NOT LIKE '%@example.com' "
+    "AND created_at>=? AND created_at<? ORDER BY created_at", (us, ue))]
+# アクティビティUU: その日に作成 or 更新された chat_sessions / recordings ＋ その日のFB
+uu = set()
+for r in c.execute("SELECT DISTINCT user_id FROM chat_sessions "
+                   "WHERE (created_at>=? AND created_at<?) OR (updated_at>=? AND updated_at<?)",
+                   (us, ue, us, ue)):
+    uu.add(r[0])
+for r in c.execute("SELECT DISTINCT user_id FROM recordings "
+                   "WHERE (created_at>=? AND created_at<?) OR (updated_at>=? AND updated_at<?)",
+                   (us, ue, us, ue)):
+    uu.add(r[0])
+for r in c.execute("SELECT DISTINCT user_id FROM message_feedback "
+                   "WHERE created_at>=? AND created_at<?", (us, ue)):
+    uu.add(r[0])
+# 実会員だけに絞ってメール化（None・テストアカウントは id2email に無いので自然に落ちる）
+uu_emails = sorted(id2email[i] for i in uu if i in id2email)
+print(json.dumps({"registrations": len(reg_emails), "reg_emails": reg_emails,
+                  "active_uu": len(uu_emails), "uu_emails": uu_emails}))
+"""
 
-    @example.com のテストアカウントは登録数・UUの両方から除外（access_funnel の実会員定義に合わせる）。
-    """
+
+def db_counts(start: datetime, end: datetime) -> dict | None:
+    """本番SQLiteから前日(JST)の新規登録・アクティビティUUの件数と、それぞれのメール一覧を取る。"""
     us = start.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
     ue = end.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
-    py = (
-        "import sqlite3;"
-        "c=sqlite3.connect('/data/app.db').cursor();"
-        f"us='{us}';ue='{ue}';"
-        # テストアカウント(@example.com)の user_id 集合
-        "tst=set(r[0] for r in c.execute(\"SELECT id FROM users WHERE email LIKE '%@example.com'\"));"
-        # 新規登録（実会員のみ）
-        "reg=c.execute(\"SELECT COUNT(*) FROM users WHERE email NOT LIKE '%@example.com' "
-        "AND created_at>=? AND created_at<?\",(us,ue)).fetchone()[0];"
-        # アクティビティUU: その日に作成 or 更新された chat_sessions / recordings ＋ その日のFB
-        "uu=set();"
-        "[uu.add(r[0]) for r in c.execute('SELECT DISTINCT user_id FROM chat_sessions "
-        "WHERE (created_at>=? AND created_at<?) OR (updated_at>=? AND updated_at<?)',(us,ue,us,ue))];"
-        "[uu.add(r[0]) for r in c.execute('SELECT DISTINCT user_id FROM recordings "
-        "WHERE (created_at>=? AND created_at<?) OR (updated_at>=? AND updated_at<?)',(us,ue,us,ue))];"
-        "[uu.add(r[0]) for r in c.execute('SELECT DISTINCT user_id FROM message_feedback "
-        "WHERE created_at>=? AND created_at<?',(us,ue))];"
-        "uu={x for x in uu if x is not None and x not in tst};"
-        "print(reg,len(uu))"
-    )
-    out = sh(["docker", "exec", BACKEND, "python3", "-c", py]).split()
-    if len(out) != 2:
+    out = subprocess.run(
+        ["docker", "exec", "-i", "-e", f"US={us}", "-e", f"UE={ue}", BACKEND, "python3", "-"],
+        input=_DB_SCRIPT, capture_output=True, text=True,
+    ).stdout.strip()
+    try:
+        return json.loads(out)
+    except Exception:
         return None
-    return {"registrations": int(out[0]), "active_uu": int(out[1])}
+
+
+def _with_emails(header: str, emails: list[str]) -> str:
+    """見出し行の下に、該当メールを1行ずつぶら下げる。0人なら見出しだけ。"""
+    if not emails:
+        return header
+    return header + "\n" + "\n".join(f"　・{e}" for e in emails)
 
 
 def build_message(day: datetime, acc: dict, db: dict | None) -> str:
@@ -111,8 +131,10 @@ def build_message(day: datetime, acc: dict, db: dict | None) -> str:
         reg_line = "🆕 新規登録: 取得失敗"
         uu_line = "🔑 ログインUU(認証操作したユニーク): 取得失敗"
     else:
-        reg_line = f"🆕 新規登録: {db['registrations']}人"
-        uu_line = f"🔑 ログインUU(認証操作したユニーク): {db['active_uu']}人"
+        reg_line = _with_emails(f"🆕 新規登録: {db['registrations']}人", db.get("reg_emails", []))
+        uu_line = _with_emails(
+            f"🔑 ログインUU(認証操作したユニーク): {db['active_uu']}人", db.get("uu_emails", [])
+        )
     return (
         f"📊 前日のサービス指標（{day:%Y-%m-%d} JST）\n"
         f"{'─' * 16}\n"
