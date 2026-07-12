@@ -83,6 +83,14 @@ SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}
 - **一面的にしない**（アンザッツの戒め＝声は均衡した全体として機能する）。一度の改善提案は1点に絞りつつ、無関係な技術を混ぜない。
 - 「録音の長さ」を超える秒数（時刻）は絶対に言わない。原曲照合が無い時は音程の"正確さ"を断定せず「手元の安定度では…」と前置きする。
 
+# 会話モード（最重要・自然な噛み合い）
+- 歌の評価・練習だけが会話ではない。**相手の発言の意図・感情・テンポに合わせて返す。**
+- **短い相槌・雑談・挨拶**（「うん」「へー」「なるほど」「こんにちは」「いい天気ですね」等）には、コーチングに変換せず**1〜2文で自然に短く**受ける。解析数値の講義・練習の提案・録音のお願いを付けない。相手が一言なら、あなたも軽く一言で返す。
+- **感情の吐露**（「落ち込む」「もうやめようかな」「緊張した」「最悪だった」「才能ない」等）には、**まず気持ちに共感して受け止める。**解決策・データ・練習誘導を先に出さない。「そっか、そう思うくらい頑張ってきたんだね」のように、相手の気持ちに寄り添うのが先。
+- 「現在のレッスン状況」に『# 会話モード』の指示がある時は、それに従い短く自然に受ける（練習・録音誘導をしない）。
+- 明示的に練習・改善・評価を求められた時（「どうすれば直る？」「練習教えて」「今の見て」）だけ、通常のコーチングに入る。
+- 毎ターン同じ長さ・同じ締めの定型（「もしよろしければ…」「一緒に〜しましょうか？」）を繰り返さない。絵文字はやわらかい雑談では自然に使ってよい。
+
 # 質問への向き合い方・トーン
 - ユーザーの質問には、いまの課題（current task）に引きずられず、聞かれたトピックそのものに答える。直近の会話の流れも踏まえる。例: 「声を張る方法は？」と聞かれたら、ビブラート等ではなく"声を張る方法"を答える。
 - フォローアップの質問に過剰に謝らない（「混乱させてすみません」を多用しない）。普通に簡潔に答える。間違いを認めるのは実際に誤ったときだけ。
@@ -634,6 +642,65 @@ def _video_offer_line(history: Optional[list[dict]]) -> Optional[str]:
     return None
 
 
+# --- 会話モード検出（docs/66）。短い相槌・雑談・感情の吐露を、講義でなく自然に受けるための注入 ---
+# 相槌・軽い一言（これ自体が「答えを求めていない」サイン）
+_AIZUCHI = {
+    "うん", "ううん", "うんうん", "へー", "へえ", "ほー", "ほお", "ふーん", "ふうん",
+    "なるほど", "なるほどね", "そう", "そうなんだ", "そっか", "そうか", "まじ", "まじで",
+    "やった", "おお", "おー", "わかった", "了解", "りょうかい", "おつ", "おつかれ",
+    "うんうん", "たしかに", "だよね", "ですね", "そうですね",
+}
+# 明示的なコーチング/練習依頼・評価質問（短くても会話モードにしない＝ちゃんと答える）
+_EXPLICIT_REQUEST_RE = re.compile(
+    r"練習|どうすれ|どうやっ|どうしたら|教えて|直し|直る|直せ|コツ|やり方|メニュー|"
+    r"アドバイス|出したい|出せる|できるように|なりたい|上達|うまく|上手|見て|評価|診断|"
+    # 評価・FBを求める短い質問（「今の歌どうでしたか」「良かった？」等）も本題として扱う
+    r"どうでし|どうだっ|いかが|良かっ|よかっ|どう\?|どう？|何点|どこが|どこを"
+)
+# 感情の吐露（まず共感すべきサイン）
+_EMOTION_RE = re.compile(
+    r"落ち込|へこ|凹|もうやめ|やめようか|やめたい|才能(が)?ない|下手|最悪|自信(が)?ない|"
+    r"緊張|きんちょう|疲れた|つかれた|しんどい|つらい|辛い|泣|ダメだ|だめだ|無理かも|くやしい|悔し"
+)
+
+
+def _detect_conversation_mode(user_text: str) -> Optional[str]:
+    """短い相槌・雑談・感情の吐露なら会話モードの種別を返す（"emotion"|"casual"|None）。
+
+    明示的なコーチング依頼（「練習教えて」等）は短くても対象外＝ちゃんと答える。
+    """
+    t = (user_text or "").strip()
+    if not t:
+        return None
+    # 感情の吐露は最優先（「上達しなくて落ち込む」等、依頼語を含んでも気持ちを先に受ける）
+    if _EMOTION_RE.search(t):
+        return "emotion"
+    if _EXPLICIT_REQUEST_RE.search(t):
+        return None
+    core = re.sub(r"[\s、。！？!?…〜～ー]+", "", t)
+    core_plain = re.sub(r"[!-/:-@\[-`{-~！-／：-＠]", "", core)
+    if core in _AIZUCHI or core_plain in _AIZUCHI:
+        return "casual"
+    if len(core_plain) < 12:  # 短い一言・挨拶・雑談
+        return "casual"
+    return None
+
+
+def _conversation_mode_line(user_text: str) -> Optional[str]:
+    mode = _detect_conversation_mode(user_text)
+    if mode is None:
+        return None
+    base = (
+        "# 会話モード（重要）: 今回のユーザー発言は短い相槌・雑談・挨拶・感情の吐露です。"
+        "コーチングに変換せず、1〜2文で自然に短く受けてください。"
+        "解析数値の講義・練習の提案・録音のお願いを付けない（相手が求めていない）。"
+        "相手のテンポに合わせ、『もしよろしければ』『一緒に〜しましょうか』のような定型で締めない。"
+    )
+    if mode == "emotion":
+        base += "とくに今回は気持ちの吐露なので、解決策やデータを出す前に、まず気持ちに共感して受け止めてください。"
+    return base
+
+
 def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
     """会話履歴 + 今回の発言（状況コンテキスト付き）を Gemini の contents 形式に組み立てる。
 
@@ -660,6 +727,10 @@ def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
     video_line = _video_offer_line(history)
     if video_line:
         context += "\n" + video_line
+    # 会話モード（短い相槌・雑談・感情）なら、講義に変換せず自然に受ける指示を注入（docs/66）
+    convo_line = _conversation_mode_line(user_text)
+    if convo_line:
+        context += "\n" + convo_line
     final_text = (
         "# このターンについて\n"
         "これは会話の続きで、ユーザーがテキストで話しかけてきた場面です。"
@@ -721,10 +792,12 @@ def _scrub_invented_seconds(reply: str, allowed: set[int]) -> str:
 
 
 def _complete(contents, timeout_sec: Optional[float] = None,
-              max_tokens: Optional[int] = None) -> Optional[str]:
+              max_tokens: Optional[int] = None,
+              model: Optional[str] = None) -> Optional[str]:
     """Gemini を1往復呼び出してテキストを返す。
 
     timeout_sec: 応答待ちの上限秒（既定 settings.llm_timeout_sec）。超過時は None。
+    model: 使うモデル（既定 settings.llm_model）。対話は llm_chat_model を渡して格上げする。
     APIキー未設定・SDK未導入・API エラー時は None（呼び出し側でフォールバック）。
     """
     if not settings.llm_enabled:
@@ -742,7 +815,7 @@ def _complete(contents, timeout_sec: Optional[float] = None,
             http_options=types.HttpOptions(timeout=int(to * 1000)),
         )
         resp = client.models.generate_content(
-            model=settings.llm_model,
+            model=model or settings.llm_model,
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
@@ -781,12 +854,14 @@ def _wants_reference(text: str) -> bool:
     return any(k in text for k in _REFERENCE_HINTS)
 
 
-def _complete_with_tools(contents, force_tool: bool = False) -> Optional[str]:
+def _complete_with_tools(contents, force_tool: bool = False,
+                         model: Optional[str] = None) -> Optional[str]:
     """ツール（function calling）を許可して Gemini を呼び、最終テキストを返す（docs/44）。
 
     force_tool=True の初回は mode=ANY で find_reference_video を必ず呼ばせる。
     モデルがツールを要求したら実行して結果を返し、テキストが得られるまで最大
     settings.coach_tool_loop_max 回まわす。失敗・SDK未導入・キー未設定時は None。
+    model: 使うモデル（既定 settings.llm_model）。対話は llm_chat_model を渡して格上げする。
     """
     if not settings.llm_enabled:
         return None
@@ -819,6 +894,9 @@ def _complete_with_tools(contents, force_tool: bool = False) -> Optional[str]:
                 temperature=0.3,
                 tools=[tool],
                 tool_config=tool_config,
+                # 思考を無効化。2.5-flash は思考が ON だと出力枠(max_output_tokens)を食い潰して
+                # 本文が途中で切れる（_complete と揃える。docs/66 で対話を 2.5-flash に格上げした際に露呈）。
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             )
 
         convo = list(contents)
@@ -828,7 +906,7 @@ def _complete_with_tools(contents, force_tool: bool = False) -> Optional[str]:
             # 初回だけ強制（ANY）。以降は AUTO に戻して自然文を生成させる。
             cfg = _config("ANY") if (force_tool and _i == 0) else _config(None)
             resp = client.models.generate_content(
-                model=settings.llm_model, contents=convo, config=cfg,
+                model=model or settings.llm_model, contents=convo, config=cfg,
             )
             calls = list(getattr(resp, "function_calls", None) or [])
             last_text = (resp.text or "").strip() or last_text
@@ -903,14 +981,15 @@ def generate_reply(
     """ユーザーのテキストに対するソラ先生の自然言語返答を生成する。"""
     context = build_session_context(state)
     contents = _build_contents(state, user_text, history)
+    chat_model = settings.llm_chat_model  # 対話は一段上のモデルに格上げ（docs/66）
     # ツール化ON時は function calling 経由（動画等の"事実"は実データをツールで供給）。
     if settings.llm_enabled and settings.coach_tools_enabled:
-        reply = _complete_with_tools(contents, force_tool=_wants_reference(user_text))
+        reply = _complete_with_tools(contents, force_tool=_wants_reference(user_text), model=chat_model)
     else:
-        reply = _complete(contents)
+        reply = _complete(contents, model=chat_model)
     if not reply and settings.llm_enabled:
         # 一過性の失敗（タイムアウト/過負荷）で定型に落ちないよう、1回だけ再試行する（ツール無し）。
-        reply = _complete(contents)
+        reply = _complete(contents, model=chat_model)
     if reply:
         # facts / 状況 / ユーザー発言 に無い秒数は伏せる（捏造防止の最終ガード）
         reply = _scrub_invented_seconds(reply, _allowed_seconds(context, user_text))
@@ -1079,7 +1158,9 @@ def generate_coach_comment(
         f"事実に無い数値を作らず、2〜4文・120字程度の自然な会話文で返してください。"
     )
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
-    reply = _complete(contents, timeout_sec=timeout_sec, max_tokens=max_tokens)
+    # 会話コメントも対話モデルに格上げ（docs/66）
+    reply = _complete(contents, timeout_sec=timeout_sec, max_tokens=max_tokens,
+                      model=settings.llm_chat_model)
     if reply:
         # facts に無い秒数は伏せる（捏造防止の最終ガード）
         reply = _scrub_invented_seconds(reply, _allowed_seconds(facts))

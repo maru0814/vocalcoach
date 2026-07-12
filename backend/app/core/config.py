@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     # 最安クラス＋無料枠ありの Flash-Lite を既定に。env で上書き可。
     llm_model: str = "gemini-flash-lite-latest"
+    # 対話ターン（会話返答・コーチコメント）専用モデル（docs/66）。
+    # 既定は llm_model（flash-lite）と同じ。格上げ（gemini-2.5-flash）は before/after 測定の結果、
+    # カジュアル/感情は改善したが「多ターンの噛み合い」が悪化＋コスト3倍のため既定では採らない
+    # （丸山CEO判断 2026-07-12: 会話モードのプロンプト側だけ採用）。必要なら env で 2.5-flash に格上げ可。
+    llm_chat_model: str = "gemini-flash-lite-latest"
     # 発音の聞き取り（音声入力）用。Flash-Lite は音声が弱いので Flash を使う。
     llm_audio_model: str = "gemini-2.5-flash"
     llm_max_tokens: int = 400

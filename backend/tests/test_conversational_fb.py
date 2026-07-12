@@ -20,13 +20,28 @@ BAD_SCORE = re.compile(r"\d+\s*/\s*100|\d+\s*点|[◎○△×]")
 CARD_TYPES = {"feedback", "practice", "judge", "progress", "diagnosis"}
 
 
+_ORIG_COMPLETE = None
+_ORIG_COMPLETE_TOOLS = None
+
+
 def setUpModule():
     # LLMを無効化 → _llm_or / generate_reply は確定的なテンプレ文へフォールバック。
     # _complete だけでなく tools 経路（_complete_with_tools）も遮断すること。
     # 実キー（GEMINI_API_KEY）がある環境では generate_reply が tools 経路を通り、
     # スタブを素通りして本物の API を叩いてしまう（課金・不安定・偽の失敗の原因）。
+    global _ORIG_COMPLETE, _ORIG_COMPLETE_TOOLS
+    _ORIG_COMPLETE = llm._complete
+    _ORIG_COMPLETE_TOOLS = llm._complete_with_tools
     llm._complete = lambda *a, **k: None  # type: ignore
     llm._complete_with_tools = lambda *a, **k: None  # type: ignore
+
+
+def tearDownModule():
+    # 差し替えたスタブを元に戻す（他テストへリークさせない。pytest でのテスト間汚染防止）。
+    if _ORIG_COMPLETE is not None:
+        llm._complete = _ORIG_COMPLETE  # type: ignore
+    if _ORIG_COMPLETE_TOOLS is not None:
+        llm._complete_with_tools = _ORIG_COMPLETE_TOOLS  # type: ignore
 
 
 def _state(**over):
