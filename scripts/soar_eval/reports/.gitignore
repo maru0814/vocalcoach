@@ -1,0 +1,12 @@
+# 中間生成物は追跡しない（会話transcript・審査の生JSON・分割ケース）。
+# 最終レポート(*.md)と所見一覧(findings_*.jsonl)だけコミットする。
+cases/
+cases_compare/
+cases_v3/
+judge_out/
+results_all.json
+smoke_planted.json
+*.tmp
+# 自己批判なしの初回審査（過大評価・本文で経緯として言及済み）は残さない
+REPORT_holistic.md
+findings_holistic.jsonl
