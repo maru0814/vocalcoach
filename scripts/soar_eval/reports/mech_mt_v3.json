@@ -1,0 +1,68 @@
+{
+  "before_all": {
+    "convs": 169,
+    "turns": 252,
+    "rerecord": 12,
+    "video_off": 45,
+    "video_spam_convs": 10,
+    "apology": 18,
+    "repeat": 0,
+    "denial": 25,
+    "bare_denial": 8
+  },
+  "after_all": {
+    "convs": 18,
+    "turns": 69,
+    "rerecord": 1,
+    "video_off": 32,
+    "video_spam_convs": 11,
+    "apology": 7,
+    "repeat": 1,
+    "denial": 0,
+    "bare_denial": 0
+  },
+  "before_multiturn": {
+    "convs": 18,
+    "turns": 69,
+    "rerecord": 1,
+    "video_off": 24,
+    "video_spam_convs": 9,
+    "apology": 4,
+    "repeat": 0,
+    "denial": 0,
+    "bare_denial": 0
+  },
+  "after_multiturn": {
+    "convs": 18,
+    "turns": 69,
+    "rerecord": 1,
+    "video_off": 32,
+    "video_spam_convs": 11,
+    "apology": 7,
+    "repeat": 1,
+    "denial": 0,
+    "bare_denial": 0
+  },
+  "before_single": {
+    "convs": 151,
+    "turns": 183,
+    "rerecord": 11,
+    "video_off": 21,
+    "video_spam_convs": 1,
+    "apology": 14,
+    "repeat": 0,
+    "denial": 25,
+    "bare_denial": 8
+  },
+  "after_single": {
+    "convs": 0,
+    "turns": 0,
+    "rerecord": 0,
+    "video_off": 0,
+    "video_spam_convs": 0,
+    "apology": 0,
+    "repeat": 0,
+    "denial": 0,
+    "bare_denial": 0
+  }
+}
