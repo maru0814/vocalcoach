@@ -60,11 +60,13 @@ check("TC-IG03f 引用なしcontrarian", len(d["reasons"]) == 2 and d["highlight
       f"r1={d['reasons'][0]['title']}")
 
 # ---- 診断導線パーサ（新仕様: 各タイプの実画像を使う図解）----
-# voice_type = spotlight に image(data URI) と desc、title「【声タイプ図鑑】{Name}」
+# voice_type = spotlight に image(data URI) と desc、title「【{Name}】タイプの声、誰に似てる？」
+# （ラベル陳列「【声タイプ図鑑】◯◯」は好奇心ギャップ書式へ刷新済み＝themes.py/expert_review.py 参照）
 dv = ig.parse_diagnosis("voice_type", 5)  # 5 = Dramatic
+_vt5_name = themes.VOICE_TYPES[5 % len(themes.VOICE_TYPES)][0]  # 期待名を実データから導出（書式非依存）
 check("TC-IG30 voice_type spotlight", dv["type"] == "diagnosis"
       and dv.get("spotlight", {}).get("image", "").startswith("data:image/jpeg")
-      and "【声タイプ図鑑】" in dv["title"], f"title={dv['title']}")
+      and dv["title"] == f"【{_vt5_name}】タイプの声、誰に似てる？", f"title={dv['title']}")
 # self_type / visual = types 8件・各 image 付き
 for pl in ("self_type", "visual"):
     dd = ig.parse_diagnosis(pl, 0)

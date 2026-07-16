@@ -8,13 +8,18 @@ from contextlib import redirect_stdout
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-# 画像生成とゲートのネットワークを無効化（安全・高速）。
+# 画像生成のネットワークを無効化（安全・高速）。
 os.environ["SNS_IMAGE"] = "0"
-os.environ.pop("GEMINI_API_KEY", None)  # expert_review はキー無しでskip＝approved
 
 import generate_and_post as gp
 import approval_queue as q
 import line_client
+
+# expert_review はキー無しでskip＝approved にする。
+# .env がある環境（本番 sns コンテナ等）では generate_and_post の import 時に
+# load_dotenv が GEMINI_API_KEY を復活させるため、pop は import 後に行う。
+# （load_dotenv を行うのは generate_and_post のみ。import 後に pop すれば復活しない）
+os.environ.pop("GEMINI_API_KEY", None)
 
 results = []
 
