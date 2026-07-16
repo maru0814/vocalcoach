@@ -159,6 +159,56 @@ finally:
     gp.generate_post = _orig_generate_post
 
 
+# ---- 完成稿(mode=card)の画像分岐: 診断導線は図鑑図解を優先、tip/contrarianはカード ----
+import themes
+
+
+def _run_build_image(pillar, override, ig_result):
+    """build_image を実レンダリング無しで実行し、(戻り値, 図解呼び出し?, カード呼び出しheadline) を返す。"""
+    calls = {"ig": None, "card": None}
+    _orig_ig, _orig_img = gp.infographic.generate, gp.images.generate_image
+
+    def _fake_ig(pillar, day_index, app_url, out, override=None):
+        calls["ig"] = {"pillar": pillar, "override": override}
+        return ig_result
+
+    def _fake_card(pillar, headline, out):
+        calls["card"] = headline
+        return "/tmp/card.png"
+
+    gp.infographic.generate = _fake_ig
+    gp.images.generate_image = _fake_card
+    os.environ["SNS_IMAGE"] = "1"
+    try:
+        path = gp.build_image(pillar, 1, 0, "https://x.test", override=override)
+    finally:
+        gp.infographic.generate, gp.images.generate_image = _orig_ig, _orig_img
+        os.environ["SNS_IMAGE"] = "0"
+    return path, calls
+
+
+CARD_OVERRIDE = {"mode": "card", "text": CUSTOM_TEXT, "reply": CUSTOM_REPLY}
+
+# TC-09: 診断導線 × mode=card → themes 図鑑図解を先に試す（override=None で呼ぶ）。カードは焼かない
+for pl in themes.DIAGNOSIS_PILLARS:
+    path, calls = _run_build_image(pl, dict(CARD_OVERRIDE), ig_result="/tmp/ig.png")
+    check(f"TC-09 {pl}: 図解を先に試す", calls["ig"] is not None
+          and calls["ig"]["override"] is None, f"=> ig_called={calls['ig']}")
+    check(f"TC-09 {pl}: 図解成功ならカード無し", path == "/tmp/ig.png" and calls["card"] is None)
+
+# TC-10: 診断導線 × mode=card × 図解失敗 → 完成稿の文言からカードにフォールバック
+path, calls = _run_build_image("voice_type", dict(CARD_OVERRIDE), ig_result=None)
+check("TC-10 図解失敗→カードにフォールバック", path == "/tmp/card.png" and calls["card"] is not None)
+check("TC-10 カード見出しは完成稿由来",
+      calls["card"] == gp.images.build_headline("voice_type", CUSTOM_TEXT, CUSTOM_REPLY),
+      f"=> {calls['card']!r}")
+
+# TC-11: tip/contrarian × mode=card → 従来どおり図解を試さず即カード（広告化回避の規律を維持）
+for pl in ("tip", "contrarian"):
+    path, calls = _run_build_image(pl, dict(CARD_OVERRIDE), ig_result="/tmp/ig.png")
+    check(f"TC-11 {pl}: 図解を呼ばず即カード", calls["ig"] is None and path == "/tmp/card.png")
+
+
 failed = [tc for tc, ok, _ in results if not ok]
 print("\n" + "─" * 40)
 print(f"{len(results) - len(failed)}/{len(results)} PASS")

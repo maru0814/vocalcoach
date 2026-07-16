@@ -168,8 +168,10 @@ def build_image(pillar: str, slot: int, day_index: int, app_url: str,
     - 図解レンダリング不可（playwright未導入等）のときのみ、従来のカードにフォールバック。
     - 完成稿(--text)の画像は B(spec) で図解を作る。
       B(spec)={"mode":"spec","data":{誤解/鍵…}} → 運用者が制御した図解（失敗時のみカード）。
-      card={"mode":"card","text":..,"reply":..} → スペック無しの完成稿は“崩れた自動図解”を
-        避け、その文言の見出しから安全なカードを焼く。"""
+      card={"mode":"card","text":..,"reply":..} → スペック無しの完成稿(tip/contrarian)は
+        “崩れた自動図解”を避け、その文言の見出しから安全なカードを焼く。
+        診断導線ピラー(DIAGNOSIS_PILLARS)だけは例外: 図鑑図解(8タイプ実画像)が正本で
+        本文に依存しないため、card 指定でも themes 図解を先に試す（失敗時のみカード）。"""
     if not _truthy(os.getenv("SNS_IMAGE", "1")):
         return None
     name = (f"{datetime.date.today().isoformat()}_s{slot}_{pillar}_"
@@ -177,10 +179,11 @@ def build_image(pillar: str, slot: int, day_index: int, app_url: str,
     out = os.path.join(IMG_DIR, name)
     mode = override.get("mode") if override else None
     # スペック無しの完成稿 → 自動図解(A)は広告化しやすいのでカードに落とす。
-    if mode == "card":
+    # 診断導線は本文と無関係な図鑑図解が使えるため、カードに落とさず図解を試す。
+    if mode == "card" and pillar not in themes.DIAGNOSIS_PILLARS:
         headline = images.build_headline(pillar, override.get("text", ""), override.get("reply"))
         return images.generate_image(pillar, headline, out)
-    # B(spec) は図解を、通常(None)は themes 図解を試す。
+    # B(spec) は図解を、通常(None)・診断導線の card は themes 図解を試す。
     ig = override if mode == "spec" else None
     p = infographic.generate(pillar, day_index, app_url, out, override=ig)
     if p:
@@ -189,6 +192,8 @@ def build_image(pillar: str, slot: int, day_index: int, app_url: str,
     if mode == "spec":
         htext = (override.get("data") or {}).get("title", "")
         headline = images.build_headline(pillar, htext, None)
+    elif mode == "card":
+        headline = images.build_headline(pillar, override.get("text", ""), override.get("reply"))
     else:
         base = themes.template_post(pillar, day_index, app_url)
         headline = images.build_headline(pillar, base.get("text", ""), base.get("reply"))
@@ -320,8 +325,12 @@ def main() -> int:
                 return 2
             ig_override = {"mode": "spec", "data": spec}
         else:
-            print("[note] --image-spec 未指定 → 図解は作らずカードにします"
-                  "（図解にするなら --image-spec で誤解/鍵を渡す）")
+            if pillar in themes.DIAGNOSIS_PILLARS:
+                print("[note] --image-spec 未指定 → 診断導線は図鑑図解(8タイプ実画像)を使います"
+                      "（図解不可のときのみカード）")
+            else:
+                print("[note] --image-spec 未指定 → 図解は作らずカードにします"
+                      "（図解にするなら --image-spec で誤解/鍵を渡す）")
             ig_override = {"mode": "card", "text": args.text, "reply": args.reply}
     else:
         pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
