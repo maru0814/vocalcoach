@@ -227,3 +227,31 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   ```
 - **本番実証**: 2026-07-09、前日(7/8)ぶんを実DB/実ログで集計→LINE実送信まで確認済み
   （訪問者16・PV79・新規登録1・ログインUU2、`[LINE] OK`）。
+
+## 事例: VPS電源断で自動デプロイ3連続失敗 → 本番が4日間`main`から取り残される（2026-07-12〜16）
+- **症状**: 声タイプ図鑑（PR#159）を main にマージしたのに、本番 `/voice-type/{id}` が **404 のまま**。
+  サイト自体は 200・`/sns/healthz` も `{"status":"ok","line":true}` で、**一見「本番は正常」に見えるのが罠**。
+- **原因**: 2026-07-12 のVPS電源断。この間に走った Deploy to VPS が **3連続 failure**（01:54 / 12:30 / 14:37。
+  12:30 はPR#159マージ直後）。デプロイだけが落ち、VPS復帰後は Docker の restart policy でコンテナが自動起動したため、
+  **旧コミットのまま無停止で稼働継続**＝ヘルスチェックは全部緑。本番の git HEAD は `527106d`(07-10) で止まり、
+  origin/main `3304b73` から **数PRぶん取り残されていた**。
+- **切り分け（これが最短）**: ヘルスチェックではなく **本番のコミットを直接見る**。
+  ```bash
+  ssh root@160.251.177.227 'cd /opt/vocalcoach && git rev-parse --short HEAD && git fetch -q origin main && git rev-parse --short origin/main'
+  # HEAD != origin/main なら「デプロイされていない」。新機能が404の時は真っ先にこれ。
+  gh run list --workflow deploy.yml --limit 5 --json headSha,conclusion,createdAt   # 失敗が続いていないか
+  ```
+- **復旧**: `gh run rerun <id>` は「workflow file may be broken」で不可、`gh workflow run`（workflow_dispatch）も
+  **PATに `actions:write` が無く HTTP 403**。→ **手動デプロイ経路で復旧**:
+  ```bash
+  ssh root@160.251.177.227 'cd /opt/vocalcoach && bash scripts/deploy/remote_deploy.sh'
+  # remote_deploy.sh が VPS 側で origin/main を pull するので、実行時点の main が出る → "Deploy done: 3304b73..."
+  ```
+  → 全8タイプ `/voice-type/{id}` が 200、有名人イラスト配信、`/sns/healthz` 緑を確認。
+- **教訓**:
+  1. **「サイトが200」は「デプロイ成功」を意味しない**。電源断・デプロイ失敗でも旧コンテナは生き続ける。
+     機能が出ていない時は healthz を見ずに **HEAD vs origin/main** を比較する。
+  2. **デプロイ失敗は silent に積み上がる**。長期の停電・障害のあとは `gh run list --workflow deploy.yml` を必ず見る。
+  3. Actions が使えない時の**逃げ道は `remote_deploy.sh` の手動実行**（PATに actions:write が無くても復旧できる）。
+  4. squash マージ後に**同じブランチの重複PRが自動で残る**ことがある（merge-base ずれで差分が「新規」に見える）。
+     中身が main にあるなら **マージせずクローズ**（今回 #162/#164 をクローズ）。
