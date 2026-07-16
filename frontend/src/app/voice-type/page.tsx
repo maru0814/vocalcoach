@@ -8,6 +8,8 @@ import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
 import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
 import { analyzeVoiceType, getMe, VoiceTypeResult } from "@/lib/api";
+import { VoiceTypeProfileArticle } from "@/components/voice/VoiceTypeProfileArticle";
+import type { VoiceProfile } from "@/content/voiceProfiles";
 import { BrandWordmark } from "@/components/brand/Brand";
 import { CoachAvatar } from "@/components/character/Coach";
 import { StageDecor } from "@/components/site/Stage";
@@ -62,7 +64,11 @@ export default function VoiceTypePage() {
   // 認証状態。未ログインでも診断は1回完走できる（docs/35 課題1: アハ→登録）。
   // 結果は未ログインだとぼかして提示し、シェア/保存の瞬間に登録へ誘導する。
   const [auth, setAuth] = useState<"checking" | "in" | "out">("checking");
+  // 診断されたタイプの詳細プロフィール記事（docs/69 FR-01）。
+  // 本文は約300KBあるため初期バンドルに含めず、結果が出てから動的importする。
+  const [profile, setProfile] = useState<VoiceProfile | null>(null);
 
+  const resultRef = useRef<HTMLElement | null>(null);
   const recorderRef = useRef<Recorder | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -86,14 +92,47 @@ export default function VoiceTypePage() {
     if (result && auth === "in") clearResultBridge();
   }, [result, auth]);
 
+  // 結果が決まったらそのタイプの記事を読み込む（docs/69 FR-01）。
+  // 本文は約300KBあるため初期バンドルに含めず動的importする。診断直後だけでなく
+  // ブリッジからの復元（docs/67）でも result が入るため、runAnalyze ではなく result 起点で読む。
+  useEffect(() => {
+    const id = result?.voice_type?.id;
+    if (!id) {
+      setProfile(null);
+      return;
+    }
+    let cancelled = false;
+    // 記事の読み込み失敗は診断結果に影響させない（記事ブロックが出ないだけ）
+    import("@/content/voiceProfiles")
+      .then((m) => {
+        if (!cancelled) setProfile(m.VOICE_PROFILES[id] ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setProfile(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [result]);
+
+  // 診断が出たら結果カードを画面上部へ運ぶ（docs/69 FR-04）。
+  // 自動スクロールが無いと、結果もその下の記事もユーザーの視界に入らないまま終わる。
+  useEffect(() => {
+    if (!result || auth === "checking") return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    resultRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [result, auth]);
+
   async function runAnalyze(blob: Blob, filename: string) {
     setError(null);
     setResult(null);
+    setProfile(null);
     setLoading(true);
     try {
       const res = await analyzeVoiceType(blob, filename);
       setResult(res);
       saveResultBridge(res);
+      // 記事は result 起点の useEffect が読み込む（復元経路と共通化するため）
     } catch (e: unknown) {
       const err = e as Error & { status?: number };
       setError(err.message || "診断に失敗しました。もう一度お試しください。");
@@ -252,7 +291,7 @@ export default function VoiceTypePage() {
 
         {/* 結果カード */}
         {result && auth === "in" && (
-          <section className="space-y-3">
+          <section ref={resultRef} className="scroll-mt-4 space-y-3">
             <div className="rounded-2xl bg-white/90 p-4 shadow-card">
               <div ref={shareRef} className="space-y-0">
                 <VoiceTypeBlock vt={result.voice_type} score={result.score} />
@@ -262,7 +301,20 @@ export default function VoiceTypePage() {
               </div>
             </div>
 
+            {/* 下に記事が続くことを明示する誘導（docs/69 FR-05）。shareRef の外＝シェア画像には写らない */}
+            {profile && (
+              <p className="text-center">
+                <a
+                  href="#profile"
+                  className="text-xs font-bold text-brand-600 underline decoration-brand-200 underline-offset-2 transition hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                >
+                  ↓ {profile.nameJa}のプロフィールを読む
+                </a>
+              </p>
+            )}
+
             <div className="flex gap-2">
+              {/* profile は result 起点の useEffect が null に戻すため、ここでは触らない */}
               <button
                 onClick={() => { setResult(null); setError(null); clearResultBridge(); }}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 shadow-[0_4px_0_#cbd5e1] transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] active:shadow-[0_1px_0_#cbd5e1]"
@@ -279,13 +331,63 @@ export default function VoiceTypePage() {
             <p className="px-1 text-center text-[11px] text-slate-400">
               声タイプは「傾向」の推定です。録音の歌い方や録音環境で変わることがあります。
             </p>
+
+            {/* 診断されたタイプの詳細プロフィール記事（docs/69 FR-01・docs/70 §3-2）。
+                MBTIのように診断完了と同時に全文を読める。記事本体は詳細ページと共有。 */}
+            {profile && (
+              <div className="space-y-8 pt-4">
+                <h2
+                  id="profile"
+                  className="scroll-mt-4 text-center font-rounded text-xl font-black tracking-tight text-slate-900"
+                >
+                  {profile.nameJa}のプロフィール
+                </h2>
+                <VoiceTypeProfileArticle profile={profile} />
+
+                {/* 読了直後にレッスンへ橋を架ける（docs/69 FR-06・docs/70）。
+                    夜のステージ調でヒーローと呼応させ、読み物の終わり＝行動の始まりを示す。 */}
+                <section className="bg-stage grain relative overflow-hidden rounded-2xl p-6 text-center text-white shadow-soft">
+                  <StageDecor notes={false} />
+                  <div className="relative z-10">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
+                      <span className="inline-flex"><CoachAvatar size={16} /></span>
+                      ここまで読んでくれたあなたへ
+                    </span>
+                    <h2 className="mt-3 font-rounded text-2xl font-black tracking-tight">
+                      その声を、磨きにいこう
+                    </h2>
+                    <p className="mx-auto mt-3 max-w-md font-body text-sm leading-relaxed text-white/90">
+                      {profile.nameJa}の武器も、苦手も、もう分かりました。あとは、実際に歌ってみるだけです。
+                      あなたが歌った一曲をソラ先生が聴いて、{profile.nameJa}の良さがいちばん出た瞬間と、
+                      もう一歩だったところを、具体的な言葉でお返しします。
+                    </p>
+                    <Link
+                      href="/coach"
+                      className="mt-5 inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-bold text-brand-700 shadow-[0_4px_0_rgba(255,255,255,0.35)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white active:translate-y-[3px] active:shadow-[0_1px_0_rgba(255,255,255,0.35)]"
+                    >
+                      ソラ先生のレッスンを受ける →
+                    </Link>
+                  </div>
+                </section>
+
+                {/* 単独ページへの補助リンク（FR-03: あとで読み返す・URL共有用） */}
+                <p className="text-center">
+                  <Link
+                    href={`/voice-type/${result.voice_type.id}`}
+                    className="text-xs font-bold text-brand-600 underline decoration-brand-200 underline-offset-2 transition hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                  >
+                    この記事を単独ページで開く →
+                  </Link>
+                </p>
+              </div>
+            )}
           </section>
         )}
 
         {/* 未登録の結果: アハ→登録（docs/35 課題1）。結果をぼかして提示し、
             「見る・シェアする」瞬間に無料登録へ誘導する。 */}
         {result && auth !== "in" && (
-          <section className="space-y-3">
+          <section ref={resultRef} className="scroll-mt-4 space-y-3">
             <div className="relative overflow-hidden rounded-2xl bg-white/90 p-4 shadow-card">
               <div className="pointer-events-none select-none blur-[7px]" aria-hidden="true">
                 <VoiceTypeBlock vt={result.voice_type} score={result.score} />
