@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
-import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
 import { VOICE_TYPE_LIST, VOICE_TYPE_META, SITE_URL, VTYPE_STYLE } from "@/components/voice/voiceTypes";
 
 type SP = { [k: string]: string | string[] | undefined };
@@ -100,7 +99,6 @@ export default function VoiceTypeShareLanding(
             無料で自分の声タイプを診断する →
           </Link>
           <p className="mt-3 text-xs text-slate-400">※ 診断・発声レッスンとも、無料登録（30秒）で使えます</p>
-          <VoiceTypeStats className="mt-3" />
         </div>
       </main>
     </div>

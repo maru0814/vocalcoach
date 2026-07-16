@@ -9,7 +9,6 @@ import { ProductSnippet, SnippetMsg } from "@/components/site/ProductSnippet";
 import { Button } from "@/components/ui/Button";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
-import { VoiceTypeStats } from "@/components/voice/VoiceTypeStats";
 
 /**
  * LPのヒーロー以下（信頼帯〜フッター）。トップ／流入別LP（/lp/*）で共有する。
@@ -232,7 +231,6 @@ export function LpBody({ variant = "default" }: { variant?: LpVariant }) {
               登録なしで、15秒診断 →
             </Button>
             <p className="mt-3 text-xs text-white/50">※ 診断は登録なしで試せます。結果の保存・シェアと発声レッスンは無料登録（30秒）</p>
-            <VoiceTypeStats className="mt-3" tone="dark" />
           </div>
         </div>
       </Reveal>
