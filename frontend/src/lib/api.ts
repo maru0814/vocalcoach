@@ -277,17 +277,6 @@ export type VoiceTypeResult = {
   duration_sec?: number;
 };
 
-export type VoiceTypeStats = {
-  total: number;
-  distribution: { id: string; name: string; count: number; pct: number }[];
-  top: { id: string; name: string; count: number } | null;
-};
-
-/** 社会的証明用の集計（累計件数・タイプ分布）。公開・認証不要。 */
-export async function getVoiceTypeStats() {
-  return request<VoiceTypeStats>("/api/v1/voice-type/stats");
-}
-
 /** 録音1本を送って声タイプ（8種）を診断。チャットセッション非依存。 */
 export async function analyzeVoiceType(blob: Blob, filename = "voice.webm") {
   const fd = new FormData();
