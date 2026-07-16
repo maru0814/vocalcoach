@@ -269,3 +269,39 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - **疎通テスト**: `gh workflow run uptime.yml -f test_alert=true`（LINE設定後）→ 🔔テスト通知が届けば経路正常。Issue経路はrun成功＝正常。
 - **アラートが来たら**: 本ドキュメント冒頭のプレイブック順（curl→SSH→docker compose ps）。SSH も通らなければ ConoHa コンソールで電源確認（人間作業）。**復旧後は必ず `gh run list --workflow deploy.yml` で silent なデプロイ失敗の積み上がりを確認**（上の 2026-07-12〜16 事例の教訓）。
 - **限界（正直に）**: GitHub Actions の schedule は数分〜数十分遅延しうる。分単位の SLA 監視ではなく「時間単位の停止に当日気づく」ための最小構成。
+
+## 事例: cron重複でLINE承認が毎回2通・片方が「押しても効かない」（2026-07-16 発見・解消）
+- **症状**: 投稿スロットごとに **LINE承認依頼が2通**届く。片方をタップしても承認が通らない／`pending` のまま残る。
+  Gemini呼び出し（生成＋専門家レビュー）も2倍かかっていた。
+- **原因**: crontab に**同一時刻の重複エントリ**が残っていた。docker化前の**レガシーな host venv 版**と、現行の
+  **docker exec 版**が両方生きており、12:00 / 21:00 / 23:00 に**それぞれ2回**実行されていた。
+  ```
+  0 12 * * * cd /opt/vocalcoach/scripts/sns_autopost && .../.venv/bin/python generate_and_post.py --slot 1   # ← レガシー(host)
+  0 12 * * * cd /opt/vocalcoach/docker && docker compose ... exec -T sns python generate_and_post.py --slot 1 # ← 正(docker)
+  ```
+- **なぜ片方が効かないか（決定的）**: sns コンテナの `/data` は**named volume**（`docker_sns_data`）で host と共有していない。
+  そのためキューが2つに分裂していた。
+  - 正: `/var/lib/docker/volumes/docker_sns_data/_data/pending_queue.jsonl` ← **LINE webhook（snsコンテナ）が読む**
+  - 孤児: `/opt/vocalcoach/scripts/sns_autopost/pending_queue.jsonl` ← host cron が書く
+  host 版が送った承認依頼の id は**正キューに存在しない**ため、タップしても webhook が引けず失敗する。
+  （実証: 重複runの id `afc4737116b3` は孤児キューに1件・正キューに0件）
+- **切り分け**: 「同じ内容の承認が2通来る」「押しても通らない」時は、**まず crontab の重複を疑う**。
+  ```bash
+  crontab -l | grep -c generate_and_post.py            # slotごとに2行あれば重複
+  grep -E "^\[$(date +%F)\] slot=" /var/log/sns_autopost.log | sort | uniq -c   # 各slotが2回走っていないか
+  docker inspect docker-sns-1 --format '{{range .Mounts}}{{.Type}} {{.Source}} -> {{.Destination}}{{println}}{{end}}'
+  find /opt /var/lib/docker/volumes -name pending_queue.jsonl   # キューが2つ出たら分裂している
+  ```
+- **対処**: レガシーな host venv 版の3行のみ削除し、**docker exec 版に一本化**（バックアップを取ってから）。
+  ```bash
+  crontab -l > /root/crontab.bak.$(date +%Y%m%d-%H%M%S)
+  crontab -l | grep -v "sns_autopost/\.venv/bin/python" | crontab -
+  crontab -l   # docker exec 版・lead_finder・lead_metrics・access_funnel・daily_metrics が残ることを確認
+  ```
+- **教訓**:
+  1. **docker化した後、旧 host 実行の cron を消し忘れると二重実行になる**。移行時は必ず旧エントリを撤去する。
+  2. コンテナが named volume を使う場合、**host から同じスクリプトを叩くと別のデータを触る**。
+     「同じスクリプトなら同じ結果」にはならない。
+  3. 承認が通らない・pending が溜まる時は、**承認UIやX APIより先に「id がどのキューに居るか」**を見る。
+  4. 孤児キュー `/opt/vocalcoach/scripts/sns_autopost/pending_queue.jsonl` は writer が居なくなったので放置で無害。
+     将来の調査で紛らわしいので、参照する時は**必ず docker volume 側が正**と覚えておく。
