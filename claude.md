@@ -91,6 +91,15 @@ COO（受付・差配） → CEO（優先順位） → PdM（機能要件書）
 - 作業が済んだら通常どおり push → PR。worktree はセッション終了時に keep/remove を選べる。
 - worktree 内では tracked パスは小文字 `claude.md`。`git add` 時は大文字 `CLAUDE.md` を指定しない（大小無視FSで staging されない罠）。
 
+### コンフリクト予防（必須）
+並行ブランチの寿命が長いほどマージ衝突は増える（分岐点が main から最大48コミット遅れた実例あり）。以下を全セッション共通の運用とする。
+- **push 前に rebase**: worktree 内で `git fetch origin && git rebase origin/main` してから push する。衝突はPRマージ時ではなく、文脈が頭に残っている作業セッション内で解消する。
+- **worktree は短命に**: PRがマージされたら、その worktree を `git worktree remove` ＋ `git branch -d` で即削除する。**ただし削除前に必ず `git status` で未コミット変更を確認**（マージ済みworktreeに未コミットの実修正が眠っていて PR #176 で救出した実例あり）。
+- **ホットファイルは直列**: `themes.py`・`docs/42_FB品質基準`・LP周り・`scripts/sns_autopost/` は複数案件が同時に触りがち。同じホットファイルを触る案件は並行セッションに分けず、直列で進める（COOが差配時に確認する）。
+- **package-lock.json は手マージ禁止**: 衝突したら `git checkout --theirs frontend/package-lock.json` → `frontend/` で `npm install` して再生成する。
+- **worktree 内で `main` に checkout しない**: main が worktree に取られるとルートが main に戻れなくなる（detached HEAD 退避が必要になった実例あり）。worktree は自分の作業ブランチだけを持つ。
+- リポジトリには `rerere.enabled=true` を設定済み（2026-07-16）。同じ衝突の解消は自動で再適用される。clone し直した場合は再設定する。
+
 ## ルール
 - 日本語で設計書を作成する
 - `docs/` の設計書を最初に作成してから実装する
