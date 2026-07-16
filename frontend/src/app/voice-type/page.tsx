@@ -17,6 +17,42 @@ const LOGIN_URL = "/login?next=/voice-type";
 
 const MAX_SEC = 20;
 
+// 未登録時の診断結果をログイン/登録のページ遷移をまたいで引き継ぐためのブリッジ（docs/67）。
+// PIIは含まない（既存の匿名集計イベントと同様、type_id・score等のみ）。
+const BRIDGE_KEY = "voiceTypeResultBridge";
+const BRIDGE_TTL_MS = 30 * 60 * 1000;
+
+function saveResultBridge(result: VoiceTypeResult) {
+  try {
+    sessionStorage.setItem(BRIDGE_KEY, JSON.stringify({ result, savedAt: Date.now() }));
+  } catch {
+    // sessionStorage不可の環境では引き継ぎを諦める（診断そのものは継続可能）
+  }
+}
+
+function readResultBridge(): VoiceTypeResult | null {
+  try {
+    const raw = sessionStorage.getItem(BRIDGE_KEY);
+    if (!raw) return null;
+    const { result, savedAt } = JSON.parse(raw) as { result: VoiceTypeResult; savedAt: number };
+    if (typeof savedAt !== "number" || Date.now() - savedAt > BRIDGE_TTL_MS) {
+      sessionStorage.removeItem(BRIDGE_KEY);
+      return null;
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+function clearResultBridge() {
+  try {
+    sessionStorage.removeItem(BRIDGE_KEY);
+  } catch {
+    // noop
+  }
+}
+
 export default function VoiceTypePage() {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -38,6 +74,18 @@ export default function VoiceTypePage() {
       .catch(() => setAuth("out"));
   }, []);
 
+  // ログイン/登録画面への遷移でアンマウントされても、戻ってきたときに結果を復元する（docs/67）。
+  useEffect(() => {
+    if (result) return;
+    const restored = readResultBridge();
+    if (restored) setResult(restored);
+  }, [result]);
+
+  // フル結果を実際に見られた時点でブリッジは消費済みとし、使い回されないようにする。
+  useEffect(() => {
+    if (result && auth === "in") clearResultBridge();
+  }, [result, auth]);
+
   async function runAnalyze(blob: Blob, filename: string) {
     setError(null);
     setResult(null);
@@ -45,6 +93,7 @@ export default function VoiceTypePage() {
     try {
       const res = await analyzeVoiceType(blob, filename);
       setResult(res);
+      saveResultBridge(res);
     } catch (e: unknown) {
       const err = e as Error & { status?: number };
       setError(err.message || "診断に失敗しました。もう一度お試しください。");
@@ -215,7 +264,7 @@ export default function VoiceTypePage() {
 
             <div className="flex gap-2">
               <button
-                onClick={() => { setResult(null); setError(null); }}
+                onClick={() => { setResult(null); setError(null); clearResultBridge(); }}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 shadow-[0_4px_0_#cbd5e1] transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] active:shadow-[0_1px_0_#cbd5e1]"
               >
                 <Icon name="refresh" size={15} /> もう一度診断
@@ -259,7 +308,7 @@ export default function VoiceTypePage() {
             </div>
 
             <button
-              onClick={() => { setResult(null); setError(null); }}
+              onClick={() => { setResult(null); setError(null); clearResultBridge(); }}
               className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 transition active:scale-95"
             >
               <Icon name="refresh" size={15} /> もう一度ためす
