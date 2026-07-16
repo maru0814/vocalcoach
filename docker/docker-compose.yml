@@ -18,6 +18,7 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+    platform: linux/amd64
     container_name: claude-md-backend
     restart: unless-stopped
     depends_on:
