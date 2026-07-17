@@ -150,7 +150,7 @@ CONTRARIAN = [
 # 逆張りで変化をつける。question(リプ乞い)とempathyはローテから外す。
 # slot1（昼）と slot2（夜）は同日に必ず別の型（同内容の重複を避ける）。
 PILLARS = [
-    "tip",         # 月: 実践Tips
+    "self_type",   # 月: 自己分類（診断導線）※2026-07-15週次: 診断導線型のimpがtip型の約6.7倍のため tip→self_type に1枠変更
     "voice_type",  # 火: 声タイプ図鑑（診断導線）
     "tip",         # 水: 実践Tips
     "contrarian",  # 木: 逆張り
