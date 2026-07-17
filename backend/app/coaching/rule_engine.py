@@ -315,6 +315,10 @@ TOPIC_KEYWORDS: list[tuple[str, str]] = [
     ("ロングトーン", "long_tone_decay"), ("伸ば", "long_tone_decay"), ("息の支え", "long_tone_decay"),
     ("喉", "throat_tension"), ("力み", "throat_tension"), ("詰ま", "throat_tension"), ("張り", "throat_tension"),
     ("強弱", "expression_flat"), ("ダイナミ", "expression_flat"), ("表現", "expression_flat"),
+    # 練習名そのもの（コーチが名指しで提案した練習の動画を求められた時の写像。docs/71）。
+    # いずれも写像先の★練習（practices[0]）にその練習の実在動画がある課題を選ぶこと。
+    ("リップロール", "pitch_wobble"), ("ストロー", "breathy_closure"),
+    ("あくび", "throat_tension"), ("ハミング", "weak_resonance"),
 ]
 
 
