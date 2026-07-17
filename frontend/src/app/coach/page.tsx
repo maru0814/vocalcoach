@@ -46,9 +46,10 @@ export default function CoachListPage() {
   async function startNew() {
     setCreating(true);
     try {
-      await createCoachSession();
-      const list = await listCoachSessions();
-      router.push(`/coach/${list[0].id}`);
+      // 未着手セッションは一覧に出ないため、作成レスポンスのIDへ直接遷移する
+      const created = await createCoachSession();
+      if (created.session_id == null) throw new Error("session_id missing in create response");
+      router.push(`/coach/${created.session_id}`);
     } catch (err) {
       if (redirectToLoginIfAuthError(err, router)) return;
       setError("セッションを作成できませんでした。時間をおいてもう一度お試しください。");

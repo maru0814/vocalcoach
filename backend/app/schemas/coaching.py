@@ -52,6 +52,7 @@ class FeedbackRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    session_id: Optional[int] = None  # セッション作成時のみ返す（一覧非依存で遷移するため）
     phase: str
     current_task: Optional[str] = None
     messages: list[MessageOut]  # newly added messages only

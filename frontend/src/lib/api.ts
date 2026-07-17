@@ -152,6 +152,7 @@ export type CoachMessage = {
 };
 
 export type ChatResponse = {
+  session_id?: number | null; // セッション作成時のみ返る
   phase: string;
   current_task: string | null;
   messages: CoachMessage[];
