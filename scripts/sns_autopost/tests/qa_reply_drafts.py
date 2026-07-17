@@ -49,6 +49,13 @@ check("TC-R3b 許可語の連結(ピアノ+アプリ)は通過", ok, f"=> {why}"
 ok, why = reply_drafts.validate("カラオケバトルの話、いいですね。まず録音がおすすめです",
                                 "カラオケバトルで高音が出ずに悔しかった")
 check("TC-R3c 相手の文にある語は通過", ok, f"=> {why}")
+# 本番検証(2026-07-17)で「エッジボイス」が未知語棄却→テンプレ落ちした事例の再発防止
+ok, why = reply_drafts.validate("エッジボイスで閉じを感じてからチェストボイスに戻すと安定しますよ", SRC)
+check("TC-R3d 声区の発声用語(エッジ/チェストボイス)は通過", ok, f"=> {why}")
+ok, why = reply_drafts.validate("ドッグブレスで支えを作りつつ1オクターブのスケール練習がおすすめです", SRC)
+check("TC-R3e 練習用語(ドッグブレス/オクターブ/スケール)は通過", ok, f"=> {why}")
+ok, why = reply_drafts.validate("ヨルシカスケールという練習法を試してみてください", SRC)
+check("TC-R3f 許可語を含む未知語連結は引き続き棄却", not ok, f"=> {why}")
 
 # TC-R4: URL・タグ・宣伝・医療断定の棄却（トーン管理の機械化）
 ok, why = reply_drafts.validate("こちらで診断できます https://example.com", SRC)
