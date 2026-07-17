@@ -359,3 +359,26 @@ export async function startCheckout() {
 export async function openPortal() {
   return request<{ url: string }>("/api/v1/billing/portal", { method: "POST" });
 }
+
+// --- Web Push（練習リマインド通知 / PWA。docs/73 FR-04） ---
+
+export type PushSubscriptionPayload = {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+};
+
+export async function pushSubscribe(payload: PushSubscriptionPayload) {
+  return request<{ status: string }>("/api/v1/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function pushUnsubscribe(payload: { endpoint: string }) {
+  return request<{ status: string }>("/api/v1/push/unsubscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

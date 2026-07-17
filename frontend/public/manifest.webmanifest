@@ -1,0 +1,18 @@
+{
+  "name": "AIボーカルトレーナー ソラ先生",
+  "short_name": "ソラ先生",
+  "description": "歌の録音を送るだけで音程・リズム・表現をAIが解析・添削。今日直すところと基礎練メニューを教えます。",
+  "start_url": "/coach?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "lang": "ja",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

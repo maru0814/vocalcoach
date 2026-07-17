@@ -1,6 +1,9 @@
 import "./globals.css";
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
+import ServiceWorkerRegister from "@/components/pwa/ServiceWorkerRegister";
+import OfflineBar from "@/components/pwa/OfflineBar";
+import InstallPrompt from "@/components/pwa/InstallPrompt";
 
 const SITE_NAME = "AIボーカルトレーナー ソラ先生";
 const TAGLINE = "歌をAIが解析・添削";
@@ -48,6 +51,14 @@ export const metadata: Metadata = {
     images: ["/brand/og-default.png"],
   },
   robots: { index: true, follow: true },
+  // PWA（docs/73 FR-01）: manifest とアプリアイコン。
+  manifest: "/manifest.webmanifest",
+  themeColor: "#0b1020",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "ソラ先生",
+  },
 };
 
 // Cloudflare Web Analytics のビーコントークン（公開値。env未設定なら計測タグを出さない）
@@ -73,7 +84,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         )}
       </head>
       <body>
+        <ServiceWorkerRegister />
+        <OfflineBar />
         {children}
+        <InstallPrompt />
         <footer className="mt-10 border-t py-6 text-center text-xs text-gray-500">
           <a className="underline hover:text-gray-700" href="/legal/tokushoho">
             特定商取引法に基づく表記
