@@ -749,6 +749,16 @@ def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
             "返ってきた実URLを本文の最後に1行で必ず載せてください。"
             "URLを書かずに「お出ししますね」とだけ言って終えるのは禁止です。"
         )
+    elif settings.coach_tools_enabled and _names_song_title(user_text, history):
+        # 原曲の曲名提示は会話モード（短い一言＝雑談扱い）より優先する（docs/72）。
+        # 裸の曲名（「ツキミソウ」だけ等）が雑談扱いされて検索されない事故を防ぐ。
+        _q = _names_song_title(user_text, history)
+        context += (
+            f"\n- ユーザーは原曲の曲名を伝えています。search_original_song を query=「{_q}」で"
+            "必ず呼び、先頭候補をタイトル・実URL付きで示して「この曲で合っていますか？」と"
+            "確認して終えてください。候補が見つからなければ、でっち上げずに"
+            "YouTubeのリンクを貼ってもらうよう案内してください。"
+        )
     else:
         # 会話モード（短い相槌・雑談・感情）なら、講義に変換せず自然に受ける指示を注入（docs/66）
         convo_line = _conversation_mode_line(user_text)
@@ -895,6 +905,54 @@ _VIDEO_DECLINE_RE = re.compile(r"いらな|いらん|大丈夫|結構|けっこ�
 # この定型句＋URL1件を含むコーチ発言への肯定返答だけが、原曲確定の決定論トリガーになる。
 SONG_CONFIRM_ANCHOR = "この曲で合っていますか"
 
+# 「原曲 ◯◯」「曲名 ◯◯」形式の決定論検出（docs/72 FR-01 の後押し）。
+_SONG_PREFIX_RE = re.compile(r"^(?:原曲|曲名)[はがのを]?[\s　:：、]*(.+)$")
+# コーチが原曲/曲名を尋ねた発言の検出（この直後の短い返答は曲名とみなす）。
+_SONG_ASK_RE = re.compile(
+    r"(?:原曲|曲名|何の曲|どの曲|なんの曲)[^。！？\n]{0,15}"
+    r"(?:教えて|いただけ|もらえ|ください|ですか|でしょうか)"
+)
+# 曲名として扱わない定型返事（「はい」だけで検索を強制しない）
+_SONG_STOPWORDS = {
+    "はい", "うん", "ええ", "いいえ", "いや", "OK", "ok", "オッケー",
+    "わからない", "分からない", "知らない", "ない", "無い", "大丈夫",
+}
+
+
+def _names_song_title(user_text: str, history: Optional[list[dict]]) -> Optional[str]:
+    """ユーザー発言が「原曲の曲名の提示」らしければ検索クエリを返す（docs/72 FR-01）。
+
+    flash-lite は自発的なツール呼び出しが弱い（find_reference_video と同じ事情・docs/71）ため、
+    次の2形態は search_original_song を決定論で強制する:
+    1. 「原曲 ◯◯」「曲名 ◯◯」の形式（文脈不要）
+    2. コーチが原曲/曲名を尋ねた直後の、URL無しの短い返答（=曲名とみなす）
+    それ以外（裸の曲名など）は LLM の文脈判断に任せる。
+    """
+    t = (user_text or "").strip()
+    if not t or "http://" in t or "https://" in t:
+        return None
+    # 質問文（「原曲がないと比較できないの？」等）は曲名提示ではない
+    if re.search(r"[?？]\s*$", t):
+        return None
+
+    def _valid(q: str) -> Optional[str]:
+        q = (q or "").strip()
+        core = re.sub(r"[\s　、。！？!?…〜～ー]+", "", q)
+        if not core or len(core) > 30 or core in _SONG_STOPWORDS:
+            return None
+        if re.match(r"^(ない|無い|あり|なし)", core):  # 「原曲がない」等の否定文
+            return None
+        if "URL" in q or "url" in q or "リンク" in q:
+            return None
+        return q
+
+    m = _SONG_PREFIX_RE.match(t)
+    if m:
+        return _valid(m.group(1))
+    if _SONG_ASK_RE.search(_last_assistant_text(history)) and not _wants_reference(t):
+        return _valid(t)
+    return None
+
 
 def _last_assistant_text(history: Optional[list[dict]]) -> str:
     for h in reversed(history or []):
@@ -924,11 +982,12 @@ def _accepts_video_offer(user_text: str, history: Optional[list[dict]]) -> bool:
     return len(core) <= 12 and bool(_VIDEO_ACCEPT_RE.search(t))
 
 
-def _complete_with_tools(contents, force_tool: bool = False,
+def _complete_with_tools(contents, force_tool: Optional[str] = None,
                          model: Optional[str] = None) -> tuple[Optional[str], set[str]]:
     """ツール（function calling）を許可して Gemini を呼び、最終テキストを返す（docs/44）。
 
-    force_tool=True の初回は mode=ANY で find_reference_video を必ず呼ばせる。
+    force_tool にツール名（"find_reference_video" / "search_original_song"）を渡すと、
+    初回は mode=ANY でそのツールを必ず呼ばせる（flash-lite の自発呼び出しの弱さ対策）。
     モデルがツールを要求したら実行して結果を返し、テキストが得られるまで最大
     settings.coach_tool_loop_max 回まわす。失敗・SDK未導入・キー未設定時は (None, set())。
     model: 使うモデル（既定 settings.llm_model）。対話は llm_chat_model を渡して格上げする。
@@ -959,7 +1018,8 @@ def _complete_with_tools(contents, force_tool: bool = False,
             if mode:
                 tool_config = types.ToolConfig(
                     function_calling_config=types.FunctionCallingConfig(
-                        mode=mode, allowed_function_names=["find_reference_video"],
+                        mode=mode,
+                        allowed_function_names=[force_tool or "find_reference_video"],
                     )
                 )
             return types.GenerateContentConfig(
@@ -978,7 +1038,7 @@ def _complete_with_tools(contents, force_tool: bool = False,
         found_video_url = None  # ツールが返した実在動画URL（本文に確実に載せるため保持）
         song_candidate = None   # search_original_song の先頭候補（確認文を確実に出すため保持）
         for _i in range(max(1, settings.coach_tool_loop_max)):
-            # 初回だけ強制（ANY）。以降は AUTO に戻して自然文を生成させる。
+            # 初回だけ指定ツールを強制（ANY）。以降は AUTO に戻して自然文を生成させる。
             cfg = _config("ANY") if (force_tool and _i == 0) else _config(None)
             resp = client.models.generate_content(
                 model=model or settings.llm_model, contents=convo, config=cfg,
@@ -1082,8 +1142,13 @@ def generate_reply(
     # ツール化ON時は function calling 経由（動画等の"事実"は実データをツールで供給）。
     if settings.llm_enabled and settings.coach_tools_enabled:
         # キーワード（動画・お手本…）だけでなく、直前オファーへの承諾（お願いします/はい/
-        # どれ？）でもツールを強制する（承諾なのにURLが出ない事故の修正。docs/71）
-        force = _wants_reference(user_text) or _accepts_video_offer(user_text, history)
+        # どれ？）でもツールを強制する（承諾なのにURLが出ない事故の修正。docs/71）。
+        # 原曲の曲名提示（「原曲 ◯◯」や、原曲を尋ねた直後の短い返答）は検索を強制する（docs/72）。
+        force: Optional[str] = None
+        if _wants_reference(user_text) or _accepts_video_offer(user_text, history):
+            force = "find_reference_video"
+        elif _names_song_title(user_text, history):
+            force = "search_original_song"
         reply, tool_urls = _complete_with_tools(contents, force_tool=force, model=chat_model)
     else:
         reply = _complete(contents, model=chat_model)

@@ -155,3 +155,41 @@ def test_initial_messages_homework_recent_wording():
     # 従来モードは従来文言のまま
     hw = rule_engine.initial_messages({"mode": "homework", "practice_name": "リップロール"})
     assert "おうちでやってみて" in hw[0]["text"]
+
+
+# ---------- 曲名提示の決定論検出（_names_song_title・FR-01の後押し） ----------
+
+def _ask_hist():
+    return [
+        {"role": "user", "content": "録音送りました"},
+        {"role": "assistant", "content": "素敵な歌声ですね！もしよろしければ、原曲を教えていただけますか？"},
+    ]
+
+
+def test_names_song_title_prefix_forms():
+    # 「原曲 ◯◯」形式は文脈不要で検索クエリになる
+    assert llm._names_song_title("原曲　ツキミソウ", None) == "ツキミソウ"
+    assert llm._names_song_title("原曲はTSUNAMI", None) == "TSUNAMI"
+    assert llm._names_song_title("曲名 ツキミソウ Novelbright", None) == "ツキミソウ Novelbright"
+
+
+def test_names_song_title_bare_reply_after_ask():
+    # コーチが原曲を尋ねた直後なら、裸の曲名でも検索クエリになる
+    assert llm._names_song_title("ツキミソウ", _ask_hist()) == "ツキミソウ"
+    assert llm._names_song_title("嫌々って言う歌", _ask_hist()) == "嫌々って言う歌"
+    # 尋ねられていない文脈の裸の曲名は LLM 判断に任せる（強制しない）
+    assert llm._names_song_title("ツキミソウ", None) is None
+
+
+def test_names_song_title_guards():
+    # 定型返事・質問文・否定文・URL言及は曲名扱いしない
+    assert llm._names_song_title("はい", _ask_hist()) is None
+    assert llm._names_song_title("わからない", _ask_hist()) is None
+    assert llm._names_song_title("原曲がないと比較できないの？", None) is None
+    assert llm._names_song_title("原曲がないんだよね", None) is None
+    assert llm._names_song_title("原曲のURLってどこで見つけるの", None) is None
+    assert llm._names_song_title(f"原曲 {CAND_URL}", None) is None  # URLは既存経路が拾う
+    # 長文はただの会話
+    assert llm._names_song_title(
+        "ツキミソウという曲なんですけど昔からずっと好きでカラオケでも毎回歌っていて", _ask_hist()
+    ) is None
