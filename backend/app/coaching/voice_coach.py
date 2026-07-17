@@ -334,7 +334,9 @@ def build_llm_block(a: dict, c: Optional[dict] = None) -> str:
         rhc = vc.get("register_high")
         if rhc and rhc.get("verdict") == "differ":
             jp = {"chest": "地声", "mix": "ミックス", "head": "裏声"}
-            bits.append(f"高音の声区が原曲と違う(あなた{jp.get(rhc['user'],'?')}/原曲{jp.get(rhc['ref'],'?')})")
+            uhz = f"≈{rhc['user_hz']}Hz" if rhc.get("user_hz") else ""
+            rhz = f"≈{rhc['ref_hz']}Hz" if rhc.get("ref_hz") else ""
+            bits.append(f"高音の声区が原曲と違う・推定(あなた{jp.get(rhc['user'],'?')}{uhz}/原曲{jp.get(rhc['ref'],'?')}{rhz})")
         if bits:
             lines.append("- 原曲との発声比較: " + "／".join(bits))
     issues = diagnose(a, c)

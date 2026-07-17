@@ -632,10 +632,14 @@ def _voice_facts(analysis: dict, c: Optional[dict]) -> str:
         lines.append(f"原曲との声帯の閉じ比較: {v}")
     rh = vc.get("register_high")
     if rh:
+        # 比較区間の音高を添える＝LLMが自力でスコープ限定・ヘッジできる（docs/42 §4・§5）
+        hz = ""
+        if rh.get("user_hz") and rh.get("ref_hz"):
+            hz = f"（比較区間: あなた≈{rh['user_hz']}Hz・原曲≈{rh['ref_hz']}Hz）"
         if rh["verdict"] == "match":
-            lines.append(f"高音の声区: 原曲と同じ{_REG_JP.get(rh['ref'], rh['ref'])}で運べている")
+            lines.append(f"高音の声区（推定）: 原曲と同じ{_REG_JP.get(rh['ref'], rh['ref'])}で運べている{hz}")
         else:
-            lines.append(f"高音の声区: あなたは{_REG_JP.get(rh['user'], '?')}、原曲は{_REG_JP.get(rh['ref'], '?')}（原曲に寄せる余地）")
+            lines.append(f"高音の声区（推定）: あなたは{_REG_JP.get(rh['user'], '?')}、原曲は{_REG_JP.get(rh['ref'], '?')}（原曲に寄せる余地）{hz}")
     al = (c or {}).get("alignment") or {}
     if al.get("in_tune_score") is not None:
         lines.append(f"原曲との音程の一致: {al['in_tune_score']}点（音を外していないかの実測。安定度とは別物）")

@@ -475,10 +475,14 @@ def build_session_context(state: dict) -> str:
                 lines.append(f"- 原曲との声帯の閉じ比較: {_v}")
             _rh = _vc.get("register_high")
             if _rh:
+                # 比較区間の音高を添える＝LLMが自力でスコープ限定・ヘッジできる（docs/42 §4・§5）
+                _hz = ""
+                if _rh.get("user_hz") and _rh.get("ref_hz"):
+                    _hz = f"（比較区間: あなた≈{_rh['user_hz']}Hz・原曲≈{_rh['ref_hz']}Hz）"
                 if _rh["verdict"] == "match":
-                    lines.append(f"- 高音の声区: 原曲と同じ{_rj.get(_rh['ref'], _rh['ref'])}で運べている")
+                    lines.append(f"- 高音の声区（推定）: 原曲と同じ{_rj.get(_rh['ref'], _rh['ref'])}で運べている{_hz}")
                 else:
-                    lines.append(f"- 高音の声区: あなたは{_rj.get(_rh['user'], '?')}、原曲は{_rj.get(_rh['ref'], '?')}（原曲に寄せる余地あり）")
+                    lines.append(f"- 高音の声区（推定）: あなたは{_rj.get(_rh['user'], '?')}、原曲は{_rj.get(_rh['ref'], '?')}（原曲に寄せる余地あり）{_hz}")
         lts = analysis.get("long_tone_stability")
         if lts is not None:
             lines.append(f"- 伸ばしの安定度: {lts:.0f}cents")
