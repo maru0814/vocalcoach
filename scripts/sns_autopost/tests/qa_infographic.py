@@ -8,11 +8,17 @@ import themes
 import infographic as ig
 
 results = []
+skipped = []
 
 
 def check(tc, cond, detail=""):
     results.append((tc, bool(cond), detail))
     print(f"[{'PASS' if cond else 'FAIL'}] {tc} {detail}")
+
+
+def skip(tc, detail=""):
+    skipped.append((tc, detail))
+    print(f"[SKIP] {tc} {detail}")
 
 
 # ---- ① パーサ正常系: TIPS全8件 ----
@@ -60,11 +66,12 @@ check("TC-IG03f 引用なしcontrarian", len(d["reasons"]) == 2 and d["highlight
       f"r1={d['reasons'][0]['title']}")
 
 # ---- 診断導線パーサ（新仕様: 各タイプの実画像を使う図解）----
-# voice_type = spotlight に image(data URI) と desc、title「【声タイプ図鑑】{Name}」
+# voice_type = spotlight に image(data URI) と desc、title「【{Name}】タイプの声、誰に似てる？」
 dv = ig.parse_diagnosis("voice_type", 5)  # 5 = Dramatic
 check("TC-IG30 voice_type spotlight", dv["type"] == "diagnosis"
       and dv.get("spotlight", {}).get("image", "").startswith("data:image/jpeg")
-      and "【声タイプ図鑑】" in dv["title"], f"title={dv['title']}")
+      and "【Dramatic】" in dv["title"] and "誰に似てる" in dv["title"],
+      f"title={dv['title']}")
 # self_type / visual = types 8件・各 image 付き
 for pl in ("self_type", "visual"):
     dd = ig.parse_diagnosis(pl, 0)
@@ -89,14 +96,25 @@ importlib.reload(gp)
 os.environ["SNS_DATA_DIR"] = "/tmp/qa_ig"
 os.environ["SNS_IMAGE_AI"] = "0"   # フォールバック時のカードはグラデ（AI課金回避）
 gp.IMG_DIR = "/tmp/qa_ig/images"
+# playwright 未導入だと infographic.generate が None → カード(1080x1350)に
+# フォールバックし環境要因で恒常FAILするため、その場合は SKIP（FAIL計上しない）
 try:
-    from PIL import Image
+    from playwright.sync_api import sync_playwright  # noqa: F401
+    _has_playwright = True
+except Exception:
+    _has_playwright = False
+if not _has_playwright:
     for pl in ("tip", "contrarian", "voice_type", "self_type", "visual"):
-        p = gp.build_image(pl, 1, 5, "https://x.test")
-        sz = Image.open(p).size
-        check(f"TC-IG04 全ピラー図解 {pl}", sz == (1600, 900), f"{sz}")
-except Exception as e:
-    check("TC-IG04 振り分け", False, f"EXC {e}")
+        skip(f"TC-IG04 全ピラー図解 {pl}", "playwright未導入")
+else:
+    try:
+        from PIL import Image
+        for pl in ("tip", "contrarian", "voice_type", "self_type", "visual"):
+            p = gp.build_image(pl, 1, 5, "https://x.test")
+            sz = Image.open(p).size
+            check(f"TC-IG04 全ピラー図解 {pl}", sz == (1600, 900), f"{sz}")
+    except Exception as e:
+        check("TC-IG04 振り分け", False, f"EXC {e}")
 
 # ---- ④ フォールバック: infographic.generate→None なら tip もカード ----
 _orig = ig.generate
@@ -117,5 +135,6 @@ os.environ["SNS_IMAGE"] = "1"
 
 print("\n==== SUMMARY (parser/routing/fallback) ====")
 passed = sum(1 for _, ok, _ in results if ok)
-print(f"{passed}/{len(results)} PASS")
+skip_note = f" (SKIP {len(skipped)})" if skipped else ""
+print(f"{passed}/{len(results)} PASS{skip_note}")
 sys.exit(0 if passed == len(results) else 1)
