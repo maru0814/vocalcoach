@@ -60,6 +60,8 @@ services:
         NEXT_PUBLIC_SITE_URL: "https://${DOMAIN}"
         # Cloudflare Web Analytics のビーコントークン（未設定なら計測タグは出ない）
         NEXT_PUBLIC_CF_BEACON_TOKEN: "${CF_BEACON_TOKEN:-}"
+        # PWAプッシュ購読に必要なVAPID公開鍵（ビルド時にJSへ埋め込む）。空なら通知トグルは非表示。
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
     restart: unless-stopped
 
   # SNS投稿のLINE承認Webhook（本体バックエンドとは独立）。
