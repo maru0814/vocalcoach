@@ -176,7 +176,10 @@ def session_opener_context(karte: StudentKarte | None) -> dict | None:
     if days >= _REOPEN_DAYS:
         return {"mode": "reopen", "days": days}
     if hw.get("practice_name"):
-        return {"mode": "homework", "practice_name": hw["practice_name"],
+        # 同日（前セッションから24時間未満）は「おうちでやってみてどうでした？」が不自然
+        # （数分前に出した練習を宿題扱いして聞く事故。2026-07-08 の実ユーザーが該当）。
+        mode = "homework_recent" if days == 0 else "homework"
+        return {"mode": mode, "practice_name": hw["practice_name"],
                 "task_id": hw.get("task_id"), "last_summary": karte.last_summary}
     if karte.last_summary:
         return {"mode": "continue", "last_summary": karte.last_summary}

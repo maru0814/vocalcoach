@@ -33,7 +33,8 @@ def setUpModule():
     _ORIG_COMPLETE = llm._complete
     _ORIG_COMPLETE_TOOLS = llm._complete_with_tools
     llm._complete = lambda *a, **k: None  # type: ignore
-    llm._complete_with_tools = lambda *a, **k: None  # type: ignore
+    # _complete_with_tools は (テキスト, ツールURL集合) のタプル契約（docs/72）
+    llm._complete_with_tools = lambda *a, **k: (None, set())  # type: ignore
 
 
 def tearDownModule():

@@ -80,6 +80,12 @@ def initial_messages(opener: Optional[dict] = None) -> list[dict]:
                 "おうちでやってみて、どうでした？感想を聞かせてください🎤 "
                 "（もちろん、すぐ録音を送ってくれてもOKですよ）"
             )
+        elif mode == "homework_recent":
+            # 同日の続き: 「おうちでやってみて」とは聞かない（数分前の提案かもしれない）
+            first = (
+                f"おかえりなさい😊 さっきは『{opener['practice_name']}』のお話をしましたね。"
+                "続きから一緒にやっていきましょう🎤 試してみたら録音を、質問だけでも大丈夫ですよ😊"
+            )
         elif mode == "reopen":
             first = (
                 f"お久しぶりです😊 また会えてうれしいです！ "
@@ -138,6 +144,44 @@ def parse_phase_a(text: str, state: dict) -> dict:
     return updates
 
 
+# 原曲候補の確認質問（llm.SONG_CONFIRM_ANCHOR＋URL1件）への短い肯定・否定（docs/72 FR-03）
+_SONG_ACCEPT_RE = re.compile(
+    r"はい|うん|ええ|そう|合って|あって|それ|これ|正解|OK|ok|オッケー|お願い|おねがい|いいよ|いいです"
+)
+_SONG_DECLINE_RE = re.compile(r"違う|ちがう|別|じゃない|ではない|いや|やめ|なくて")
+
+
+def confirmed_song_url(text: str, history: Optional[list[dict]]) -> Optional[str]:
+    """直前のコーチ発言が原曲の確認質問なら、短い肯定返答で候補URLを返す（docs/72 FR-03）。
+
+    誤発火防止のガード（すべて満たした時だけ発火）:
+    - ユーザー発言に URL が無い（あるならそちらが原曲指定として優先される）
+    - 直前のコーチ発言に確認アンカー「この曲で合っていますか」がある
+    - そのコーチ発言に含まれる YouTube URL がちょうど1件
+    - 発言が短い肯定（否定語を含まない）
+    URL は LLM の引数ではなく、直前コーチ発言の本文から抽出する（幻覚URL対策）。
+    """
+    t = (text or "").strip()
+    if not t or "http://" in t or "https://" in t:
+        return None
+    last = ""
+    for h in reversed(history or []):
+        if h.get("role") == "assistant":
+            last = h.get("content") or ""
+            break
+    if llm.SONG_CONFIRM_ANCHOR not in last:
+        return None
+    urls = {u.rstrip("。、．，）)」』】！!？?") for u in YOUTUBE_RE.findall(last)}
+    if len(urls) != 1:
+        return None
+    if _SONG_DECLINE_RE.search(t):
+        return None
+    core = re.sub(r"[\s、。！？!?…〜～ー]+", "", t)
+    if len(core) > 12 or not _SONG_ACCEPT_RE.search(t):
+        return None
+    return next(iter(urls))
+
+
 def _chat_reply(state: dict, text: str, history: Optional[list[dict]]) -> str:
     """自由テキストへの返答は、必ず LLM（ソラ先生）の自然言語で生成する。
 
@@ -164,6 +208,11 @@ def handle_text(
 
     # どのフェーズでも、URL/区間/着目点が含まれていれば取り込む
     u = parse_phase_a(text, state)
+    # 原曲候補の確認質問への「はい」なら、候補URLを原曲として確定する（docs/72 FR-03）
+    if not u.get("song_ref_url"):
+        conf_url = confirmed_song_url(text, history)
+        if conf_url:
+            u["song_ref_url"] = conf_url
     updates.update(u)
     merged = {**state, **u}
 
