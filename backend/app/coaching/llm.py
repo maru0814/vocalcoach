@@ -76,6 +76,7 @@ SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}
 - **練習は頼まれるまで出さない（段階的エンゲージメント・docs/42 §8）。** 練習（処方）を出すのは、ユーザーの意思表示（「練習教えて」「どうすれば直る？」「作って」等）があった時か、すでにレッスン中の基礎練の話を続ける時だけ。頼まれていないターンで新しい練習を出さず、代わりに深掘りの問いかけ（「原曲をもらえたら細かく比べられますよ」「あなたに合わせた練習メニューを作りましょうか？」のどちらか）を最大1つ添えるにとどめる。痛み・嗄れなど安全に関わる訴えだけは例外で、すぐ休声・専門家相談をすすめてよい。
 - **練習をコロコロ変えない（最重要）。** 一度すすめた練習（処方候補の★推奨や、いまレッスン中の基礎練）は、会話が続く間そのまま続けるよう導く。毎回違う練習名（リップロール→ストロー→…）を出さない。ユーザーが「うまくいかない／できない／合わない」と言った時だけ、理由を一言添えて次の候補に1つだけ切り替える（例:「リップロールが難しければ、より優しいストロー発声に変えましょう」）。
 - **練習のやり方を説明したターンの締め**には「参考になる実演動画を出しましょうか？」と1つだけ添えてよい（docs/42 §8）。**この枠以外で動画を匂わせない**（質問への回答の代わりに動画提案で流さない）。**一度この会話で動画オファーをしたら、同じオファーを繰り返さない**（状況に「動画オファー済み」とあれば、ユーザーが「見たい」と言うまで再提案しない）。URLを自分で作らない。求められた時にツールの実データURLだけを渡し、ツールが見つけられなければ約束しない。
+- **原曲を曲名だけで伝えられた時（例:「原曲 ツキミソウ」「TSUNAMIって曲」）**は、search_original_song ツールで候補を検索し、先頭候補1つをタイトル・チャンネル名・実URL付きで示して「この曲で合っていますか？」と確認して終える（docs/72）。確認に「はい」をもらうまで原曲が決まった扱いをしない・「比較しました」と言わない。ツールが見つけられなければ、でっち上げずに「YouTubeのリンクを貼ってもらえますか？」と正直に案内する。「違う」と言われたら別候補か、URL/ファイルの案内に切り替える。
 - **声区（地声/ミックス/裏声）はあくまで音響からの推定**で、特に高音の換声点付近は曖昧。ユーザーが「ここは裏声で出した」等と自分の感覚を述べたら、それを否定して断定し直さない。「解析上は地声寄りの倍音ですが、ご自身が裏声の感覚なら…」と両立させ、感覚を尊重して説明する。
 - **このサービスにカード・スコア表示は無い。すべて会話文（チャット）で完結する。**「この後のカードに〜」「分析カードに〜」のような“カードを出す約束”は一切しない。練習法を伝えるときは、手順そのものをやさしい言葉で説明する。動画を渡すときは会話文の最後にURLを1行添える。
 - 音程を外している箇所があれば「何秒あたりが何centひくい(フラット)／高い(シャープ)か」を具体的に言う（原曲照合がある場合のみ）。
@@ -890,6 +891,10 @@ _VIDEO_ACCEPT_RE = re.compile(
 )
 _VIDEO_DECLINE_RE = re.compile(r"いらな|いらん|大丈夫|結構|けっこう|不要|やめ|あとで|後で|今度")
 
+# 原曲候補の確認質問アンカー（docs/72 FR-02/03）。
+# この定型句＋URL1件を含むコーチ発言への肯定返答だけが、原曲確定の決定論トリガーになる。
+SONG_CONFIRM_ANCHOR = "この曲で合っていますか"
+
 
 def _last_assistant_text(history: Optional[list[dict]]) -> str:
     for h in reversed(history or []):
@@ -920,29 +925,33 @@ def _accepts_video_offer(user_text: str, history: Optional[list[dict]]) -> bool:
 
 
 def _complete_with_tools(contents, force_tool: bool = False,
-                         model: Optional[str] = None) -> Optional[str]:
+                         model: Optional[str] = None) -> tuple[Optional[str], set[str]]:
     """ツール（function calling）を許可して Gemini を呼び、最終テキストを返す（docs/44）。
 
     force_tool=True の初回は mode=ANY で find_reference_video を必ず呼ばせる。
     モデルがツールを要求したら実行して結果を返し、テキストが得られるまで最大
-    settings.coach_tool_loop_max 回まわす。失敗・SDK未導入・キー未設定時は None。
+    settings.coach_tool_loop_max 回まわす。失敗・SDK未導入・キー未設定時は (None, set())。
     model: 使うモデル（既定 settings.llm_model）。対話は llm_chat_model を渡して格上げする。
+    返り値: (最終テキスト, このターンにツールが返した実在URLの集合)。
+    後者は _scrub_foreign_urls の許可リストに使う（カタログ外だが実在するURLを守る）。
     """
     if not settings.llm_enabled:
-        return None
+        return None, set()
     try:
         from google import genai
         from google.genai import types
     except Exception:  # pragma: no cover - SDK 未導入環境
-        return None
+        return None, set()
     from app.coaching import tools as coach_tools
+    tool_urls: set[str] = set()
     try:
         client = genai.Client(
             api_key=settings.gemini_api_key,
             http_options=types.HttpOptions(timeout=int(settings.llm_timeout_sec * 1000)),
         )
         tool = types.Tool(function_declarations=[
-            types.FunctionDeclaration(**coach_tools.FIND_REFERENCE_VIDEO_DECL)
+            types.FunctionDeclaration(**coach_tools.FIND_REFERENCE_VIDEO_DECL),
+            types.FunctionDeclaration(**coach_tools.SEARCH_ORIGINAL_SONG_DECL),
         ])
 
         def _config(mode: Optional[str]):
@@ -967,6 +976,7 @@ def _complete_with_tools(contents, force_tool: bool = False,
         convo = list(contents)
         last_text = None
         found_video_url = None  # ツールが返した実在動画URL（本文に確実に載せるため保持）
+        song_candidate = None   # search_original_song の先頭候補（確認文を確実に出すため保持）
         for _i in range(max(1, settings.coach_tool_loop_max)):
             # 初回だけ強制（ANY）。以降は AUTO に戻して自然文を生成させる。
             cfg = _config("ANY") if (force_tool and _i == 0) else _config(None)
@@ -985,35 +995,56 @@ def _complete_with_tools(contents, force_tool: bool = False,
                 result = coach_tools.dispatch(fc.name, dict(fc.args or {}))
                 if result.get("found") and result.get("video_url"):
                     found_video_url = result["video_url"]
+                    tool_urls.add(result["video_url"])
+                for c in result.get("candidates") or []:
+                    if c.get("url"):
+                        tool_urls.add(c["url"])
+                        song_candidate = song_candidate or c
                 parts.append(types.Part.from_function_response(name=fc.name, response=result))
             convo.append(types.Content(role="user", parts=parts))
         # モデルは「動画を用意しました」と言うだけでURLを省く事故があるため、
         # ツールが実URLを返していて本文に無ければ、確定的に1行添える（リンク到達を保証）。
         if found_video_url and last_text and found_video_url not in last_text:
             last_text = last_text.rstrip() + f"\n（参考動画 → {found_video_url}）"
-        return last_text or None
+        # 原曲候補が返っているのに確認アンカーが無ければ、確定的に確認文を1行添える
+        # （docs/72 FR-02。承諾検出（rule_engine）はこの定型句＋URL1件をトリガーにする）。
+        if song_candidate and last_text:
+            if SONG_CONFIRM_ANCHOR not in last_text:
+                ch = f"（{song_candidate['channel']}）" if song_candidate.get("channel") else ""
+                last_text = last_text.rstrip() + (
+                    f"\n原曲は『{song_candidate['title']}』{ch}でしょうか？"
+                    f"この曲で合っていますか？ → {song_candidate['url']}"
+                )
+            elif song_candidate["url"] not in last_text:
+                # アンカーはあるのにURLを省いた（モデルの省略事故）→ 確定的に補う
+                last_text = last_text.rstrip() + f"\n→ {song_candidate['url']}"
+        return last_text or None, tool_urls
     except Exception as e:  # API エラー・ネットワーク・レート制限など
         logger.warning("ツール付きLLM応答に失敗（ツール無しにフォールバック）: %s", e)
-        return None
+        return None, tool_urls
 
 
 _URL_RE = re.compile(r"https?://[^\s　）\)】\]」』]+")
 
 
-def _scrub_foreign_urls(text: Optional[str]) -> Optional[str]:
+def _scrub_foreign_urls(text: Optional[str], extra_allowed: Optional[set[str]] = None) -> Optional[str]:
     """カタログ（taxonomy）に無い URL を除去する（捏造リンク防止の最終ガード）。
 
     ツール経由で得た実在URLだけが残る。存在しない YouTube リンクをでっち上げても、
     ここでユーザーに届く前に消える。
+    extra_allowed: このターンにツールが実際に返したURL（原曲候補など）。カタログ外でも
+    実在が保証されているので残す（docs/72）。
     """
     if not text:
         return text
     from app.coaching.tools import CATALOG_VIDEO_URLS
 
+    allowed = CATALOG_VIDEO_URLS | (extra_allowed or set())
+
     def repl(m: "re.Match") -> str:
         raw = m.group(0)
         cleaned = raw.rstrip("。、,.！!？?")
-        return raw if cleaned in CATALOG_VIDEO_URLS else ""
+        return raw if cleaned in allowed else ""
 
     out = _URL_RE.sub(repl, text)
     # URL 除去で生じた「→ 」「（参考に … ）」の抜け殻や連続空白を軽く整える
@@ -1047,12 +1078,13 @@ def generate_reply(
     context = build_session_context(state)
     contents = _build_contents(state, user_text, history)
     chat_model = settings.llm_chat_model  # 対話は一段上のモデルに格上げ（docs/66）
+    tool_urls: set[str] = set()
     # ツール化ON時は function calling 経由（動画等の"事実"は実データをツールで供給）。
     if settings.llm_enabled and settings.coach_tools_enabled:
         # キーワード（動画・お手本…）だけでなく、直前オファーへの承諾（お願いします/はい/
         # どれ？）でもツールを強制する（承諾なのにURLが出ない事故の修正。docs/71）
         force = _wants_reference(user_text) or _accepts_video_offer(user_text, history)
-        reply = _complete_with_tools(contents, force_tool=force, model=chat_model)
+        reply, tool_urls = _complete_with_tools(contents, force_tool=force, model=chat_model)
     else:
         reply = _complete(contents, model=chat_model)
     if not reply and settings.llm_enabled:
@@ -1063,8 +1095,9 @@ def generate_reply(
         reply = _scrub_invented_seconds(reply, _allowed_seconds(context, user_text))
         # チャット返信はカードを伴わないので、カードを出す約束文を消す
         reply = scrub_card_promise(reply)
-        # カタログに無い URL（でっち上げリンク）を除去する
-        reply = _scrub_foreign_urls(reply)
+        # カタログに無い URL（でっち上げリンク）を除去する。ツールが実際に返した
+        # 原曲候補URL（実在保証つき）は許可する（docs/72）
+        reply = _scrub_foreign_urls(reply, extra_allowed=tool_urls)
     return reply
 
 

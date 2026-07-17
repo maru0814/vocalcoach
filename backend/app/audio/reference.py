@@ -58,6 +58,45 @@ def fetch_youtube_title(url: str, timeout: float = 5.0) -> str | None:
         return None
 
 
+def search_youtube(query: str, limit: int = 3, timeout: float = 20.0) -> list[dict]:
+    """曲名（＋歌手名）から YouTube の原曲候補を探す（docs/72 FR-01）。
+
+    yt-dlp の ytsearch をフラットモードで叩き、メタデータだけ取得する
+    （動画・音声のダウンロードは一切しない）。失敗・0件時は空リスト。
+    返却: [{"title", "url", "channel", "duration_sec"}]（最大 limit 件）
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    cmd = [
+        sys.executable, "-m", "yt_dlp",
+        "--flat-playlist", "-j", "--no-warnings",
+        f"ytsearch{int(limit)}:{q}",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except Exception:
+        return []
+    out: list[dict] = []
+    for line in (proc.stdout or "").splitlines():
+        try:
+            e = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        vid, title = e.get("id"), e.get("title")
+        if not vid or not title:
+            continue
+        out.append({
+            "title": title,
+            "url": f"https://www.youtube.com/watch?v={vid}",
+            "channel": e.get("channel") or e.get("uploader") or "",
+            "duration_sec": int(e["duration"]) if e.get("duration") else None,
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
 def fetch_reference_wav(url: str, out_dir: str | Path, name: str) -> str:
     """Download audio from a YouTube URL and return the path to a wav file.
 

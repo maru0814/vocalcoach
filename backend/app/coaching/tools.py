@@ -75,9 +75,53 @@ FIND_REFERENCE_VIDEO_DECL = {
 }
 
 
+def search_original_song(query: str) -> dict:
+    """曲名（＋歌手名）から原曲候補を YouTube 検索して返す（docs/72 FR-01）。
+
+    読み取り専用。セッション状態は変更しない（確定は FR-03 の承諾検出が行う）。
+    見つからなければ {"found": False, "candidates": []} — でっち上げは返さない。
+    """
+    from app.audio.reference import search_youtube
+
+    q = (query or "").strip()
+    if not q:
+        return {"found": False, "candidates": []}
+    try:
+        candidates = search_youtube(q, limit=3)
+    except Exception:
+        candidates = []
+    return {"found": bool(candidates), "candidates": candidates}
+
+
+SEARCH_ORIGINAL_SONG_DECL = {
+    "name": "search_original_song",
+    "description": (
+        "ユーザーが原曲（お手本にしたい曲）を曲名・歌手名だけで伝えてきた時に、"
+        "YouTube から原曲候補を検索する。URLが貼られた時は呼ばない（そのURLが原曲になる）。"
+        "query には曲名と、分かれば歌手名を含める（例: 『ツキミソウ Novelbright』）。"
+        "返ってきた candidates の先頭候補を1つだけ、タイトル・チャンネル名と実URL付きで提示し、"
+        "必ず「この曲で合っていますか？」と確認して返答を終える。確認前に原曲が決まった"
+        "扱いをしない・比較したと言わない。found=false なら候補をでっち上げず、"
+        "YouTubeのリンクを貼ってもらうよう正直に案内する。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "検索クエリ（曲名＋分かれば歌手名）",
+            }
+        },
+        "required": ["query"],
+    },
+}
+
+
 def dispatch(name: str, args: Optional[dict]) -> dict:
     """ツール名と引数を受けて実行結果（JSON化可能な dict）を返す。"""
     args = args or {}
     if name == "find_reference_video":
         return find_reference_video(args.get("topic") or "")
+    if name == "search_original_song":
+        return search_original_song(args.get("query") or "")
     return {"error": f"unknown tool: {name}"}
