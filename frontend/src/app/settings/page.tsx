@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { BillingMe, getBillingMe, openPortal, startCheckout } from "@/lib/api";
 import { PREMIUM_PRICE_LABEL } from "@/lib/pricing";
 import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
+import NotificationToggle from "@/components/pwa/NotificationToggle";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -95,6 +96,8 @@ export default function SettingsPage() {
           </>
         )}
       </section>
+
+      <NotificationToggle />
     </div>
   );
 }

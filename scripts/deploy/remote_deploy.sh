@@ -56,17 +56,18 @@ CRON_LINES=(
   # 毎朝の定例メトリクス（前日の訪問者/登録/ログインUUをLINE通知。host実行）
   "0 8 * * * python3 $REPO/scripts/ops/daily_metrics_line.py >> /var/log/daily_metrics.log 2>&1"
 )
-CUR="$(crontab -l 2>/dev/null || true)"
-ADDED=0
+# 再同期(reconcile): VocalCoach管理のcron行を「マーカー(=実行するjobスクリプト名)」で
+# いったん全除去してから正典セットを書き直す。append専用だと、コマンド形態を変えた時
+# （旧: .venv直 → 新: docker compose exec）に旧行が生きたcrontabに取り残され、文字列
+# 完全一致の重複判定をすり抜けて同時刻に二重発火する（2026-07 実障害）。マーカー除去なら
+# 過去のどの形態も一掃して収束するため、二重投稿・二重課金の再発を根から断てる。
+CRON_MARKER='generate_and_post\.py|fetch_metrics\.py|lead_finder\.py|lead_metrics\.py|access_funnel\.py|daily_metrics_line\.py'
+CUR="$(crontab -l 2>/dev/null | grep -vE "$CRON_MARKER" || true)"
 for l in "${CRON_LINES[@]}"; do
-  if ! printf '%s\n' "$CUR" | grep -Fq "$l"; then
-    CUR="$CUR"$'\n'"$l"; ADDED=$((ADDED + 1)); echo "cron 追加: $l"
-  fi
+  CUR="$CUR"$'\n'"$l"
 done
-if [ "$ADDED" -gt 0 ]; then
-  printf '%s\n' "$CUR" | sed '/^$/d' | crontab -
-  echo "cron 登録: ${ADDED}件追加（確認: crontab -l）"
-fi
+printf '%s\n' "$CUR" | sed '/^$/d' | crontab -
+echo "cron 再同期: VocalCoach管理 ${#CRON_LINES[@]}件を正典化（旧形態の重複行があれば除去。確認: crontab -l）"
 
 docker image prune -f >/dev/null 2>&1 || true
 echo "Deploy done: $NEW"

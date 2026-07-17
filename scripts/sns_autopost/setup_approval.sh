@@ -140,16 +140,16 @@ if [ "$DO_CRON" = 1 ]; then
     # 毎朝の定例メトリクス（前日の訪問者/登録/ログインUUをLINE通知。host実行）
     "0 8 * * * python3 $REPO_ROOT/scripts/ops/daily_metrics_line.py >> /var/log/daily_metrics.log 2>&1"
   )
-  CUR="$(crontab -l 2>/dev/null || true)"
+  # 再同期(reconcile): 追加専用だとコマンド形態変更時（旧 .venv直 → 新 docker compose exec）に
+  # 旧行が生きたcrontabに残って同時刻で二重発火する（2026-07 実障害）。管理行をマーカー
+  # （jobスクリプト名）で一掃してから正典セットを書き直し、収束させる。remote_deploy.sh と同一方針。
+  CRON_MARKER='generate_and_post\.py|fetch_metrics\.py|lead_finder\.py|lead_metrics\.py|access_funnel\.py|daily_metrics_line\.py'
+  CUR="$(crontab -l 2>/dev/null | grep -vE "$CRON_MARKER" || true)"
   for l in "${LINES[@]}"; do
-    if printf '%s\n' "$CUR" | grep -Fq "$l"; then
-      info "cron 既存: $l"
-    else
-      CUR="$CUR"$'\n'"$l"; ok "cron 追加: $l"
-    fi
+    CUR="$CUR"$'\n'"$l"; ok "cron 正典: $l"
   done
   printf '%s\n' "$CUR" | sed '/^$/d' | crontab -
-  ok "cron 登録完了（確認: crontab -l）"
+  ok "cron 再同期完了（旧形態の重複行があれば除去。確認: crontab -l）"
 fi
 
 # --- --test ---

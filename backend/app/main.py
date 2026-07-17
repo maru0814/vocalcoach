@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.billing import router as billing_router
 from app.api.v1.endpoints.coach import router as coach_router
+from app.api.v1.endpoints.push import router as push_router
 from app.api.v1.endpoints.recordings import router as recordings_router
 from app.api.v1.endpoints.voice_type import router as voice_type_router
 from app.schemas.common import ErrorResponse
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(recordings_router)
     app.include_router(coach_router)
     app.include_router(voice_type_router)
+    app.include_router(push_router)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):

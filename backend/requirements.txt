@@ -21,3 +21,6 @@ yt-dlp==2026.3.17
 imageio-ffmpeg==0.6.0
 praat-parselmouth==0.4.7
 stripe==15.2.0
+
+# Web Push（練習リマインド通知 / PWA。docs/73〜75。VAPIDで標準Web Push Protocolを送信）
+pywebpush==2.0.0

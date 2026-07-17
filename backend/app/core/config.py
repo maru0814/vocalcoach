@@ -124,6 +124,19 @@ class Settings(BaseSettings):
     def stripe_enabled(self) -> bool:
         return bool(self.stripe_secret_key and self.stripe_price_id_premium)
 
+    # --- Web Push（練習リマインド通知 / PWA。docs/73〜75）---
+    # VAPID鍵ペア（公開鍵はフロントにも NEXT_PUBLIC_VAPID_PUBLIC_KEY として渡す）。
+    # 秘密鍵はサーバー/バッチ専用。未設定なら購読は保存できるが配信はスキップされる。
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = None
+    vapid_subject: str = "mailto:admin@example.com"  # 本番は実連絡先(mailto:)を .env で設定
+    # 最後の録音から何日練習がないユーザーにリマインドを送るか（docs/73 FR-05）。
+    reminder_idle_days: int = 3
+
+    @property
+    def push_enabled(self) -> bool:
+        return bool(self.vapid_public_key and self.vapid_private_key and self.vapid_subject)
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

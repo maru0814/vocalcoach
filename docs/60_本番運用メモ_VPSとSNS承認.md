@@ -317,3 +317,54 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   `docker compose ... up -d --force-recreate sns` で再作成。healthz `{"status":"ok","line":true}` を確認。
 - **教訓**: キュー整理は必ず①バックアップ→②本体モジュール経由で更新（手書きJSONL編集をしない）→③status内訳で検証。
   `failed`（日次上限タップ事故）の過去分は履歴として残す（再承認不可仕様のため復活させない）。
+
+---
+
+## 再発防止: 投稿cronの二重発火をコードで根絶（2026-07-17・SRE）
+
+**背景**: 6/17〜7/14 の投稿停止は 7/15-16 に手動で解消済み（上記事例）。ただし停止の一因だった
+**cron重複**（旧 `.venv` host版 と docker版が同時刻＝二重発火・キュー分裂）は、ライブ crontab を手で
+掃除しただけで、登録スクリプトが **append専用**（古い行を消さない）のままだと再発しうる。以下はその
+コード側の恒久対策。
+
+### 恒久対策（コード側・本PRで実施）
+- `remote_deploy.sh` / `setup_approval.sh` の cron 登録を **append専用 → マーカーで再同期(reconcile)** に変更。
+  VocalCoach管理の cron 行（`generate_and_post.py` 等の job 名で識別）を毎回一掃してから正典セットを書き直す。
+  → **次回デプロイで旧 `.venv` 行が自動撤去**され、二重発火が根から消える（手動 `crontab` 撤去はもう不要）。
+  無関係な cron 行（例: バックアップ）は保全されることをローカルで実証済み。
+
+### 再発時/検証用の人手作業（VPS・SSH）
+> 7/15-16 の復旧は完了済み。以下は「本コード修正のデプロイ確認」と「万一の再発時」に流す参照手順。
+> このリポジトリからは VPS へ到達できない（SSH/HTTPは外部）ため運用者が実行する。
+
+1. **本修正をデプロイ**（scripts変更なので自動デプロイが走る）:
+   ```bash
+   # main へマージ → Actions が remote_deploy.sh を実行 → cron が自動で正典化される
+   ssh root@160.251.177.227 'crontab -l | grep -c generate_and_post.py'   # slotごと1行=重複解消を確認（計2）
+   ```
+2. **実投稿を有効化**（`DRY_RUN=0` とXキー確認）:
+   ```bash
+   ssh root@160.251.177.227
+   cd /opt/vocalcoach/scripts/sns_autopost
+   grep -E '^(DRY_RUN|X_|APPROVAL_MODE|MAX_POSTS_PER_DAY|MONTHLY_COST_CAP_USD)' .env
+   # DRY_RUN=0 / APPROVAL_MODE=1 / X の Consumer+Access 4キーが埋まっているか。無ければ設定
+   cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env up -d sns
+   ```
+3. **滞留キューをクリアして新規から再開**（41本は大半が古い＝承認せず破棄推奨。docker volume 側が正）:
+   ```bash
+   docker compose -f docker-compose.prod.yml exec -T sns sh -c 'wc -l /data/pending_queue.jsonl; : > /data/pending_queue.jsonl'
+   # 孤児キュー(host側)は writer 消滅で無害だが紛らわしいので退避
+   [ -f /opt/vocalcoach/scripts/sns_autopost/pending_queue.jsonl ] && mv /opt/vocalcoach/scripts/sns_autopost/pending_queue.jsonl{,.orphan.bak}
+   ```
+4. **疎通と1周確認**:
+   ```bash
+   curl -s https://sora-vocal-ai.duckdns.org/sns/healthz   # {"status":"ok","line":true}
+   # 手動で1本だけ承認フローに乗せてLINE→承認→Xまで通るか
+   docker compose -f docker-compose.prod.yml exec -T sns sh -c 'DRY_RUN=0 python generate_and_post.py --pillar tip'
+   ```
+5. **402（X APIクレジット切れ）監視**: 復旧後は `MONTHLY_COST_CAP_USD` と当月概算をログで継続監視（前歴 6/11）。
+
+### 完了判定
+- `crontab -l | grep -c generate_and_post.py` が **2**（slot1/slot2 各1）＝重複解消。
+- 承認LINEが1通だけ届き、タップで X 投稿まで通る。
+- 以降、昼12時/夜21時の自動生成→承認→投稿が1系統で回る。
