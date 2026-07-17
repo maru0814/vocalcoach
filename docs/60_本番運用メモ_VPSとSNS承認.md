@@ -255,3 +255,17 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   3. Actions が使えない時の**逃げ道は `remote_deploy.sh` の手動実行**（PATに actions:write が無くても復旧できる）。
   4. squash マージ後に**同じブランチの重複PRが自動で残る**ことがある（merge-base ずれで差分が「新規」に見える）。
      中身が main にあるなら **マージせずクローズ**（今回 #162/#164 をクローズ）。
+
+## 死活監視（uptime.yml）（2026-07-17 追加・docs/62 の前提条件）
+
+**背景**: 2026-07-11夜〜07-14 08:07 の約3日間、VPS ごと停止（電源断→カーネル 6.8.0-124→134 で再起動）していたが誰も気づかなかった。Caddy ログの 7/12・7/13 が完全にゼロ、朝8時の LINE 定例が3日届かないのが唯一の痕跡。**VPS 上の cron は VPS ごと死ぬため、死活監視は必ず外に置く**。
+
+- **仕組み**: `.github/workflows/uptime.yml`（GitHub Actions schedule・15分毎）が外形監視:
+  `/`（Caddy+frontend）・`/api/v1/voice-type/stats`（backend+DB）・`/sns/healthz`（sns webhook）の3点を curl。
+  非200は20秒後に1回だけリトライしてから障害判定（誤報防止）。
+- **通知は2段構え**:
+  1. **GitHub Issue（主経路・追加設定なしで動く）**: 障害で `uptime` ラベルのIssueを自動作成→GitHubからメール通知が飛ぶ。復旧で自動クローズ。Issueの開閉が状態管理を兼ね、継続中の再通知は6時間毎コメントに抑制。障害履歴もIssueに残る。
+  2. **LINE（任意・即時性）**: repo secrets `LINE_CHANNEL_ACCESS_TOKEN` / `LINE_OPERATOR_USER_ID` が登録されていれば併送。**PATにsecrets権限が無いためCLI登録は403**。人間が GitHub Web UI（Settings→Secrets and variables→Actions）で登録する。値は VPS `/opt/vocalcoach/scripts/sns_autopost/.env` の同名キー。ローテ時は両方更新。
+- **疎通テスト**: `gh workflow run uptime.yml -f test_alert=true`（LINE設定後）→ 🔔テスト通知が届けば経路正常。Issue経路はrun成功＝正常。
+- **アラートが来たら**: 本ドキュメント冒頭のプレイブック順（curl→SSH→docker compose ps）。SSH も通らなければ ConoHa コンソールで電源確認（人間作業）。**復旧後は必ず `gh run list --workflow deploy.yml` で silent なデプロイ失敗の積み上がりを確認**（上の 2026-07-12〜16 事例の教訓）。
+- **限界（正直に）**: GitHub Actions の schedule は数分〜数十分遅延しうる。分単位の SLA 監視ではなく「時間単位の停止に当日気づく」ための最小構成。
