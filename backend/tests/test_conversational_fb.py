@@ -256,6 +256,56 @@ class CoachToolsAndScrub(unittest.TestCase):
             self.assertFalse(llm._wants_reference(t), t)
 
 
+class VideoOfferAcceptance(unittest.TestCase):
+    """動画オファーを承諾したのにURLが一度も出ない事故（docs/71）の回帰ガード。
+
+    「実演動画を出しましょうか？」→「お願いします」がキーワード判定
+    （_wants_reference）に引っかからず、ツールが強制されなかった。
+    """
+
+    OFFER = [
+        {"role": "user", "content": "喉の力みを直したい"},
+        {"role": "assistant",
+         "content": "リップロールから始めましょう。参考になる実演動画を出しましょうか？"},
+    ]
+    BROKEN_PROMISE = [
+        {"role": "user", "content": "お願いします"},
+        {"role": "assistant",
+         "content": "それでは、こちらが参考になるリップロールの練習動画です。"},
+    ]
+
+    def test_accept_after_offer_forces_tool(self):
+        for t in ["お願いします", "はい", "ぜひ！", "見たいです"]:
+            self.assertTrue(llm._accepts_video_offer(t, self.OFFER), t)
+
+    def test_prompt_after_broken_promise_recovers(self):
+        # URL無しの「こちらが〜動画です」の後の催促でも復帰できる
+        for t in ["どれ？", "リンクないよ", "見えないです"]:
+            self.assertTrue(llm._accepts_video_offer(t, self.BROKEN_PROMISE), t)
+
+    def test_no_offer_decline_or_delivered_do_not_force(self):
+        # オファーが無い会話では強制しない
+        self.assertFalse(llm._accepts_video_offer("お願いします", []))
+        # 辞退は強制しない
+        for t in ["今は大丈夫です", "いらないです", "また今度で"]:
+            self.assertFalse(llm._accepts_video_offer(t, self.OFFER), t)
+        # 直前ターンで実URLを渡せているなら対象外（「どれ？」は別の話題）
+        delivered = [{"role": "assistant",
+                      "content": "こちらです。\n（参考動画 → https://www.youtube.com/watch?v=TakKKIdIGgQ）"}]
+        self.assertFalse(llm._accepts_video_offer("どれ？", delivered))
+
+    def test_practice_name_topics_map_to_real_videos(self):
+        # 練習名そのもの（コーチが名指しで提案する語彙）で実在動画が引ける
+        from app.coaching import tools
+        for topic in ["リップロール", "ストロー", "あくび", "ハミング"]:
+            r = tools.find_reference_video(topic)
+            self.assertTrue(r.get("found"), topic)
+            self.assertIn(r["video_url"], tools.CATALOG_VIDEO_URLS)
+        # 事故になった実会話の話題: リップロールにはリップロールの実演動画が返る
+        r = tools.find_reference_video("リップロール")
+        self.assertIn("リップロール", r["video_title"])
+
+
 class RecordingIntentRouting(unittest.TestCase):
     """勧めた基礎練の実演が「曲の歌い直し」と誤認される不具合の回帰ガード。
 

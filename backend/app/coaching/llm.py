@@ -727,10 +727,27 @@ def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
     video_line = _video_offer_line(history)
     if video_line:
         context += "\n" + video_line
-    # 会話モード（短い相槌・雑談・感情）なら、講義に変換せず自然に受ける指示を注入（docs/66）
-    convo_line = _conversation_mode_line(user_text)
-    if convo_line:
-        context += "\n" + convo_line
+    # 動画オファーへの承諾ターンは会話モード（短い一言＝雑談扱い）より優先し、
+    # 実URLを渡す行動を明示する（docs/71。ツール化ON時のみ＝ツールが実在する時のみ）
+    if settings.coach_tools_enabled and _accepts_video_offer(user_text, history):
+        # オファー文に含まれる練習名（例: リップロール）を topic として名指しする。
+        # LLM任せだと課題名（喉の力み等）を渡して別練習の動画が返ることがあるため。
+        offered = extract_practices(_last_assistant_text(history))
+        topic_hint = (
+            f"topic には「{offered[0]}」を渡してください。" if offered
+            else "topic には直前にあなたが提案した練習名・話題をそのまま渡してください。"
+        )
+        context += (
+            "\n- ユーザーは直前のあなたの動画オファーを承諾しました。"
+            f"find_reference_video を必ず呼んでください。{topic_hint}"
+            "返ってきた実URLを本文の最後に1行で必ず載せてください。"
+            "URLを書かずに「お出ししますね」とだけ言って終えるのは禁止です。"
+        )
+    else:
+        # 会話モード（短い相槌・雑談・感情）なら、講義に変換せず自然に受ける指示を注入（docs/66）
+        convo_line = _conversation_mode_line(user_text)
+        if convo_line:
+            context += "\n" + convo_line
     final_text = (
         "# このターンについて\n"
         "これは会話の続きで、ユーザーがテキストで話しかけてきた場面です。"
@@ -852,6 +869,49 @@ def _wants_reference(text: str) -> bool:
     if "http://" in text or "https://" in text:
         return False
     return any(k in text for k in _REFERENCE_HINTS)
+
+
+# 「動画をお出ししますね」「こちらが〜動画です」等、コーチが動画を"出す"と言った約束の検出。
+# オファー（_VIDEO_OFFER_RE）に加えてこれも承諾対象にすることで、URL無しの約束だけが
+# 出てしまった壊れた会話（「こちらです。」→「どれ？」）からも次ターンで復帰できる（docs/71）。
+_VIDEO_PROMISE_RE = re.compile(
+    r"動画[^。！？\n]{0,12}(お出しします|出します|お渡しします)"
+    r"|こちらが[^。！？\n]{0,15}動画"
+)
+# 短い承諾・催促（オファー/約束の直後という文脈ガード付きで使う）
+_VIDEO_ACCEPT_RE = re.compile(
+    r"お願い|おねがい|はい|うん|ぜひ|是非|見たい|みたい|欲しい|ほしい|"
+    r"ください|下さい|出して|だして|どれ|どこ|リンク|ない|見えな|来てな|届いてな|いいよ|いいです"
+)
+_VIDEO_DECLINE_RE = re.compile(r"いらな|いらん|大丈夫|結構|けっこう|不要|やめ|あとで|後で|今度")
+
+
+def _last_assistant_text(history: Optional[list[dict]]) -> str:
+    for h in reversed(history or []):
+        if h.get("role") == "assistant":
+            return h.get("content") or ""
+    return ""
+
+
+def _accepts_video_offer(user_text: str, history: Optional[list[dict]]) -> bool:
+    """直前のコーチ発言が動画オファー/約束で、ユーザーが短く承諾・催促したか（docs/71）。
+
+    _wants_reference は今回の発言のキーワード（動画・お手本…）しか見ないため、
+    「お願いします」「はい」「どれ？」のような承諾だけの返事ではツールが強制されず、
+    flash-lite が「お出ししますね」と言うだけでURLが出ない事故が起きる。その穴を塞ぐ。
+    """
+    t = (user_text or "").strip()
+    if not t or "http://" in t or "https://" in t:
+        return False
+    last = _last_assistant_text(history)
+    if "http" in last:  # 直前ターンで実URLは渡せている（このターンの話題は別）
+        return False
+    if not (_VIDEO_OFFER_RE.search(last) or _VIDEO_PROMISE_RE.search(last)):
+        return False
+    if _VIDEO_DECLINE_RE.search(t):
+        return False
+    core = re.sub(r"[\s、。！？!?…〜～ー]+", "", t)
+    return len(core) <= 12 and bool(_VIDEO_ACCEPT_RE.search(t))
 
 
 def _complete_with_tools(contents, force_tool: bool = False,
@@ -984,7 +1044,10 @@ def generate_reply(
     chat_model = settings.llm_chat_model  # 対話は一段上のモデルに格上げ（docs/66）
     # ツール化ON時は function calling 経由（動画等の"事実"は実データをツールで供給）。
     if settings.llm_enabled and settings.coach_tools_enabled:
-        reply = _complete_with_tools(contents, force_tool=_wants_reference(user_text), model=chat_model)
+        # キーワード（動画・お手本…）だけでなく、直前オファーへの承諾（お願いします/はい/
+        # どれ？）でもツールを強制する（承諾なのにURLが出ない事故の修正。docs/71）
+        force = _wants_reference(user_text) or _accepts_video_offer(user_text, history)
+        reply = _complete_with_tools(contents, force_tool=force, model=chat_model)
     else:
         reply = _complete(contents, model=chat_model)
     if not reply and settings.llm_enabled:
