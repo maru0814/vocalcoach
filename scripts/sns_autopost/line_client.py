@@ -127,9 +127,14 @@ def _candidate_line(i: int, c: dict) -> str:
     excerpt = (c.get("source_text") or "").replace("\n", " ").strip()
     if len(excerpt) > 50:
         excerpt = excerpt[:50] + "…"
-    return (f"{i}. @{c.get('handle', '?')}（フォロワー{fol} / {reason}）\n"
+    base = (f"{i}. @{c.get('handle', '?')}（フォロワー{fol} / {reason}）\n"
             f"   「{excerpt}」\n"
             f"   {c.get('url', '')}")
+    # 返信下書き（docs/58 FR-03改）。長押しコピー→リンク先で貼って送る（送信は人間）。
+    draft = (c.get("reply_draft") or "").strip()
+    if draft:
+        base += f"\n   ✍️ 返信下書き（このままコピペOK・編集歓迎）:\n   {draft}"
+    return base
 
 
 _CHUNK_SIZE = 8       # 1メッセージに乗せる候補数（5000字上限に対する安全マージン）
@@ -139,7 +144,8 @@ _MAX_LIST_MSGS = 4    # LINEの1push=最大5メッセージのうち、ボタン
 def push_lead_digest(candidates: list[dict], batch_id: str) -> tuple[bool, str]:
     """フォロー候補の一覧をpushする（docs/58 FR-05改）。
 
-    返信文は含まない。実際のフォローはXアプリで運用者の指で行う前提で、
+    上位候補には返信下書きが付く（docs/58 FR-03改・2026-07-17再転換）が、
+    フォロー・返信の実行は常にXアプリで運用者の指で行う前提。
     末尾の[✅全員フォローした]は「実行した」という自己申告の記録ボタン
     （X APIは一切呼ばない。webhook._handle_lead_batch 参照）。
     候補が多い日でも1push=5メッセージ上限に収まるようチャンク分割する。"""
@@ -150,9 +156,12 @@ def push_lead_digest(candidates: list[dict], batch_id: str) -> tuple[bool, str]:
         return False, "LINE_OPERATOR_USER_ID_MISSING"
     lines = [_candidate_line(i, c) for i, c in enumerate(candidates, 1)]
     chunks = [lines[i:i + _CHUNK_SIZE] for i in range(0, len(lines), _CHUNK_SIZE)][:_MAX_LIST_MSGS]
+    has_draft = any((c.get("reply_draft") or "").strip() for c in candidates)
+    draft_note = ("✍️付きの人は下書きを長押しコピー→そのまま返信できます。\n"
+                  if has_draft else "")
     header = (f"🎯 今日のフォロー候補（{len(candidates)}人）\n"
-              "気になる人のリンクをタップ→Xアプリでご自身の指でフォローしてください。\n"
-              + ("─" * 16))
+              "気になる人のリンクをタップ→Xアプリでご自身の指でフォロー/返信してください。\n"
+              + draft_note + ("─" * 16))
     messages = [{"type": "text", "text": header + "\n\n" + "\n\n".join(chunks[0])}]
     for chunk in chunks[1:]:
         messages.append({"type": "text", "text": "\n\n".join(chunk)})

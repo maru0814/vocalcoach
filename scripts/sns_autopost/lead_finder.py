@@ -52,6 +52,7 @@ import requests
 import approval_queue as q
 import leads
 import line_client
+import reply_drafts
 
 # 従量課金の単価（docs/59 §2.1。概算ガード用。変動したらここを直す）
 PRICE = {"post_read": 0.005, "user_read": 0.010, "owned_read": 0.001}
@@ -355,6 +356,19 @@ def main() -> int:
               f"（MAX_FOLLOWS_PER_DAY={max_per_day}）")
         final = final[:slots]
 
+    # --- 返信下書き（docs/58 FR-03改・2026-07-17再転換）。上位N件に監修済み下書きを添える。
+    # 表示するだけで送信はしない（送信は運用者がXアプリで手動）。LEAD_REPLY_DRAFTS=0 で無効化。
+    if _truthy(os.getenv("LEAD_REPLY_DRAFTS", "1")):
+        reply_max = int(os.getenv("LEAD_REPLY_MAX", "3"))
+        recent_drafts: list[str] = []
+        for c in final[:reply_max]:
+            text, origin = reply_drafts.draft(c["text"], c["query_id"])
+            if reply_drafts.too_similar(text, recent_drafts):
+                continue  # 同文連投はスパムシグナル。下書き無しで提示し、文面は運用者に任せる
+            c["reply_draft"] = text
+            c["draft_origin"] = origin
+            recent_drafts.append(text)
+
     meter.persist() if not dry else None
     print(f"[info] 候補{len(cands)}件 → 通過{len(final)}件 / 除外{len(dropped)}件 "
           f"/ read概算 ${meter.usd():.3f}（本日累計 ${meter.spent_today + meter.usd():.3f}"
@@ -372,13 +386,16 @@ def main() -> int:
     digest = [{"handle": c.get("handle", ""), "query_id": c["query_id"],
               "reason": leads.QUERY_BY_ID.get(c["query_id"], {}).get("intent", ""),
               "followers": c.get("followers"), "source_text": c["text"],
-              "url": c.get("url", "")} for c in final]
+              "url": c.get("url", ""),
+              "reply_draft": c.get("reply_draft", "")} for c in final]
 
     if dry:
         print("=" * 56)
         for i, c in enumerate(digest, 1):
             print(f"[DRY] {i}. @{c['handle']}（{c['reason']} / followers={c['followers']}）\n"
                   f"     {c['source_text'][:100]}\n     {c['url']}")
+            if c["reply_draft"]:
+                print(f"     ✍️ 返信下書き: {c['reply_draft']}")
         print("DRY_RUN: 生成のみ。LINE・記録はいずれも触れていません。")
         return 0
 
