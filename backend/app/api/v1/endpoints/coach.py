@@ -354,7 +354,10 @@ def create_session(db: Session = Depends(get_db), user=Depends(get_current_user)
     db.commit()
     for r in rows:
         db.refresh(r)
-    return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+    return ChatResponse(
+        session_id=s.id, phase=s.phase, current_task=s.current_task,
+        messages=[_msg_out(r) for r in rows],
+    )
 
 
 @router.post("/sessions/{session_id}/promote-recording")
@@ -380,9 +383,16 @@ def promote_recording(
 
 @router.get("/sessions", response_model=list[SessionSummary])
 def list_sessions(db: Session = Depends(get_db), user=Depends(get_current_user)) -> list[SessionSummary]:
+    # 開始しただけのセッション（挨拶のみ・ユーザー発話ゼロ）は履歴に出さない。
+    # ソラ先生の実応答はユーザー発話があって初めて生まれるため、user メッセージの有無で判定する
+    has_user_message = (
+        db.query(ChatMessage.id)
+        .filter(ChatMessage.session_id == ChatSession.id, ChatMessage.role == "user")
+        .exists()
+    )
     sessions = (
         db.query(ChatSession)
-        .filter(ChatSession.user_id == user.id)
+        .filter(ChatSession.user_id == user.id, has_user_message)
         .order_by(ChatSession.updated_at.desc())
         .all()
     )
