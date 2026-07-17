@@ -16,7 +16,6 @@ on:
           - lead-metrics      # クエリ別フォロバ率の集計
           - healthz           # /sns/healthz の疎通確認（SSH不要）
           - diag              # VPSの状態診断（メモリ/コンテナ/OOM痕跡/リードログ）
-          - dump-chat         # 実会員のコーチ会話ログをDBから読み出す（read-only・運用者の行動分析用）
 
 concurrency:
   group: sns-ops
@@ -42,40 +41,8 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Dump chat transcripts (read-only)
-        if: inputs.task == 'dump-chat'
-        env:
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          # 実会員（@example.com のテストを除く）の全セッション・全メッセージを時系列で出力する。
-          # backend コンテナ内の SQLite (/data/app.db) を read-only で開くだけ。書き込みは一切しない。
-          B64=$(base64 -w0 <<'PY'
-          import sqlite3
-          con = sqlite3.connect("file:/data/app.db?mode=ro", uri=True)
-          con.row_factory = sqlite3.Row
-          cur = con.cursor()
-          users = cur.execute("SELECT id,email,created_at FROM users WHERE email NOT LIKE '%@example.com' ORDER BY id").fetchall()
-          for u in users:
-              n_rec = cur.execute("SELECT COUNT(*) FROM recordings WHERE user_id=?", (u["id"],)).fetchone()[0]
-              print("== USER", u["id"], u["email"], "| registered:", u["created_at"], "| recordings:", n_rec)
-              for s in cur.execute("SELECT * FROM chat_sessions WHERE user_id=? ORDER BY id", (u["id"],)).fetchall():
-                  print("")
-                  print("-- SESSION", s["id"], "| phase:", s["phase"], "| song:", s["song_title"], "| created:", s["created_at"], "| updated:", s["updated_at"])
-                  for m in cur.execute("SELECT * FROM chat_messages WHERE session_id=? ORDER BY id", (s["id"],)).fetchall():
-                      audio = ("  <audio: " + m["audio_path"] + ">") if m["audio_path"] else ""
-                      print("[" + str(m["created_at"]) + "] " + m["role"] + "/" + m["type"] + ": " + (m["text"] or "") + audio)
-              for f in cur.execute("SELECT * FROM message_feedback WHERE user_id=? ORDER BY id", (u["id"],)).fetchall():
-                  print("** FEEDBACK on msg", f["message_id"], "|", f["rating"], "|", f["reason"], "|", f["comment"])
-              print("")
-          PY
-          )
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-            "$VPS_USER@$VPS_HOST" \
-            "bash -lc 'cd /opt/vocalcoach/docker && echo $B64 | base64 -d | docker compose -f docker-compose.prod.yml --env-file .env exec -T backend python -'"
-
       - name: Run task on VPS
-        if: inputs.task != 'healthz' && inputs.task != 'dump-chat'
+        if: inputs.task != 'healthz'
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
