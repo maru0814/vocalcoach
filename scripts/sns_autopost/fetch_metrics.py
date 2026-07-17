@@ -2,7 +2,9 @@
 """投稿のインプレッション/エンゲージメントを取得して改善に回す（docs/29）。
 
 posts_log.jsonl の直近投稿IDのメトリクスを X API で取得し（自分の投稿の読取＝$0.001/件と激安）、
-metrics_log.jsonl に追記。最後に「型(pillar)別の平均インプレ・エンゲージ率」を表示する。
+metrics_log.jsonl に追記。最後に「型(pillar)別の平均インプレ・オーガニックエンゲージ」を表示する。
+eng には自動付与の自己リプ1件が常に含まれるため、勝ち型判定は eng_organic（自己リプ除外）と
+平均インプレで行う（2026-07-15 週次で決定）。
 → 週次でこれを見て、伸びた型を増やし、伸びない型を削る（themes.py の PILLARS を寄せる）。
 
 使い方:
@@ -105,6 +107,8 @@ def main() -> int:
         print("posts_log.jsonl に投稿がありません（まず generate_and_post.py で投稿）。")
         return 0
     pillar_by_id = {p["tweet_id"]: p.get("pillar", "?") for p in posts}
+    # 自動付与の自己リプは親投稿の reply_count に常に1件乗る。オーガニック計算で差し引くため保持。
+    selfreply_by_id = {p["tweet_id"]: bool(p.get("reply")) for p in posts}
 
     tweets = fetch(list(pillar_by_id.keys()))
     if not tweets:
@@ -118,8 +122,12 @@ def main() -> int:
             imp = _impressions(t)
             eng = _engagement(t)
             rate = round(eng / imp, 4) if imp else None
+            # オーガニック＝自動の自己リプ1件を除いた読者由来のエンゲージ（週次の勝ち型判定はこちらを使う）
+            organic = max(0, eng - 1) if selfreply_by_id.get(tid) else eng
+            rate_org = round(organic / imp, 4) if imp else None
             rec = {"tweet_id": tid, "pillar": pillar_by_id.get(tid, "?"),
-                   "impressions": imp, "engagement": eng, "eng_rate": rate, "ts": now}
+                   "impressions": imp, "engagement": eng, "eng_rate": rate,
+                   "eng_organic": organic, "eng_rate_organic": rate_org, "ts": now}
             rows.append(rec)
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
@@ -128,23 +136,25 @@ def main() -> int:
     for r in rows:
         by_pillar.setdefault(r["pillar"], []).append(r)
 
-    print("=" * 56)
+    print("=" * 64)
     print(f"インプレ計測 {now}  （{len(rows)}件）")
-    print(f"{'型(pillar)':<12}{'件':>3}{'平均imp':>9}{'平均eng':>8}{'eng率':>8}")
+    print(f"{'型(pillar)':<12}{'件':>3}{'平均imp':>9}{'平均eng':>8}{'org':>6}{'org率':>8}")
     summary = []
     for pillar, rs in by_pillar.items():
         imps = [r["impressions"] for r in rs if r["impressions"] is not None]
         avg_imp = sum(imps) / len(imps) if imps else 0
         avg_eng = sum(r["engagement"] for r in rs) / len(rs)
-        rates = [r["eng_rate"] for r in rs if r["eng_rate"] is not None]
+        avg_org = sum(r["eng_organic"] for r in rs) / len(rs)
+        rates = [r["eng_rate_organic"] for r in rs if r["eng_rate_organic"] is not None]
         avg_rate = sum(rates) / len(rates) if rates else 0
-        summary.append((pillar, len(rs), avg_imp, avg_eng, avg_rate))
+        summary.append((pillar, len(rs), avg_imp, avg_eng, avg_org, avg_rate))
     # 平均インプレ降順
-    for pillar, n, ai, ae, ar in sorted(summary, key=lambda x: x[2], reverse=True):
+    for pillar, n, ai, ae, ao, ar in sorted(summary, key=lambda x: x[2], reverse=True):
         imp_s = f"{ai:,.0f}" if ai else "—"
-        print(f"{pillar:<12}{n:>3}{imp_s:>9}{ae:>8.1f}{ar*100:>7.1f}%")
-    print("=" * 56)
-    print("→ 平均インプレ・eng率が高い型を themes.py の PILLARS で増やす。低い型は減らす。")
+        print(f"{pillar:<12}{n:>3}{imp_s:>9}{ae:>8.1f}{ao:>6.1f}{ar*100:>7.1f}%")
+    print("=" * 64)
+    print("→ 勝ち型判定は 平均imp と org（自己リプ除外の読者エンゲージ）で行う。"
+          "eng は自動自己リプ1件を含むため参考値。")
     if all(r["impressions"] is None for r in rows):
         print("※ インプレ(impression_count)がAPIで取得できませんでした。"
               "公開メトリクス(eng)で代替中。インプレはX標準アナリティクスでも確認できます。")
