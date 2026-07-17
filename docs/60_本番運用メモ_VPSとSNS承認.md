@@ -368,3 +368,22 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - `crontab -l | grep -c generate_and_post.py` が **2**（slot1/slot2 各1）＝重複解消。
 - 承認LINEが1通だけ届き、タップで X 投稿まで通る。
 - 以降、昼12時/夜21時の自動生成→承認→投稿が1系統で回る。
+
+## 事例: デプロイが「Cannot fast-forward」exit 128 で20秒失敗（2026-07-17・#191）
+- **症状**: PR #191 マージ直後の Deploy to VPS が20秒で failure。ログ末尾に
+  `Please move or remove them before you merge.` `fatal: Cannot fast-forward your working tree.` と
+  マージ予定ファイルと同名の一覧が出る。
+- **原因**: **本番の作業ツリーに、マージ内容と同名の未追跡ファイルが残っていた**（PRに入る前のコードを
+  VPS上で直接検証した痕跡）。git は未追跡ファイルを上書きする fast-forward を拒否する。
+- **回収手順（実施済み・成功）**:
+  1. `git status --short` で未追跡の衝突物を確認し、退避 or 削除（本件は回収時点で既に除去されていた）。
+  2. **手動 `git pull` はしない**。`remote_deploy.sh` は「実行時HEAD→pull後」の差分で再ビルド要否を
+     決めるため、先に手動pullすると差分が空になり backend/frontend の再ビルドがスキップされる
+     （コードだけ新しくコンテナは旧イメージ、という不整合になる）。
+  3. 既に手動pullしてしまった場合は `git reset --hard <直前のデプロイ済みSHA>` で戻してから
+     `bash scripts/deploy/remote_deploy.sh` を流す（pull・変更検知・スモークテスト・cron再同期が一括で走る）。
+  4. スキーマ変更を含む場合の成功確認は本メモ「DBマイグレーションのデプロイ」の必須確認どおり
+     （トップ200＋`/api/v1/voice-type/stats` 200）。
+- **教訓**: 「本番で実験しない」原則の具体形。**PR前のコードをVPSに直接置いて検証すると、
+  そのファイルがマージ時の地雷になる**。検証はローカル compose か worktree で行い、VPSの
+  作業ツリーは常に「remote_deploy.sh だけが動かす」状態を保つ。
