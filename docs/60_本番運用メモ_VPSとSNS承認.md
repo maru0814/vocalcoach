@@ -305,3 +305,15 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
   3. 承認が通らない・pending が溜まる時は、**承認UIやX APIより先に「id がどのキューに居るか」**を見る。
   4. 孤児キュー `/opt/vocalcoach/scripts/sns_autopost/pending_queue.jsonl` は writer が居なくなったので放置で無害。
      将来の調査で紛らわしいので、参照する時は**必ず docker volume 側が正**と覚えておく。
+
+## 事例: 復旧後のキュー残骸整理と日次上限の復帰（2026-07-17）
+- **背景**: 6/17〜7/14 の投稿停止（DRY_RUN・承認滞留・cron重複）は 7/15-16 に解消済み。復旧後のキューに
+  旧コード時代の中間状態 `status=approved`（現行フローは pending→posted/failed/rejected 直行で approved を使わない）
+  が3件（7/6生成）と、3日放置の pending 1件（7/14生成）が残っていた。
+- **対処**: `pending_queue.jsonl` をバックアップ（`/data/pending_queue.jsonl.bak.20260717-020800`）の上、
+  コンテナ内で `approval_queue.update()` を使い4件を `rejected` に整理（info に理由を記録）。
+  週次 2026-07-08 の推奨「古い滞留は承認せずクリアして新規から再開」に従った。
+- **上限復帰**: 滞留消化用に一時 3 にしていた `MAX_POSTS_PER_DAY` を **2 に戻し**、env は起動時読み込みのため
+  `docker compose ... up -d --force-recreate sns` で再作成。healthz `{"status":"ok","line":true}` を確認。
+- **教訓**: キュー整理は必ず①バックアップ→②本体モジュール経由で更新（手書きJSONL編集をしない）→③status内訳で検証。
+  `failed`（日次上限タップ事故）の過去分は履歴として残す（再承認不可仕様のため復活させない）。
