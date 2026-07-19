@@ -37,11 +37,31 @@ function canShare(): boolean {
 }
 
 /**
+ * SNSアプリ内ブラウザ（WebView）か。X/LINE/Instagram/Facebook などのアプリ内で
+ * 開いた場合、共有メニューに「ホーム画面に追加」が出ず PWA を追加できない。
+ * → 一度 Safari/Chrome で開き直してもらう必要がある。
+ */
+function isInAppBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent;
+  // 主要SNS/メッセージアプリのアプリ内ブラウザ
+  if (/(FBAN|FBAV|FB_IAB|Instagram|Line|Twitter|TikTok|MicroMessenger|KAKAOTALK)/i.test(ua)) {
+    return true;
+  }
+  // iOSでSafari/Chrome/Firefoxのいずれでもない WKWebView（アプリ内）はトークンが乏しい。
+  // 通常のSafari UAは "Safari" を含み、iOS版Chrome(CriOS)/Firefox(FxiOS) も "Safari" を含む。
+  const iOS = /iphone|ipad|ipod/i.test(ua);
+  if (iOS && !/safari/i.test(ua)) return true;
+  return false;
+}
+
+/**
  * インストール導線バナー＋手順シート（docs/74 SCR-01 / SCR-02）。
  * - Android/Chrome系: beforeinstallprompt を捕捉して「追加する」で prompt()。
  *   非発火の端末向けに、メニュー操作の手順シートもフォールバックで出す。
  * - iOS/Safari: 非対応なので、実際の共有ボタン（navigator.share）で共有シートを開き、
  *   そこから「ホーム画面に追加」を選んでもらう手順シートを出す。
+ * - SNSアプリ内ブラウザ（X/LINE等）: 追加不可なので、まずSafari/Chromeで開き直す案内を出す。
  * - standalone起動時・7日以内に閉じた場合は出さない。自動ポップアップはしない。
  */
 export default function InstallPrompt() {
@@ -49,6 +69,8 @@ export default function InstallPrompt() {
   const [visible, setVisible] = useState(false);
   const [iosSheet, setIosSheet] = useState(false);
   const [androidSheet, setAndroidSheet] = useState(false);
+  const [inAppSheet, setInAppSheet] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (isStandalone() || recentlyDismissed()) return;
@@ -72,6 +94,7 @@ export default function InstallPrompt() {
     setVisible(false);
     setIosSheet(false);
     setAndroidSheet(false);
+    setInAppSheet(false);
     try {
       window.localStorage.setItem(DISMISS_KEY, String(Date.now()));
     } catch {
@@ -82,10 +105,14 @@ export default function InstallPrompt() {
   const closeSheets = () => {
     setIosSheet(false);
     setAndroidSheet(false);
+    setInAppSheet(false);
   };
 
   const add = async () => {
-    if (deferred) {
+    if (isInAppBrowser()) {
+      // アプリ内ブラウザ（X/LINE等）はホーム画面に追加できない → まずSafari/Chromeで開く案内
+      setInAppSheet(true);
+    } else if (deferred) {
       // Android/Chrome系はネイティブのインストールプロンプトを優先
       await deferred.prompt();
       await deferred.userChoice;
@@ -96,6 +123,17 @@ export default function InstallPrompt() {
     } else {
       // Android（beforeinstallprompt非発火）・その他は手順シート
       setAndroidSheet(true);
+    }
+  };
+
+  /** 現在のURLをクリップボードにコピー（Safari/Chromeに貼り付けて開いてもらう用）。 */
+  const copyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.origin);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* クリップボード不可でも案内文で誘導できる */
     }
   };
 
@@ -205,6 +243,57 @@ export default function InstallPrompt() {
             <button
               onClick={dismiss}
               className="mt-4 w-full rounded bg-slate-100 py-2 text-sm font-medium text-slate-700"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+
+      {inAppSheet && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-label="ブラウザで開き直す方法"
+          onClick={closeSheets}
+        >
+          <div
+            className="w-full rounded-t-2xl bg-white p-5 [padding-bottom:calc(1.25rem+env(safe-area-inset-bottom))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-2 text-lg font-bold text-slate-800">
+              まずブラウザで開き直してください
+            </h2>
+            <p className="mb-3 text-sm text-slate-700">
+              アプリ内ブラウザ（X・LINE・Instagramなど）からはホーム画面に追加できません。
+              {isIos()
+                ? "Safariで開き直すと追加できます。"
+                : "Chromeで開き直すと追加できます。"}
+            </p>
+            <ol className="space-y-2 text-sm text-slate-700">
+              <li>1. 画面のメニュー（•••）または共有アイコンをタップ</li>
+              <li>
+                2.{" "}
+                {isIos()
+                  ? "「Safariで開く」を選ぶ"
+                  : "「ブラウザで開く」「Chromeで開く」を選ぶ"}
+              </li>
+              <li>3. 開いた先で、もう一度この「追加する」を押す</li>
+            </ol>
+            <p className="mt-3 text-xs text-slate-500">
+              メニューが見つからない場合は、下のURLをコピーして
+              {isIos() ? "Safari" : "Chrome"}に貼り付けて開いてください。
+            </p>
+            <button
+              onClick={copyUrl}
+              className="mt-2 w-full rounded bg-blue-600 py-2.5 text-sm font-medium text-white"
+            >
+              {copied ? "コピーしました" : "URLをコピー"}
+            </button>
+            <button
+              onClick={dismiss}
+              className="mt-3 w-full rounded bg-slate-100 py-2 text-sm font-medium text-slate-700"
             >
               閉じる
             </button>
