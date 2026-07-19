@@ -13,10 +13,10 @@ export const metadata: Metadata = {
  * 使う場合は実値を記載してください。
  */
 const SELLER = {
-  // 事業者名（個人の場合は氏名、または「氏名＋屋号」）
-  name: "丸山ゆう",
+  // 事業者名（個人の場合は氏名、または「氏名＋屋号」）。屋号で表記し、実名は請求時開示とする運用。
+  name: "ソラ先生 運営事務局",
   // 運営統括責任者
-  manager: "丸山ゆう",
+  manager: "ソラ先生 運営事務局",
   // 連絡先メール（必須・公開）
   email: "benfan164@gmail.com",
   // 住所・電話は請求時開示にする場合 true（個人事業主向け）。実記載するなら false にして下記を埋める。
@@ -83,7 +83,7 @@ export default function TokushohoPage() {
         </Row>
       </dl>
 
-      <p className="pt-2 text-xs text-gray-400">最終更新日: 2026-06-12</p>
+      <p className="pt-2 text-xs text-gray-400">最終更新日: 2026-07-19</p>
     </main>
   );
 }
