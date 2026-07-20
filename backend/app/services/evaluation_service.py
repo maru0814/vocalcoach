@@ -43,7 +43,9 @@ def generate_feedback_text(total_score: int) -> str:
     return "現在の録音は大きく伸びる余地があります。短いフレーズで反復し、徐々にテンポを上げてください。"
 
 
-def evaluate_recording(db: Session, recording_id: int) -> None:
+def evaluate_recording(db: Session, recording_id: int, count_usage: bool = True) -> None:
+    """録音を評価する。count_usage=False は coach 昇格用（送信時にカウント済みの
+    同一音声の再評価のため、月次カウントを増やさない＝docs/31 v3 AC-12）。"""
     recording = db.query(Recording).filter(Recording.id == recording_id).first()
     if recording is None:
         return
@@ -86,7 +88,8 @@ def evaluate_recording(db: Session, recording_id: int) -> None:
             db.add(recording)
             db.commit()
             # 解析が完了した時だけカウント（失敗は数えない＝docs/31 FR-01）
-            increment_analysis_count(db, recording.user_id)
+            if count_usage:
+                increment_analysis_count(db, recording.user_id)
             return
         except Exception:
             db.rollback()
@@ -142,8 +145,9 @@ def promote_coach_recording(db: Session, session: ChatSession, user_id: int) -> 
     db.commit()
     db.refresh(recording)
 
-    # 決定論的評価（既存パイプライン再利用）。完了後 status=completed / 上限カウント。
-    evaluate_recording(db, recording.id)
+    # 決定論的評価（既存パイプライン再利用）。coach送信時にカウント済みのため
+    # 昇格ではカウントしない（docs/31 v3 AC-12・docs/50）。
+    evaluate_recording(db, recording.id, count_usage=False)
     db.refresh(recording)
     return recording
 

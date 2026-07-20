@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   CoachMessage,
+  getBillingMe,
   getCoachSession,
   LimitReachedError,
+  PaywallSource,
   promoteCoachRecording,
   renameCoachSession,
   sendCoachAction,
@@ -35,13 +37,32 @@ export default function CoachChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasReference, setHasReference] = useState(false);
   const [promoting, setPromoting] = useState(false);
-  const [showUpgrade, setShowUpgrade] = useState(false);
+  // アップグレードモーダル。録音送信の上限到達=limit / 詳細添削=report（docs/31 FR-05a ⑤⑥）
+  const [upgradeSource, setUpgradeSource] = useState<PaywallSource | null>(null);
+  // 無料プランの残り解析回数（premium・課金無効時は null＝表示しない）
+  const [analysisLeft, setAnalysisLeft] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const refInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
   // この録音を詳細添削（課金資産）へ繋ぐ導線は、歌の録音が1つ以上あるときだけ出す（docs/50 T-2）。
   const hasRecording = messages.some((m) => m.role === "user" && m.type === "audio");
+
+  // 無料プランの残り解析回数（docs/31 v3 FR-01: coachでも残回数を案内する）
+  function refreshQuota() {
+    getBillingMe()
+      .then((b) =>
+        setAnalysisLeft(
+          b.analysis_limit == null ? null : Math.max(0, b.analysis_limit - b.analysis_used),
+        ),
+      )
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    refreshQuota();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -142,8 +163,13 @@ export default function CoachChatPage() {
       const res = await sendCoachAudio(sessionId, blob, kind, filename, comment);
       setMessages((m) => [...m, ...res.messages]);
       setPhase(res.phase);
+      refreshQuota(); // 解析1回消費後の残回数を更新
     } catch (e) {
-      setError(parseError(e));
+      if (e instanceof LimitReachedError) {
+        setUpgradeSource("limit"); // 月次上限到達 → アップグレード導線（docs/31 FR-05a ⑥）
+      } else {
+        setError(parseError(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -158,7 +184,7 @@ export default function CoachChatPage() {
     } catch (e) {
       setPromoting(false);
       if (e instanceof LimitReachedError) {
-        setShowUpgrade(true); // 上限到達 → アップグレード導線
+        setUpgradeSource("report"); // 上限到達 → アップグレード導線
       } else {
         setError(parseError(e));
       }
@@ -277,13 +303,24 @@ export default function CoachChatPage() {
         <div ref={bottomRef} />
       </div>
 
+      {/* 残回数の案内（無料プランで残3回以下のときだけ。docs/31 v3 FR-01） */}
+      {analysisLeft !== null && analysisLeft <= 3 && (
+        <div className="px-3 pb-1">
+          <p className="mx-auto max-w-sm rounded-full bg-amber-50 px-4 py-1.5 text-center text-[11px] text-amber-800">
+            {analysisLeft > 0
+              ? `🎤 今月の録音解析はあと${analysisLeft}回です（プレミアムなら無制限）`
+              : "🎤 今月の録音解析の上限に達しました（プレミアムなら無制限）"}
+          </p>
+        </div>
+      )}
+
       <Composer
         disabled={busy}
         onSendText={handleText}
         onSendAudio={handleAudio}
       />
 
-      {showUpgrade && <UpgradeModal source="report" onClose={() => setShowUpgrade(false)} />}
+      {upgradeSource && <UpgradeModal source={upgradeSource} onClose={() => setUpgradeSource(null)} />}
     </div>
   );
 }

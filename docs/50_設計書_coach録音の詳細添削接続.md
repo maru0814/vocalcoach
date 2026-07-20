@@ -45,6 +45,7 @@ flowchart LR
 - 対象: 当該セッションの **最新の audio メッセージ**（無ければ 409）。
 - 冪等: 同 `source_message_id` の Recording があればそれを返す（新規作成しない）。
 - 月次上限: 新規作成時のみ `analysis_allowed` を確認（超過は 402 LIMIT_REACHED）。
+- カウント（docs/31 v3・2026-07-19）: coach送信時（`/audio`）に解析1回としてカウント済みのため、**昇格時はカウントを増やさない**（`evaluate_recording(count_usage=False)`）。recordings直アップロード経由は従来どおり完了時にカウント。
 
 | 状態 | レスポンス |
 | --- | --- |

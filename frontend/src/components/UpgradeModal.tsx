@@ -19,7 +19,7 @@ const HEADINGS: Record<PaywallSource, string> = {
 const FEATURES: { label: string; free: string; premium: string }[] = [
   { label: "録音解析", free: "月10回", premium: "無制限" },
   { label: "詳細添削レポート", free: "—", premium: "◯" },
-  { label: "原曲アップロード比較", free: "体験1回", premium: "◯" },
+  { label: "原曲アップロード比較", free: "◯", premium: "◯" },
   { label: "履歴保存", free: "直近10件", premium: "無制限" },
 ];
 

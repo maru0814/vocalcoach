@@ -26,6 +26,7 @@ from app.schemas.coaching import (
     SessionSummary,
     UpdateSessionRequest,
 )
+from app.services.billing_service import analysis_allowed, increment_analysis_count
 from app.services.evaluation_service import (
     AnalysisLimitReachedError,
     NoCoachAudioError,
@@ -759,6 +760,16 @@ def send_audio(
             detail={"code": "RATE_LIMITED", "message": "少し時間をおいてから、もう一度お試しください。"},
         )
 
+    # --- 無料プランの月次解析上限（docs/31 v3 FR-01）---
+    # coachレッスン内の録音解析もカウント対象。上限到達時は録音のみブロックし、
+    # テキスト会話は止めない（402はフロントでアップグレードモーダルを開く合図）。
+    if not analysis_allowed(db, user.id):
+        raise HTTPException(
+            status_code=402,
+            detail={"code": "LIMIT_REACHED",
+                    "message": "今月の解析回数の上限に達しました。プレミアムなら無制限で練習できます🎤"},
+        )
+
     # --- validate + save raw upload ---
     _, ext = os.path.splitext(audio_file.filename or "")
     ext = ext.lower() or ".webm"
@@ -990,6 +1001,9 @@ def send_audio(
             logger.warning("問診の発火に失敗（FBは継続）", exc_info=True)
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
+    # 解析が完了してFBを返す時だけ1カウント（docs/31 v3 FR-01。同一音源・無音の
+    # 録り直し案内や解析失敗は数えない）。既加入者は billing_service 側で対象外。
+    increment_analysis_count(db, user.id)
     if user_comment:
         db.refresh(comment_msg)
     db.refresh(user_msg)
