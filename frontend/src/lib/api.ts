@@ -216,10 +216,17 @@ export async function sendCoachAudio(
   fd.append("audio_file", blob, filename);
   fd.append("kind", kind);
   if (comment) fd.append("comment", comment);
-  return request<ChatResponse>(`/api/v1/coach/sessions/${id}/audio`, {
-    method: "POST",
-    body: fd,
-  });
+  try {
+    return await request<ChatResponse>(`/api/v1/coach/sessions/${id}/audio`, {
+      method: "POST",
+      body: fd,
+    });
+  } catch (err) {
+    // 402=月次解析上限（docs/31 v3 FR-01）。呼び出し側でアップグレードモーダルを開く。
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("LIMIT_REACHED")) throw new LimitReachedError("LIMIT_REACHED");
+    throw err;
+  }
 }
 
 export async function uploadCoachReference(
