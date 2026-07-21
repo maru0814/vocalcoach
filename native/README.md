@@ -22,6 +22,8 @@ npx cap sync ios       # 同 iOS（pod install は macOS のみ）
 - ローカルに Android SDK があれば `cd android && ./gradlew assembleDebug`。
 - 通常は GitHub Actions（`.github/workflows/native-android.yml`）が
   debug APK（常時）と署名済み release AAB/APK（Secrets 設定時）を Artifacts に出力する。
+- iOS は `.github/workflows/native-ios.yml` がシミュレータビルド（常時）と
+  署名済み IPA + TestFlight アップロード（Secrets 設定時）を行う。Mac 不要（docs/81 §7）。
 
 ## バージョン更新（ストア提出のたびに）
 `android/app/build.gradle` の `versionCode`（+1 必須）と `versionName` を上げる。

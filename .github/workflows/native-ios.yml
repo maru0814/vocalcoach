@@ -1,0 +1,171 @@
+name: Native iOS
+
+# ネイティブアプリ（native/ Capacitor シェル）の iOS ビルド（docs/77 追補: 両ストア対応）。
+# - simulator build: コンパイル検証（署名不要・PRごと）
+# - App Store 提出用の署名 IPA + TestFlight アップロード: 署名 Secrets 設定時のみ（workflow_dispatch / main push）
+# 必要 Secrets（署名パス用。取得手順は docs/81 §7）:
+#   IOS_CERT_P12_BASE64 / IOS_CERT_PASSWORD          … Apple Distribution 証明書（.p12）
+#   IOS_PROVISIONING_PROFILE_BASE64                  … App Store 用プロビジョニングプロファイル
+#   IOS_TEAM_ID                                      … Apple Developer Team ID
+#   ASC_API_KEY_ID / ASC_API_ISSUER_ID / ASC_API_KEY_P8_BASE64 … App Store Connect API キー（TestFlight アップロード用）
+# ⚠️ macOS ランナーは Linux の10倍の課金レート。トリガーは native/ios 変更と手動起動に限定している。
+on:
+  pull_request:
+    paths:
+      - 'native/ios/**'
+      - 'native/capacitor.config.ts'
+      - '.github/workflows/native-ios.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'native/ios/**'
+      - '.github/workflows/native-ios.yml'
+  workflow_dispatch:
+
+jobs:
+  build-simulator:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - name: Install deps & sync web shell
+        working-directory: native
+        run: |
+          npm ci
+          npm run gen
+          npx cap sync ios
+
+      - name: Build for simulator (compile check)
+        working-directory: native/ios/App
+        run: |
+          xcodebuild -workspace App.xcworkspace -scheme App \
+            -sdk iphonesimulator -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -20
+
+  release-testflight:
+    # 署名 Secrets 設定済みのときだけ実行（fork PR には secrets が渡らない）
+    if: github.event_name != 'pull_request'
+    needs: build-simulator
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - name: Check signing secrets
+        id: secrets
+        env:
+          CERT: ${{ secrets.IOS_CERT_P12_BASE64 }}
+        run: |
+          if [ -z "$CERT" ]; then
+            echo "signing secrets not set; skipping TestFlight release"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install deps & sync web shell
+        if: steps.secrets.outputs.available == 'true'
+        working-directory: native
+        run: |
+          npm ci
+          npm run gen
+          npx cap sync ios
+
+      - name: Import certificate & provisioning profile
+        if: steps.secrets.outputs.available == 'true'
+        env:
+          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          KEYCHAIN=$RUNNER_TEMP/build.keychain-db
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$IOS_CERT_P12_BASE64" | base64 -d > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -k "$KEYCHAIN" -P "$IOS_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -d > $RUNNER_TEMP/profile.mobileprovision
+          PROFILE_UUID=$(security cms -D -i $RUNNER_TEMP/profile.mobileprovision | plutil -extract UUID raw -o - -)
+          PROFILE_NAME=$(security cms -D -i $RUNNER_TEMP/profile.mobileprovision | plutil -extract Name raw -o - -)
+          cp $RUNNER_TEMP/profile.mobileprovision \
+            ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+
+      - name: Archive & export signed IPA
+        if: steps.secrets.outputs.available == 'true'
+        working-directory: native/ios/App
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          xcodebuild -workspace App.xcworkspace -scheme App \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath $RUNNER_TEMP/App.xcarchive archive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER | tail -10
+
+          cat > $RUNNER_TEMP/exportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$IOS_TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict><key>com.vocalcoach.sora</key><string>$PROFILE_NAME</string></dict>
+          </dict></plist>
+          PLIST
+
+          xcodebuild -exportArchive -archivePath $RUNNER_TEMP/App.xcarchive \
+            -exportOptionsPlist $RUNNER_TEMP/exportOptions.plist \
+            -exportPath $RUNNER_TEMP/export | tail -5
+
+      - name: Upload IPA artifact
+        if: steps.secrets.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-ios-ipa
+          path: ${{ runner.temp }}/export/*.ipa
+
+      - name: Upload to TestFlight
+        if: steps.secrets.outputs.available == 'true'
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          if [ -z "$ASC_API_KEY_ID" ]; then
+            echo "ASC API key not set; IPA is available as artifact only"
+            exit 0
+          fi
+          # fastlane は GitHub macOS ランナーにプリインストール済み。
+          # App Store Connect API キーで TestFlight にアップロードする（Mac 不要運用の要）。
+          echo "$ASC_API_KEY_P8_BASE64" | base64 -d | \
+            python3 -c 'import json,sys,os; print(json.dumps({
+              "key_id": os.environ["ASC_API_KEY_ID"],
+              "issuer_id": os.environ["ASC_API_ISSUER_ID"],
+              "key": sys.stdin.read()}))' > "$RUNNER_TEMP/asc_api_key.json"
+          fastlane pilot upload --ipa "$RUNNER_TEMP"/export/*.ipa \
+            --api_key_path "$RUNNER_TEMP/asc_api_key.json" \
+            --skip_waiting_for_build_processing true
+          rm -f "$RUNNER_TEMP/asc_api_key.json"
