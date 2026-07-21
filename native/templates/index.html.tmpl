@@ -53,8 +53,17 @@
     var timer = setTimeout(function () { fail(); }, 6000);
     function ok() { if (done) return; done = true; clearTimeout(timer); window.location.replace(START_URL); }
     function fail() { if (done) return; done = true; clearTimeout(timer); show("offline"); }
+    // 画像pingでフォールバック。iOS はローカルシェルのオリジンが capacitor:// のため、
+    // fetch が CORS/スキーム制約で reject する環境があり得る。<img> は CORS の影響を受けない。
+    function tryImage() {
+      if (done) return;
+      var img = new Image();
+      img.onload = ok;
+      img.onerror = fail;
+      img.src = APP_URL + "/icons/icon-192.png?ping=" + Date.now();
+    }
     // no-cors の HEAD で到達確認（docs/79 5.1）。応答が返れば opaque でも resolve する。
-    fetch(APP_URL + "/", { method: "HEAD", mode: "no-cors", cache: "no-store" }).then(ok, fail);
+    fetch(APP_URL + "/", { method: "HEAD", mode: "no-cors", cache: "no-store" }).then(ok, tryImage);
   }
   attempt();
 </script>
