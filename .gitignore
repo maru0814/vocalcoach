@@ -58,3 +58,6 @@ frontend/tsconfig.tsbuildinfo
 # 声区較正の生成コーパス（再生成可能）
 backend/data/register_synth/
 backend/data/register/
+
+# セッション専用worktree（claude.md「並行作業」節。コミット禁止）
+.claude/worktrees/
