@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { BillingMe, getBillingMe } from "@/lib/api";
 import UpgradeModal from "@/components/UpgradeModal";
 import { PREMIUM_PRICE_JPY, PREMIUM_PRICE_LABEL } from "@/lib/pricing";
+import { isNativeApp } from "@/lib/appMode";
 
 /**
  * プレミアム導線ウィジェット（ヘッダー右側に置く想定）。
@@ -41,6 +42,15 @@ export function PremiumWidget() {
       : remaining === 0
       ? "今月 上限"
       : `今月 残り${remaining}回${remaining <= 3 ? "（残りわずか）" : ""}`;
+
+  // アプリ内では購入導線を出さない（docs/78 FR-05）。残回数バッジのみ表示。
+  if (isNativeApp()) {
+    return badgeLabel ? (
+      <span className={badgeClass} aria-label={`今月の残り解析回数: ${remaining}回`}>
+        {badgeLabel}
+      </span>
+    ) : null;
+  }
 
   return (
     <>

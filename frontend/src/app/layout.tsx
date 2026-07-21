@@ -92,6 +92,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <a className="underline hover:text-gray-700" href="/legal/tokushoho">
             特定商取引法に基づく表記
           </a>
+          <span className="mx-2 text-gray-300">|</span>
+          <a className="underline hover:text-gray-700" href="/legal/privacy">
+            プライバシーポリシー
+          </a>
         </footer>
       </body>
     </html>

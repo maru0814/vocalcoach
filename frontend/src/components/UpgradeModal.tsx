@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { logPaywallEvent, PaywallSource, startCheckout } from "@/lib/api";
 import { PREMIUM_PRICE_YEN } from "@/lib/pricing";
 import { Button } from "@/components/ui/Button";
+import { isNativeApp } from "@/lib/appMode";
 
 type Props = {
   source: PaywallSource;
@@ -77,20 +78,34 @@ export default function UpgradeModal({ source, onClose }: Props) {
           </tbody>
         </table>
 
-        <p className="text-center text-sm">
-          <span className="text-xl font-bold">{PREMIUM_PRICE_YEN}</span>
-          <span className="text-slate-500"> / 月</span>
-          <span className="ml-2 text-xs text-slate-500">（いつでも解約OK）</span>
-        </p>
+        {isNativeApp() ? (
+          // アプリ内では購入導線を出さない（docs/78 FR-05）。外部リンクも置かない。
+          <>
+            <p className="text-center text-sm text-slate-500">
+              プレミアムの登録は Web サイトで承っています。
+            </p>
+            <Button variant="ghost" onClick={onClose} className="w-full text-slate-500">
+              閉じる
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="text-center text-sm">
+              <span className="text-xl font-bold">{PREMIUM_PRICE_YEN}</span>
+              <span className="text-slate-500"> / 月</span>
+              <span className="ml-2 text-xs text-slate-500">（いつでも解約OK）</span>
+            </p>
 
-        <div className="flex flex-col gap-2">
-          <Button onClick={onUpgrade} className="w-full">
-            プレミアムをはじめる
-          </Button>
-          <Button variant="ghost" onClick={onClose} className="w-full text-slate-500">
-            今はやめておく
-          </Button>
-        </div>
+            <div className="flex flex-col gap-2">
+              <Button onClick={onUpgrade} className="w-full">
+                プレミアムをはじめる
+              </Button>
+              <Button variant="ghost" onClick={onClose} className="w-full text-slate-500">
+                今はやめておく
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

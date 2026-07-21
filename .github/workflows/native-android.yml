@@ -1,0 +1,90 @@
+name: Native Android
+
+# ネイティブアプリ（native/ Capacitor シェル）の Android ビルド（docs/78 FR-06, docs/79 6章）。
+# - debug APK: 常に生成（実機確認・直配布用）
+# - release AAB/APK: 署名 Secrets が設定されている場合のみ生成（Play 提出用）
+# 必要 Secrets: ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+# 設定手順は docs/81_リリース手順_ネイティブアプリ.md を参照。
+on:
+  pull_request:
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-android.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-android.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install deps & sync web shell
+        working-directory: native
+        run: |
+          npm ci
+          npm run gen
+          npx cap sync android
+
+      - name: Build debug APK
+        working-directory: native/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: native/android/app/build/outputs/apk/debug/app-debug.apk
+
+      # ---- 以下は署名 Secrets 設定時のみ（fork PR では secrets が渡らないため常にスキップされる） ----
+      - name: Restore keystore
+        id: keystore
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "signing secrets not set; skipping release build"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > native/android/release.keystore
+          {
+            echo "storeFile=release.keystore"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > native/android/keystore.properties
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed release AAB + APK
+        if: steps.keystore.outputs.available == 'true'
+        working-directory: native/android
+        run: ./gradlew bundleRelease assembleRelease --no-daemon
+
+      - name: Upload release artifacts
+        if: steps.keystore.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: |
+            native/android/app/build/outputs/bundle/release/app-release.aab
+            native/android/app/build/outputs/apk/release/app-release.apk

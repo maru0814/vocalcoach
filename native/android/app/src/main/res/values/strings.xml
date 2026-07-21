@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ソラ先生</string>
+    <string name="title_activity_main">ソラ先生</string>
+    <string name="package_name">com.vocalcoach.sora</string>
+    <string name="custom_url_scheme">com.vocalcoach.sora</string>
+</resources>

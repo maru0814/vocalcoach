@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>ソラ先生</title>
+<style>
+  /* 外部リソースを一切読まない自己完結シェル（docs/79 5.1） */
+  html, body {
+    margin: 0; height: 100%;
+    background: #0b1020; color: #e5e7eb;
+    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .box { text-align: center; padding: 24px; }
+  .logo { font-size: 28px; font-weight: 900; letter-spacing: .05em; margin-bottom: 12px; }
+  .sub { font-size: 13px; color: #94a3b8; margin-bottom: 24px; }
+  .spinner {
+    width: 32px; height: 32px; margin: 0 auto 16px;
+    border: 3px solid #1e293b; border-top-color: #7dd3fc; border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #offline { display: none; }
+  button {
+    margin-top: 8px; padding: 12px 32px; font-size: 15px; font-weight: 700;
+    color: #0b1020; background: #7dd3fc; border: none; border-radius: 9999px;
+  }
+  button:active { opacity: .8; }
+</style>
+</head>
+<body>
+  <div class="box" id="loading">
+    <div class="spinner" role="status" aria-label="読み込み中"></div>
+    <div class="logo">ソラ先生</div>
+    <div class="sub">AIボーカルトレーナーに接続しています…</div>
+  </div>
+  <div class="box" id="offline">
+    <div class="logo">ソラ先生</div>
+    <div class="sub">インターネットに接続できません。<br />通信環境をご確認のうえ、もう一度お試しください。</div>
+    <button type="button" onclick="attempt()">再試行</button>
+  </div>
+<script>
+  var APP_URL = "https://sora-vocal-ai.duckdns.org";
+  var START_URL = APP_URL + "/coach?source=app";
+  function show(id) {
+    document.getElementById("loading").style.display = id === "loading" ? "block" : "none";
+    document.getElementById("offline").style.display = id === "offline" ? "block" : "none";
+  }
+  function attempt() {
+    show("loading");
+    var done = false;
+    var timer = setTimeout(function () { fail(); }, 6000);
+    function ok() { if (done) return; done = true; clearTimeout(timer); window.location.replace(START_URL); }
+    function fail() { if (done) return; done = true; clearTimeout(timer); show("offline"); }
+    // no-cors の HEAD で到達確認（docs/79 5.1）。応答が返れば opaque でも resolve する。
+    fetch(APP_URL + "/", { method: "HEAD", mode: "no-cors", cache: "no-store" }).then(ok, fail);
+  }
+  attempt();
+</script>
+</body>
+</html>
