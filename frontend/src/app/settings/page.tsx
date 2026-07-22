@@ -7,6 +7,7 @@ import { BillingMe, getBillingMe, openPortal, startCheckout } from "@/lib/api";
 import { PREMIUM_PRICE_LABEL } from "@/lib/pricing";
 import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import NotificationToggle from "@/components/pwa/NotificationToggle";
+import { isNativeApp } from "@/lib/appMode";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -77,6 +78,9 @@ export default function SettingsPage() {
               お支払い・解約の管理
             </button>
           </>
+        ) : isNativeApp() ? (
+          // アプリ内では購入導線を出さない（docs/78 FR-05）
+          <p className="text-sm text-gray-700">現在のプラン: 無料プラン</p>
         ) : (
           <>
             <p className="text-sm text-gray-700">現在のプラン: 無料プラン</p>

@@ -1,0 +1,6 @@
+node_modules/
+
+# 署名鍵・署名設定はコミット禁止（docs/78 AC-08）
+*.keystore
+*.jks
+keystore.properties

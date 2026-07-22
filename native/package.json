@@ -1,0 +1,20 @@
+{
+  "name": "vocalcoach-native",
+  "private": true,
+  "version": "1.0.0",
+  "description": "ソラ先生 ネイティブアプリシェル (Capacitor)",
+  "scripts": {
+    "gen": "node scripts/gen-www.mjs",
+    "sync": "npm run gen && cap sync",
+    "sync:android": "npm run gen && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.6.8",
+    "@capacitor/cli": "^7.6.8",
+    "@capacitor/core": "^7.6.8",
+    "@capacitor/ios": "^7.6.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

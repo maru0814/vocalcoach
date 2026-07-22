@@ -5,7 +5,7 @@
 
 ## プロダクト
 本会社は同じ「録音した歌へのFB機能」を **2チャネル** で提供する。
-- **Web版** (`frontend/` + `backend/`): Next.js + FastAPI による Webサービス。ユーザー登録・履歴保存付き。
+- **Web版** (`frontend/` + `backend/`): Next.js + FastAPI による Webサービス。ユーザー登録・履歴保存付き。PWA化済み。ネイティブアプリ（`native/` Capacitor シェル、Google Play 配信）も本チャネルの配布形態のひとつ（docs/77〜81）。
 - **Claude Code版** (`.claude/skills/vocal-trainer`): Claude Code上で動くskill。ローカル音声ファイルを渡すと即座にFBが返る。アカウント不要。
 
 両チャネルとも、共通のFB品質基準（音程・リズム・表現・総合）に従う。
