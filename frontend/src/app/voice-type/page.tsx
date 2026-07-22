@@ -296,16 +296,36 @@ export default function VoiceTypePage() {
               <div className="mt-3">
                 <ShareButtons vt={result.voice_type} score={result.score} shareRef={shareRef} />
               </div>
+
+              {/* セクションプレビュー帯（docs/72）。記事の目次を先出しして「下に何があるか」を
+                  スクロール前に伝える。shareRef の外＝シェア画像には写らない */}
+              {profile && (
+                <div className="mt-3 rounded-2xl bg-brand-50/70 p-2.5">
+                  <p className="px-1 text-[11px] font-bold text-brand-700">この診断でわかること</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {profile.sections.map((s) => (
+                      <a
+                        key={s.id}
+                        href={`#${s.id}`}
+                        className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-white px-2.5 py-1 text-[11px] font-bold text-brand-700 transition hover:border-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                      >
+                        <Icon name={s.icon} size={12} />
+                        {s.nav}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* 下に記事が続くことを明示する誘導（docs/69 FR-05）。shareRef の外＝シェア画像には写らない */}
+            {/* 下に記事が続くことを明示する誘導（docs/69 FR-05・文言はdocs/72で具体化） */}
             {profile && (
               <p className="text-center">
                 <a
                   href="#profile"
-                  className="text-xs font-bold text-brand-600 underline decoration-brand-200 underline-offset-2 transition hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                  className="text-xs font-bold leading-relaxed text-brand-600 underline decoration-brand-200 underline-offset-2 transition hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                 >
-                  ↓ {profile.nameJa}のプロフィールを読む
+                  ↓ 苦手なこと・話し方・似てる有名人まで、ぜんぶわかります
                 </a>
               </p>
             )}
