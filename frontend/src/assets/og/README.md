@@ -1,6 +1,6 @@
 # 動的OG画像用アセット（docs/28 §11）
 
-`/api/og/voice-type/[id]` の `ImageResponse` が使うフォント置き場。
+`/og/voice-type/[id]` の `ImageResponse` が使うフォント置き場。
 
 - `NotoSansJP-OG-Bold.subset.ttf` — Noto Sans JP を wght=700 で静的化し、
   OGカードで使うグリフ（ASCII＋かな全集合＋使用漢字）だけにサブセットしたもの（約83KB）。
