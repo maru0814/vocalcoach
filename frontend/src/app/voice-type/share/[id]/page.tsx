@@ -26,7 +26,8 @@ export function generateMetadata(
   const title = `あなたの声タイプは【${m.name}${m.emoji}】${scoreSuffix}`;
   const description = `${m.desc} あなたの声も15秒歌うだけで無料診断🎤`;
   const path = `/voice-type/share/${params.id}`;
-  const ogImage = `/voice-types/og/${params.id}.jpg`;
+  // 診断結果の一枚絵（スコア入りカード）を動的生成。失敗時はルート側で静的OGへフォールバック
+  const ogImage = `/api/og/voice-type/${params.id}${score != null ? `?s=${score}` : ""}`;
   return {
     metadataBase: new URL(SITE_URL),
     title,
