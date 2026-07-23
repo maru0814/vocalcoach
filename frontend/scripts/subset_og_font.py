@@ -27,7 +27,7 @@ from fontTools.varLib.instancer import instantiateVariableFont
 FRONTEND = Path(__file__).resolve().parent.parent
 SOURCES = [
     FRONTEND / "src/components/voice/voiceTypes.ts",
-    FRONTEND / "src/app/api/og/voice-type/[id]/route.tsx",
+    FRONTEND / "src/app/og/voice-type/[id]/route.tsx",
 ]
 OUT = FRONTEND / "src/assets/og/NotoSansJP-OG-Bold.subset.ttf"
 

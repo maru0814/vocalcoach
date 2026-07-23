@@ -27,7 +27,8 @@ export function generateMetadata(
   const description = `${m.desc} あなたの声も15秒歌うだけで無料診断🎤`;
   const path = `/voice-type/share/${params.id}`;
   // 診断結果の一枚絵（スコア入りカード）を動的生成。失敗時はルート側で静的OGへフォールバック
-  const ogImage = `/api/og/voice-type/${params.id}${score != null ? `?s=${score}` : ""}`;
+  // 注: /api/* は本番Caddyがbackendへ振るため、Next側ルートは /og/ 配下に置く（docs/28 §11）
+  const ogImage = `/og/voice-type/${params.id}${score != null ? `?s=${score}` : ""}`;
   return {
     metadataBase: new URL(SITE_URL),
     title,

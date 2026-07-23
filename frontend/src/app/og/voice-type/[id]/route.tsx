@@ -9,18 +9,18 @@ export const runtime = "edge";
 // 背景・フォントはビルド時にバンドル（実行時の外部fetch依存を持たない）。
 // new URL は webpack の静的解析対象のため、動的パスにせず8タイプぶん列挙する。
 const ART: Record<string, URL> = {
-  rock: new URL("../../../../../../public/voice-types/og/rock.jpg", import.meta.url),
-  groovy: new URL("../../../../../../public/voice-types/og/groovy.jpg", import.meta.url),
-  pop: new URL("../../../../../../public/voice-types/og/pop.jpg", import.meta.url),
-  mysterious: new URL("../../../../../../public/voice-types/og/mysterious.jpg", import.meta.url),
-  crystal: new URL("../../../../../../public/voice-types/og/crystal.jpg", import.meta.url),
-  dramatic: new URL("../../../../../../public/voice-types/og/dramatic.jpg", import.meta.url),
-  whisper: new URL("../../../../../../public/voice-types/og/whisper.jpg", import.meta.url),
-  moody: new URL("../../../../../../public/voice-types/og/moody.jpg", import.meta.url),
+  rock: new URL("../../../../../public/voice-types/og/rock.jpg", import.meta.url),
+  groovy: new URL("../../../../../public/voice-types/og/groovy.jpg", import.meta.url),
+  pop: new URL("../../../../../public/voice-types/og/pop.jpg", import.meta.url),
+  mysterious: new URL("../../../../../public/voice-types/og/mysterious.jpg", import.meta.url),
+  crystal: new URL("../../../../../public/voice-types/og/crystal.jpg", import.meta.url),
+  dramatic: new URL("../../../../../public/voice-types/og/dramatic.jpg", import.meta.url),
+  whisper: new URL("../../../../../public/voice-types/og/whisper.jpg", import.meta.url),
+  moody: new URL("../../../../../public/voice-types/og/moody.jpg", import.meta.url),
 };
 
 // サブセット済み Noto Sans JP Bold（frontend/scripts/subset_og_font.py で再生成）
-const FONT_URL = new URL("../../../../../assets/og/NotoSansJP-OG-Bold.subset.ttf", import.meta.url);
+const FONT_URL = new URL("../../../../assets/og/NotoSansJP-OG-Bold.subset.ttf", import.meta.url);
 
 // カード下帯のアクセント（VTYPE_STYLE の tailwind グラデを hex 化したもの）
 const ACCENT: Record<string, [string, string]> = {
