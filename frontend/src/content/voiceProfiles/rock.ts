@@ -14,6 +14,7 @@ export const ROCK_PROFILE: VoiceProfile = {
       nav: "歌声の魅力",
       icon: "mic",
       pose: "singing",
+      poseSrc: "/brand/poses/rock/voice.jpg",
       title: "あなたの歌声の魅力",
       kind: "text",
       paragraphs: [
@@ -28,6 +29,7 @@ export const ROCK_PROFILE: VoiceProfile = {
       nav: "実は苦手なこと",
       icon: "frown",
       pose: "thinking",
+      poseSrc: "/brand/poses/rock/weakness.jpg",
       title: "実は苦手なこと・不利な戦い方",
       kind: "text",
       paragraphs: [
@@ -42,6 +44,7 @@ export const ROCK_PROFILE: VoiceProfile = {
       nav: "話し声と印象",
       icon: "chat",
       pose: "explain",
+      poseSrc: "/brand/poses/rock/speaking.jpg",
       title: "普段の話し声と、周りから持たれやすい印象",
       kind: "text",
       paragraphs: [
@@ -70,6 +73,7 @@ export const ROCK_PROFILE: VoiceProfile = {
       nav: "あるある",
       icon: "check",
       pose: "clap",
+      poseSrc: "/brand/poses/rock/aruaru.jpg",
       title: "カラオケ・日常での「あるある」",
       kind: "list",
       items: [
@@ -88,6 +92,7 @@ export const ROCK_PROFILE: VoiceProfile = {
       nav: "輝く曲",
       icon: "note",
       pose: "cheer",
+      poseSrc: "/brand/poses/rock/songs.jpg",
       title: "あなたの声が一番輝く曲・歌い方",
       kind: "text",
       paragraphs: [
