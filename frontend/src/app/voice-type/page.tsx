@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Recorder } from "@/components/coach/Recorder";
 import { VoiceTypeBlock, ShareButtons } from "@/components/voice/VoiceTypeResult";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
-import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
+import { VOICE_TYPE_LIST, VTYPE_PAGE_BG } from "@/components/voice/voiceTypes";
 import { analyzeVoiceType, getMe, VoiceTypeResult } from "@/lib/api";
 import { VoiceTypeProfileArticle } from "@/components/voice/VoiceTypeProfileArticle";
 import type { VoiceProfile } from "@/content/voiceProfiles";
@@ -192,8 +192,12 @@ export default function VoiceTypePage() {
   const mm = String(Math.floor(elapsed / 60));
   const ss = String(elapsed % 60).padStart(2, "0");
 
+  // 結果表示中はページ全体をタイプ色の薄いグラデに切り替える（未登録のぼかし結果でも同様）。
+  // 未知タイプや結果なしは共通の bg-studio のまま。
+  const pageBg = result ? VTYPE_PAGE_BG[result.voice_type.id] : null;
+
   return (
-    <div className="bg-studio min-h-[100dvh] pb-16">
+    <div className={pageBg ? `min-h-[100dvh] bg-gradient-to-b pb-16 ${pageBg}` : "bg-studio min-h-[100dvh] pb-16"}>
       <header className="mx-auto flex max-w-2xl items-center justify-between p-5">
         <Link href={auth === "in" ? "/coach" : "/"}><BrandWordmark size={40} /></Link>
         <Link href={auth === "in" ? "/coach" : "/"} className="text-sm font-medium text-slate-500 hover:text-brand-600">
