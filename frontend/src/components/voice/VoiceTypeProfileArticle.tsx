@@ -71,8 +71,9 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
                 {s.title}
               </h2>
             </div>
-            {/* セクションに添えるソラ先生のポーズ（docs/61 §3-6・ポーズはページ内で一意） */}
-            <CoachAvatar pose={s.pose} size={72} />
+            {/* セクションに添えるソラ先生のポーズ（docs/61 §3-6・ポーズはページ内で一意）。
+                poseSrc があるタイプはタイプ専用のシーン絵を優先表示する */}
+            <CoachAvatar pose={s.pose} poseSrc={s.poseSrc} size={72} />
           </div>
           {s.kind === "text" ? (
             <div className="mt-6 space-y-6">
