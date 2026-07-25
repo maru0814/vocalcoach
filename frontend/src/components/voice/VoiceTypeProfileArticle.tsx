@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { VoiceProfile } from "@/content/voiceProfiles";
 import { IconChip } from "@/components/site/IconChip";
 import { CoachAvatar } from "@/components/character/Coach";
+import { coachPoseVariant } from "@/components/character/coachPoseVariants";
 
 // 声タイプ図鑑のプロフィール記事本体（正本: docs/62。共有化: docs/70 §3-2）。
 // 詳細ページ（/voice-type/[typeId]）と診断結果ビュー（/voice-type）の両方で使う。
@@ -71,8 +72,13 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
                 {s.title}
               </h2>
             </div>
-            {/* セクションに添えるソラ先生のポーズ（docs/61 §3-6・ポーズはページ内で一意） */}
-            <CoachAvatar pose={s.pose} size={72} />
+            {/* セクションに添えるソラ先生のポーズ（docs/61 §3-6・ポーズはページ内で一意）。
+                タイプの衣装差分があればそちらを表示（docs/62 §6-3） */}
+            <CoachAvatar
+              pose={s.pose}
+              size={72}
+              variant={coachPoseVariant(profile.id, s.pose)}
+            />
           </div>
           {s.kind === "text" ? (
             <div className="mt-6 space-y-6">
