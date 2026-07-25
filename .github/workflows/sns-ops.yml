@@ -16,6 +16,7 @@ on:
           - lead-metrics      # クエリ別フォロバ率の集計
           - healthz           # /sns/healthz の疎通確認（SSH不要）
           - diag              # VPSの状態診断（メモリ/コンテナ/OOM痕跡/リードログ）
+          - user-metrics      # 会員数/診断数/シェア到達の累計スナップショット（読み取り専用）
 
 concurrency:
   group: sns-ops
@@ -41,8 +42,27 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
+      # 会員数・診断数・シェア到達の読み取り専用集計。deploy.yml と同じ
+      # 「スクリプトを scp → VPSホストで実行」方式（DB・ログへの書き込みなし）。
+      - name: Checkout (集計スクリプト取得用)
+        if: inputs.task == 'user-metrics'
+        uses: actions/checkout@v4
+
+      - name: User metrics on VPS (read-only)
+        if: inputs.task == 'user-metrics'
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            scripts/ops/user_metrics_report.py \
+            "$VPS_USER@$VPS_HOST:/tmp/user_metrics_report.py"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "bash -lc 'python3 /tmp/user_metrics_report.py'"
+
       - name: Run task on VPS
-        if: inputs.task != 'healthz'
+        if: inputs.task != 'healthz' && inputs.task != 'user-metrics'
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
