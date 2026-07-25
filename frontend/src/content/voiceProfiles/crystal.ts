@@ -14,6 +14,7 @@ export const CRYSTAL_PROFILE: VoiceProfile = {
       nav: "歌声の魅力",
       icon: "mic",
       pose: "singing",
+      poseSrc: "/brand/poses/crystal/voice.jpg",
       title: "あなたの歌声の魅力",
       kind: "text",
       paragraphs: [
@@ -28,6 +29,7 @@ export const CRYSTAL_PROFILE: VoiceProfile = {
       nav: "実は苦手なこと",
       icon: "frown",
       pose: "thinking",
+      poseSrc: "/brand/poses/crystal/weakness.jpg",
       title: "実は苦手なこと・不利な戦い方",
       kind: "text",
       paragraphs: [
@@ -42,6 +44,7 @@ export const CRYSTAL_PROFILE: VoiceProfile = {
       nav: "話し声と印象",
       icon: "chat",
       pose: "explain",
+      poseSrc: "/brand/poses/crystal/speaking.jpg",
       title: "普段の話し声と、周りから持たれやすい印象",
       kind: "text",
       paragraphs: [
@@ -56,6 +59,7 @@ export const CRYSTAL_PROFILE: VoiceProfile = {
       nav: "性格",
       icon: "user",
       pose: "bow",
+      poseSrc: "/brand/poses/crystal/personality.jpg",
       title: "この声の持ち主に多い性格",
       kind: "text",
       paragraphs: [
@@ -88,6 +92,7 @@ export const CRYSTAL_PROFILE: VoiceProfile = {
       nav: "輝く曲",
       icon: "note",
       pose: "cheer",
+      poseSrc: "/brand/poses/crystal/songs.jpg",
       title: "あなたの声が一番輝く曲・歌い方",
       kind: "text",
       paragraphs: [

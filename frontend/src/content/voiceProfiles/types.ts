@@ -7,12 +7,15 @@ import type { CoachPoseName } from "@/components/character/Coach";
 // 各セクション共通の見出しメタ。
 // icon はセクションのモチーフ（docs/61 §3-5 単色チップ）、
 // pose は見出しに添えるソラ先生の全身ポーズ（docs/61 §3-6・同ページ内でポーズ重複禁止）。
+// poseSrc はタイプ専用のシーン絵（`/brand/poses/<typeId>/*.jpg`）。
+// 指定時は共通ポーズより優先して円形バッジで表示し、pose はフォールバック扱いになる。
 type SectionBase = {
   id: string;
   nav: string; // 目次チップ用の短いラベル
   title: string;
   icon: IconName; // 見出し横のモチーフアイコン
   pose: CoachPoseName; // 見出しに添えるソラ先生のポーズ
+  poseSrc?: string; // タイプ専用シーン絵（省略時は pose の共通ポーズ）
 };
 
 export type ProfileSection =

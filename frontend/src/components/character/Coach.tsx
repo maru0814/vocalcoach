@@ -13,20 +13,40 @@ export type CoachPoseName = "singing" | "explain" | "cheer" | "clap" | "thinking
  * 画像は声タイプ図鑑・SNSと同じ絵柄で統一（`/brand/sora-icon.png`）。
  * pose を指定すると全身のポーズ画像（`/brand/poses/*.png`・640px正方）を
  * 円形トリミングなしで表示する（docs/61 §3-6）。省略時は従来の顔アイコン。
- * variant を指定すると衣装差分（`/brand/poses/{variant}/*.png`）に切り替わる。
- * 画像が存在するポーズだけを coachPoseVariants.ts に列挙して使う。
+ * poseSrc を指定すると、共通ポーズの代わりにタイプ専用のシーン絵
+ * （`/brand/poses/<typeId>/*.jpg`・640px正方・背景つき）を円形バッジで表示する。
  */
 export function CoachAvatar({
   size = 36,
   ring = false,
   pose,
-  variant,
+  poseSrc,
 }: {
   size?: number;
   ring?: boolean;
   pose?: CoachPoseName;
-  variant?: string;
+  poseSrc?: string;
 }) {
+  if (poseSrc) {
+    return (
+      <span
+        className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-soft ${
+          ring ? "ring-2 ring-white" : "ring-1 ring-slate-100"
+        }`}
+        style={{ width: size, height: size }}
+        aria-hidden
+      >
+        <Image
+          src={poseSrc}
+          alt=""
+          width={size}
+          height={size}
+          className="h-full w-full object-cover"
+          priority={size >= 120}
+        />
+      </span>
+    );
+  }
   if (pose) {
     return (
       <span
@@ -35,7 +55,7 @@ export function CoachAvatar({
         aria-hidden
       >
         <Image
-          src={`/brand/poses/${variant ? `${variant}/` : ""}${pose}.png`}
+          src={`/brand/poses/${pose}.png`}
           alt=""
           width={size}
           height={size}
