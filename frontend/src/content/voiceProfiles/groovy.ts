@@ -16,6 +16,7 @@ export const GROOVY_PROFILE: VoiceProfile = {
       nav: "歌声の魅力",
       icon: "mic",
       pose: "singing",
+      poseSrc: "/brand/poses/groovy/voice.jpg",
       title: "あなたの歌声の魅力",
       kind: "text",
       paragraphs: [
@@ -29,6 +30,7 @@ export const GROOVY_PROFILE: VoiceProfile = {
       nav: "実は苦手なこと",
       icon: "frown",
       pose: "thinking",
+      poseSrc: "/brand/poses/groovy/weakness.jpg",
       title: "実は苦手なこと・不利な戦い方",
       kind: "text",
       paragraphs: [
@@ -42,6 +44,7 @@ export const GROOVY_PROFILE: VoiceProfile = {
       nav: "話し声と印象",
       icon: "chat",
       pose: "explain",
+      poseSrc: "/brand/poses/groovy/speaking.jpg",
       title: "普段の話し声と、周りから持たれやすい印象",
       kind: "text",
       paragraphs: [
@@ -55,6 +58,7 @@ export const GROOVY_PROFILE: VoiceProfile = {
       nav: "性格",
       icon: "user",
       pose: "bow",
+      poseSrc: "/brand/poses/groovy/personality.jpg",
       title: "この声の持ち主に多い性格",
       kind: "text",
       paragraphs: [
@@ -68,6 +72,7 @@ export const GROOVY_PROFILE: VoiceProfile = {
       nav: "あるある",
       icon: "check",
       pose: "clap",
+      poseSrc: "/brand/poses/groovy/aruaru.jpg",
       title: "カラオケ・日常での「あるある」",
       kind: "list",
       items: [
