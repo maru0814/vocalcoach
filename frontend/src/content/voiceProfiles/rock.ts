@@ -59,6 +59,7 @@ export const ROCK_PROFILE: VoiceProfile = {
       nav: "性格",
       icon: "user",
       pose: "bow",
+      poseSrc: "/brand/poses/rock/personality.jpg",
       title: "この声の持ち主に多い性格",
       kind: "text",
       paragraphs: [
