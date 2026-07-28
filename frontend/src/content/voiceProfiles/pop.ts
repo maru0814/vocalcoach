@@ -92,6 +92,7 @@ export const POP_PROFILE: VoiceProfile = {
       nav: "輝く曲",
       icon: "note",
       pose: "cheer",
+      poseSrc: "/brand/poses/pop/songs.jpg",
       title: "あなたの声が一番輝く曲・歌い方",
       kind: "text",
       paragraphs: [
