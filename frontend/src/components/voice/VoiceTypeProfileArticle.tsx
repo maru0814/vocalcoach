@@ -3,6 +3,7 @@ import type { VoiceProfile } from "@/content/voiceProfiles";
 import { IconChip } from "@/components/site/IconChip";
 import { CoachAvatar } from "@/components/character/Coach";
 import { VoiceAxisBars, VTYPE_AXES } from "./VoiceAxisBars";
+import { ProfileShareButtons } from "./ProfileShareButtons";
 
 // 声タイプ図鑑のプロフィール記事本体（正本: docs/62。共有化: docs/70 §3-2）。
 // 詳細ページ（/voice-type/[typeId]）と診断結果ビュー（/voice-type）の両方で使う。
@@ -25,7 +26,37 @@ function em(text: string): ReactNode {
 export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) {
   return (
     <>
-      {/* 有名人ラインナップ（シェア導線の直下＝記事先頭。docs/62 §5-2 2026-07-30 に末尾から移動） */}
+      {/* 特徴（3軸バー）: タイトルカードの直下。docs/83 §3 */}
+      {VTYPE_AXES[profile.id] && (
+        <section
+          id="features"
+          aria-labelledby="features-title"
+          className="scroll-mt-24 rounded-[2rem] bg-white/90 p-6 shadow-card sm:p-8"
+        >
+          <h2
+            id="features-title"
+            className="text-center font-rounded text-xl font-black tracking-tight text-slate-900"
+          >
+            特徴
+          </h2>
+          <VoiceAxisBars
+            pos={VTYPE_AXES[profile.id]}
+            caption="※ 声の傾向からの推定です（優劣ではありません）"
+            className="mx-auto mt-5 max-w-md"
+          />
+        </section>
+      )}
+
+      {/* シェア導線（特徴の直下） */}
+      <section className="rounded-[2rem] bg-white/90 p-6 shadow-card sm:p-7">
+        <ProfileShareButtons
+          typeId={profile.id}
+          nameJa={profile.nameJa}
+          heroTitle={profile.heroTitle}
+        />
+      </section>
+
+      {/* 有名人ラインナップ（docs/62 §5-2 2026-07-30 に末尾から移動） */}
       <section
         id="artists"
         aria-labelledby="artists-title"
@@ -53,21 +84,20 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
         </div>
       </section>
 
-      {/* 導入 ＋ このタイプの3軸位置（docs/83） */}
+      {/* シェア導線（有名人の直下。読み終わる前の共有機会をもう一度つくる） */}
+      <section className="rounded-[2rem] bg-white/90 p-6 shadow-card sm:p-7">
+        <ProfileShareButtons
+          typeId={profile.id}
+          nameJa={profile.nameJa}
+          heroTitle={profile.heroTitle}
+        />
+      </section>
+
+      {/* 導入 */}
       <section className="rounded-[2rem] bg-white/90 p-7 shadow-card sm:p-10">
         <p className="font-body text-base leading-[2.05] tracking-[0.01em] text-slate-700">
           {em(profile.lede)}
         </p>
-        {VTYPE_AXES[profile.id] && (
-          <div className="mt-7 border-t border-slate-100 pt-6">
-            <p className="mb-3 text-xs font-bold tracking-wide text-slate-500">このタイプの位置</p>
-            <VoiceAxisBars
-              pos={VTYPE_AXES[profile.id]}
-              caption="※ 声の傾向からの推定です（優劣ではありません）"
-              className="max-w-md"
-            />
-          </div>
-        )}
       </section>
 
       {/* 目次 */}
