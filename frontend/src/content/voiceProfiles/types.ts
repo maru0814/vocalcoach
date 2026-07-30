@@ -26,7 +26,6 @@ export type ProfileSection =
   | (SectionBase & {
       kind: "list";
       items: string[]; // 各行も **強調** 可
-      closing: string;
     });
 
 export type ProfileArtist = {

@@ -150,24 +150,19 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
               ))}
             </div>
           ) : (
-            <>
-              <ul className="mt-6 space-y-5">
-                {s.items.map((item, j) => (
-                  <li key={j} className="flex gap-3.5">
-                    <span
-                      aria-hidden="true"
-                      className="mt-3 h-2 w-2 shrink-0 rounded-full bg-brand-400"
-                    />
-                    <p className="font-body text-base leading-[2.05] tracking-[0.01em] text-slate-700">
-                      {em(item)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-7 rounded-2xl bg-brand-50/70 px-5 py-4 font-body text-base leading-[2.05] tracking-[0.01em] text-slate-600">
-                {em(s.closing)}
-              </p>
-            </>
+            <ul className="mt-6 space-y-5">
+              {s.items.map((item, j) => (
+                <li key={j} className="flex gap-3.5">
+                  <span
+                    aria-hidden="true"
+                    className="mt-3 h-2 w-2 shrink-0 rounded-full bg-brand-400"
+                  />
+                  <p className="font-body text-base leading-[2.05] tracking-[0.01em] text-slate-700">
+                    {em(item)}
+                  </p>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       ))}
