@@ -45,7 +45,7 @@ export const VOICE_TYPE_META: Record<string, VoiceTypeMeta> = {
   rock: { name: "Rock Voice", emoji: "🔥", desc: "芯のある地声成分で、明るくまっすぐ前に出るパワフルな声。" },
   groovy: { name: "Groovy Voice", emoji: "🎙", desc: "太く温かい地声成分。厚みのある低音で聴かせる声。" },
   pop: { name: "Pop Voice", emoji: "🌤", desc: "自然体で親しみやすい、軽やかで明るい地声成分の声。" },
-  mysterious: { name: "Mysterious Voice", emoji: "🌒", desc: "翳りのある深い地声成分。浮遊感と余韻をまとう声。" },
+  mysterious: { name: "Mysterious Voice", emoji: "🌒", desc: "翳りのある落ち着いた地声に息が混ざる、静かでも記憶に残る声。" },
   crystal: { name: "Crystal Voice", emoji: "💎", desc: "高く抜ける裏声成分に芯がある、きらびやかな声。" },
   dramatic: { name: "Dramatic Voice", emoji: "🎭", desc: "裏声成分に情感と伸びがある、切なく響くドラマチックな声。" },
   whisper: { name: "Whisper Voice", emoji: "🍃", desc: "やわらかく透明な裏声成分。そっと寄り添う軽やかな声。" },

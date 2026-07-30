@@ -221,7 +221,7 @@ VOICE_TYPES: dict[tuple, dict] = {
         "artists": {"female": ["aiko", "いきものがかり"], "male": ["北村匠海", "マカロニえんぴつ"]}},
     ("chest", "airy", "deep"): {
         "id": "mysterious", "name": "Mysterious Voice", "emoji": "🌒",
-        "desc": "翳りのある深い地声成分。浮遊感と余韻をまとう声。",
+        "desc": "翳りのある落ち着いた地声に息が混ざる、静かでも記憶に残る声。",
         "artists": {"female": ["宇多田ヒカル", "MISIA"], "male": ["米津玄師", "藤井風"]}},
     ("head", "power", "clear"): {
         "id": "crystal", "name": "Crystal Voice", "emoji": "💎",

@@ -164,9 +164,11 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
                   </li>
                 ))}
               </ul>
-              <p className="mt-7 rounded-2xl bg-brand-50/70 px-5 py-4 font-body text-base leading-[2.05] tracking-[0.01em] text-slate-600">
-                {em(s.closing)}
-              </p>
+              {s.closing && (
+                <p className="mt-7 rounded-2xl bg-brand-50/70 px-5 py-4 font-body text-base leading-[2.05] tracking-[0.01em] text-slate-600">
+                  {em(s.closing)}
+                </p>
+              )}
             </>
           )}
         </section>
