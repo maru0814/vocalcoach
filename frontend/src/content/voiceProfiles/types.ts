@@ -26,9 +26,6 @@ export type ProfileSection =
   | (SectionBase & {
       kind: "list";
       items: string[]; // 各行も **強調** 可
-      // 締め段落は 2026-07-30 のユーザー指示で全タイプ廃止（docs/62 §4）。
-      // 型としては後方互換のため残すが、通常は指定しない。
-      closing?: string;
     });
 
 export type ProfileArtist = {
