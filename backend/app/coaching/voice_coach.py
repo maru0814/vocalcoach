@@ -213,7 +213,7 @@ VOICE_TYPES: dict[tuple, dict] = {
         "artists": {"female": ["LiSA", "アイナ・ジ・エンド"], "male": ["Mrs. GREEN APPLE", "稲葉浩志(B'z)", "優里"]}},
     ("chest", "power", "deep"): {
         "id": "groovy", "name": "Groovy Voice", "emoji": "🎙",
-        "desc": "太く温かい地声成分。うねるような厚みとコクのある声。",
+        "desc": "太く温かい地声成分。厚みのある低音で聴かせる声。",
         "artists": {"female": ["Superfly", "あいみょん"], "male": ["玉置浩二", "鈴木雅之"]}},
     ("chest", "airy", "clear"): {
         "id": "pop", "name": "Pop Voice", "emoji": "🌤",
