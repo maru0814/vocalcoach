@@ -25,6 +25,34 @@ function em(text: string): ReactNode {
 export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) {
   return (
     <>
+      {/* 有名人ラインナップ（シェア導線の直下＝記事先頭。docs/62 §5-2 2026-07-30 に末尾から移動） */}
+      <section
+        id="artists"
+        aria-labelledby="artists-title"
+        className="scroll-mt-24 rounded-[2rem] bg-white/90 p-6 shadow-card sm:p-8"
+      >
+        <h2
+          id="artists-title"
+          className="text-center font-rounded text-2xl font-black tracking-tight text-slate-900"
+        >
+          {profile.nameJa}の有名人
+        </h2>
+        <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 md:grid-cols-4">
+          {profile.artists.map((a) => (
+            <figure key={a.name} className="m-0 text-center">
+              {/* 自前の静的SVG（docs/62 §5-2 承認済みイラスト）。属性がkebab-caseのため文字列描画 */}
+              <div
+                className="mx-auto max-w-[150px] [&_svg]:h-auto [&_svg]:w-full"
+                dangerouslySetInnerHTML={{ __html: a.svg }}
+              />
+              <figcaption className="mt-2 text-sm font-bold text-slate-700">
+                {a.name}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
       {/* 導入 ＋ このタイプの3軸位置（docs/83） */}
       <section className="rounded-[2rem] bg-white/90 p-7 shadow-card sm:p-10">
         <p className="font-body text-base leading-[2.05] tracking-[0.01em] text-slate-700">
@@ -53,12 +81,6 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
             {String(i + 1).padStart(2, "0")} {s.nav}
           </a>
         ))}
-        <a
-          href="#artists"
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:border-brand-300 hover:text-brand-700"
-        >
-          {String(profile.sections.length + 1).padStart(2, "0")} 有名人
-        </a>
       </nav>
 
       {/* 本文セクション */}
@@ -120,33 +142,6 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
         </section>
       ))}
 
-      {/* 有名人ラインナップ */}
-      <section
-        id="artists"
-        aria-labelledby="artists-title"
-        className="scroll-mt-24 rounded-[2rem] bg-white/90 p-6 shadow-card sm:p-8"
-      >
-        <h2
-          id="artists-title"
-          className="text-center font-rounded text-2xl font-black tracking-tight text-slate-900"
-        >
-          {profile.nameJa}の有名人
-        </h2>
-        <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 md:grid-cols-4">
-          {profile.artists.map((a) => (
-            <figure key={a.name} className="m-0 text-center">
-              {/* 自前の静的SVG（docs/62 §5-2 承認済みイラスト）。属性がkebab-caseのため文字列描画 */}
-              <div
-                className="mx-auto max-w-[150px] [&_svg]:h-auto [&_svg]:w-full"
-                dangerouslySetInnerHTML={{ __html: a.svg }}
-              />
-              <figcaption className="mt-2 text-sm font-bold text-slate-700">
-                {a.name}
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-      </section>
     </>
   );
 }
