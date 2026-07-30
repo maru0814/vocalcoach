@@ -3,6 +3,7 @@
 import { VoiceTypeArt } from "./VoiceTypeArt";
 import { Icon } from "@/components/site/IconChip";
 import { VTYPE_STYLE } from "./voiceTypes";
+import { VoiceAxisBars, posFromAxes } from "./VoiceAxisBars";
 
 // 声タイプ診断の結果表示（独立機能・チャット双方で再利用）。
 // スクショ映え＆Xシェアを通じたゼロ円集客の入口。
@@ -23,9 +24,8 @@ export function VoiceTypeBlock({
 }) {
   if (!vt) return null;
   const grad = VTYPE_STYLE[vt.id] || "from-brand-500 to-pink-500";
-  const ax = vt.axes_jp || {};
-  const near = vt.near || {};
-  const tag = (k: string, v: string) => (near[k] ? "やや" : "") + v;
+  // 3軸バーの位置。旧応答（axes_pos なし）は二値＋境界フラグから復元する（docs/83）
+  const axisPos = vt.axes_pos || posFromAxes(vt.axes, vt.near);
   return (
     <div ref={shareRef} className={`overflow-hidden rounded-2xl bg-gradient-to-br ${grad} text-white shadow-soft`}>
       {/* モチーフ画像バナー（未用意のタイプはマスコットに自動フォールバック） */}
@@ -41,11 +41,7 @@ export function VoiceTypeBlock({
           <span className="ml-auto text-right text-xs text-white/80">総合<br /><b className="text-lg">{score}</b></span>
         </div>
         <p className="mt-1.5 text-[13px] font-medium leading-snug text-white/95">{vt.desc}</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {[tag("register", ax.register), tag("power", ax.power), tag("color", ax.color)].filter(Boolean).map((t: string, i: number) => (
-            <span key={i} className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">{t}</span>
-          ))}
-        </div>
+        <VoiceAxisBars pos={axisPos} tone="onColor" className="mt-3" />
         {vt.artists && (vt.artists.female || vt.artists.male) && !maskArtists && (
           <div className="mt-2 space-y-0.5 text-[11px] text-white/95">
             <div className="text-white/70">声質が近い例</div>

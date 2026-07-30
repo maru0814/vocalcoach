@@ -242,9 +242,9 @@ VOICE_TYPES: dict[tuple, dict] = {
 }
 
 _AXIS_JP = {
-    "chest": "地声成分が多め", "head": "裏声成分が多め",
-    "power": "パワフル（芯がある）", "airy": "エアリー（息まじり）",
-    "clear": "クリア（明るい）", "deep": "ディープ（深い）",
+    "chest": "地声寄り", "head": "裏声寄り",
+    "power": "パワフル", "airy": "ソフト",
+    "clear": "明るめ", "deep": "暗め",
 }
 
 
@@ -295,11 +295,20 @@ def classify_voice_type(a: dict) -> Optional[dict]:
     def _near(s: float) -> bool:
         return abs(s) < 0.4
 
+    def _pos(s: float) -> float:
+        """スコアを 0〜1 の位置に写す（docs/83 §4）。
+
+        0=左ラベル側の極 / 0.5=どちらとも言えない / 1=右ラベル側の極。
+        s は + が左ラベル側（地声寄り・パワフル・明るめ）なので符号を反転させる。
+        """
+        return round(0.5 - max(-1.5, min(1.5, s)) / 3, 3)
+
     return {
         **t,
         "axes": {"register": a1, "power": a2, "color": a3},
         "axes_jp": {"register": _AXIS_JP[a1], "power": _AXIS_JP[a2], "color": _AXIS_JP[a3]},
         "near": {"register": _near(s1), "power": _near(s2), "color": _near(s3)},
+        "axes_pos": {"register": _pos(s1), "power": _pos(s2), "color": _pos(s3)},
     }
 
 

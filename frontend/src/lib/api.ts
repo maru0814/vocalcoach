@@ -274,8 +274,11 @@ export type VoiceType = {
   emoji: string;
   desc: string;
   artists?: { female?: string[]; male?: string[] };
+  axes?: { register?: string; power?: string; color?: string };
   axes_jp?: { register?: string; power?: string; color?: string };
   near?: { register?: boolean; power?: boolean; color?: boolean };
+  /** 3軸バーの位置（0=左ラベルの極 / 0.5=どちらとも言えない / 1=右ラベルの極）。docs/83 */
+  axes_pos?: { register?: number; power?: number; color?: number };
 };
 
 export type VoiceTypeResult = {

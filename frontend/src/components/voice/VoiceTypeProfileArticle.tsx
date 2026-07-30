@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { VoiceProfile } from "@/content/voiceProfiles";
 import { IconChip } from "@/components/site/IconChip";
 import { CoachAvatar } from "@/components/character/Coach";
+import { VoiceAxisBars, VTYPE_AXES } from "./VoiceAxisBars";
 
 // 声タイプ図鑑のプロフィール記事本体（正本: docs/62。共有化: docs/70 §3-2）。
 // 詳細ページ（/voice-type/[typeId]）と診断結果ビュー（/voice-type）の両方で使う。
@@ -24,11 +25,21 @@ function em(text: string): ReactNode {
 export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) {
   return (
     <>
-      {/* 導入 */}
+      {/* 導入 ＋ このタイプの3軸位置（docs/83） */}
       <section className="rounded-[2rem] bg-white/90 p-7 shadow-card sm:p-10">
         <p className="font-body text-base leading-[2.05] tracking-[0.01em] text-slate-700">
           {em(profile.lede)}
         </p>
+        {VTYPE_AXES[profile.id] && (
+          <div className="mt-7 border-t border-slate-100 pt-6">
+            <p className="mb-3 text-xs font-bold tracking-wide text-slate-500">このタイプの位置</p>
+            <VoiceAxisBars
+              pos={VTYPE_AXES[profile.id]}
+              caption="※ 声の傾向からの推定です（優劣ではありません）"
+              className="max-w-md"
+            />
+          </div>
+        )}
       </section>
 
       {/* 目次 */}

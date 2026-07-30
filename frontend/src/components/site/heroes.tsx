@@ -150,8 +150,10 @@ const SAMPLE_RESULT = {
   name: "Crystal Voice 💎",
   emoji: "💎",
   desc: "高く抜ける裏声成分に芯がある、きらびやかな声。",
-  axes_jp: { register: "裏声成分が多め", power: "パワフル（芯がある）", color: "クリア（明るい）" },
+  axes_jp: { register: "裏声寄り", power: "パワフル", color: "明るめ" },
   near: {},
+  // 3軸バーの位置（docs/83）。crystal＝裏声寄り×パワフル×明るめ
+  axes_pos: { register: 0.82, power: 0.2, color: 0.24 },
   // 実データ（backend voice_coach.py）。maskArtists=true で名前はDOMに出さず伏せ字表示
   artists: { female: ["宇多田ヒカル"], male: ["藤原聡"] },
 };
