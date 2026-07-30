@@ -87,17 +87,6 @@ export default function VoiceTypeProfilePage({ params }: { params: { typeId: str
           </div>
         </section>
 
-        {profile && (
-          /* シェア導線（ヒーロー直下・診断直後に共有しやすく） */
-          <section className="rounded-[2rem] bg-white/90 p-6 shadow-card sm:p-7">
-            <ProfileShareButtons
-              typeId={params.typeId}
-              nameJa={profile.nameJa}
-              heroTitle={profile.heroTitle}
-            />
-          </section>
-        )}
-
         {profile ? (
           /* 記事本体は診断結果ビューと共有（docs/68 §3-2） */
           <VoiceTypeProfileArticle profile={profile} />
