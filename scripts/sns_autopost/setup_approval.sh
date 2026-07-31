@@ -132,6 +132,8 @@ if [ "$DO_CRON" = 1 ]; then
   declare -a LINES=(
     "0 12 * * * $C generate_and_post.py --slot 1 >> /var/log/sns_autopost.log 2>&1"
     "0 21 * * * $C generate_and_post.py --slot 2 >> /var/log/sns_autopost.log 2>&1"
+    # 朝枠slot3（2026-08-01 運用者決定で1日3投稿化）
+    "0 8 * * * $C generate_and_post.py --slot 3 >> /var/log/sns_autopost.log 2>&1"
     "0 23 * * * $C fetch_metrics.py >> /var/log/sns_metrics.log 2>&1"
     # リード探索(lead_finder)/フォロバ計測(lead_metrics)は運用者指示で停止（2026-07-31。read課金削減）。
     # CRON_MARKER には残す＝再同期で既存行が自動撤去される。再開時は remote_deploy.sh と揃えて2行を戻す:
