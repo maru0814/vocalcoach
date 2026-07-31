@@ -45,6 +45,13 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - 即投稿したいとき（緊急）: `docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --pillar tip --post-now --force`
 
 ### Xフォロー候補（docs/58/59。2026-07 追加、07-06に方針転換）
+> ⛔ **2026-07-31 停止（運用者指示）**: リード探索（lead_finder・毎朝10時）とフォロバ計測
+> （lead_metrics・日曜22:30）の cron を停止。理由: X API read課金の削減（月¥2,000運用への移行。
+> `LEAD_DAILY_READ_BUDGET_USD=0.60` は最悪ケースで単独月$18≒¥2,800と支配項だった）。
+> 停止方法: `remote_deploy.sh`/`setup_approval.sh` の cron 正典リストから2行を除去
+> （CRON_MARKER には残置→デプロイの再同期で既存行が自動撤去）。GitHub Actions「SNS Ops」の
+> lead-finder 系タスクも手動では起動しない運用とする。再開時は両ファイルの正典リストに2行を戻す。
+> 以下の本節の記述は再開時のために残す。
 - **2026-07-06 方針転換**: 提案返信・専門家ゲート（`lead_reply.py`/返信用ルーブリック）を廃止し、
   「フォローすべき人だけ」を一覧で届ける形に変更。理由: Xの自動化ポリシーはフォロー/返信の
   「大量・機械的な実行」自体を禁止しており、人間操作を模した一括自動化はボタン化しても
