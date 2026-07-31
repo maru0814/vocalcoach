@@ -49,8 +49,11 @@ CRON_LINES=(
   "0 12 * * * $C generate_and_post.py --slot 1 >> /var/log/sns_autopost.log 2>&1"
   "0 21 * * * $C generate_and_post.py --slot 2 >> /var/log/sns_autopost.log 2>&1"
   "0 23 * * * $C fetch_metrics.py >> /var/log/sns_metrics.log 2>&1"
-  "0 10 * * * $C lead_finder.py >> /var/log/sns_leads.log 2>&1"
-  "30 22 * * 0 $C lead_metrics.py >> /var/log/sns_leads.log 2>&1"
+  # リード探索(lead_finder)/フォロバ計測(lead_metrics)は運用者指示で停止（2026-07-31。read課金削減）。
+  # 行を消しても CRON_MARKER に残しているため、次回デプロイの再同期でVPSの既存行は自動撤去される。
+  # 再開時はこの2行を戻す（setup_approval.sh の一覧も揃えること）:
+  #   "0 10 * * * $C lead_finder.py >> /var/log/sns_leads.log 2>&1"
+  #   "30 22 * * 0 $C lead_metrics.py >> /var/log/sns_leads.log 2>&1"
   # LP到達ファネルの週次集計（host実行。caddy/backendをexecするためコンテナ内ではなくhost python3で回す）
   "45 22 * * 0 python3 $REPO/scripts/ops/access_funnel.py >> /var/log/access_funnel.log 2>&1"
   # 毎朝の定例メトリクス（前日の訪問者/登録/ログインUUをLINE通知。host実行）
