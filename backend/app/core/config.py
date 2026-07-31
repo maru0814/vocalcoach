@@ -137,6 +137,17 @@ class Settings(BaseSettings):
     def push_enabled(self) -> bool:
         return bool(self.vapid_public_key and self.vapid_private_key and self.vapid_subject)
 
+    # --- ウェルカムメール（docs/84/85）。キー未設定なら送信スキップ＝現行動作 ---
+    # Brevo(REST API)。送信者アドレスは Brevo 側で認証済みであること（docs/86 手順）。
+    mail_api_key: str | None = None
+    mail_from_address: str | None = None
+    mail_from_name: str = "ソラ先生（Vocal Coach）"
+    mail_timeout_sec: float = 10.0
+
+    @property
+    def mail_enabled(self) -> bool:
+        return bool(self.mail_api_key and self.mail_from_address)
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
