@@ -82,6 +82,10 @@ services:
       WEBHOOK_PORT: "8088"
       # 承認キュー・投稿ログ・メトリクスを永続volumeに書く
       SNS_DATA_DIR: "/data"
+      # 1日3投稿（朝8/昼12/夜21。2026-08-01 運用者決定）。compose の environment は
+      # env_file(.env) より優先されるため、VPSの .env に残る MAX_POSTS_PER_DAY=2 を
+      # SSHなしで上書きできる。値を変えるときは .env ではなくここを変える。
+      MAX_POSTS_PER_DAY: "3"
     volumes:
       - sns_data:/data
 

@@ -40,7 +40,10 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 ```
 
 ### 運用
-- 生成cron（昼12時/夜21時）と計測cron（23時）は `--cron` で登録済み。
+- 生成cron（朝8時/昼12時/夜21時）と計測cron（23時）は `--cron` で登録済み。
+  （2026-08-01 運用者決定で朝枠slot3を追加し1日3投稿化。`MAX_POSTS_PER_DAY=3` は
+  docker-compose.prod.yml の environment で上書き＝VPSの .env より優先。
+  承認タップも**1日3件まで**。4件目は上限日タップ罠で failed 確定する点は従来どおり）
 - 毎日その時刻に下書きがLINEに届く → 承認したものだけ投稿される。
 - 即投稿したいとき（緊急）: `docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --pillar tip --post-now --force`
 
@@ -373,6 +376,7 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 
 ### 完了判定
 - `crontab -l | grep -c generate_and_post.py` が **2**（slot1/slot2 各1）＝重複解消。
+  （2026-08-01 の朝枠slot3追加後は **3** が正）。
 - 承認LINEが1通だけ届き、タップで X 投稿まで通る。
 - 以降、昼12時/夜21時の自動生成→承認→投稿が1系統で回る。
 
