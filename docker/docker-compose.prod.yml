@@ -46,6 +46,9 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
       FRONTEND_BASE_URL: "https://${DOMAIN}"
+      # --- ウェルカムメール（docs/84/85）。値は docker/.env から注入。空なら送信スキップ ---
+      MAIL_API_KEY: ${MAIL_API_KEY:-}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
     volumes:
       - app_data:/data
 
