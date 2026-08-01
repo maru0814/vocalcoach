@@ -159,7 +159,7 @@ const SAMPLE_RESULT = {
 };
 
 function ShindanResultCard() {
-  return <VoiceTypeBlock vt={SAMPLE_RESULT} score={82} maskArtists />;
+  return <VoiceTypeBlock vt={SAMPLE_RESULT} maskArtists />;
 }
 
 /** `/lp/shindan` — 診断訴求の流入先。見出し・CTA・遷移先を診断に一本化 */

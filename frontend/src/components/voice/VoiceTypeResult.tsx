@@ -9,16 +9,15 @@ import { VoiceAxisBars, posFromAxes } from "./VoiceAxisBars";
 // スクショ映え＆Xシェアを通じたゼロ円集客の入口。
 export { VTYPE_STYLE };
 
-/** 声タイプ診断（シェアの目玉）。モチーフ画像のバナー＋スコア。スクショ映えする1枚に。
+/** 声タイプ診断（シェアの目玉）。モチーフ画像のバナー。スクショ映えする1枚に。
+ *  総合点は出さない（タイプは優劣ではない、という思想に合わせて廃止）。
  *  maskArtists=true は近い歌手名を伏せ字にして登録誘導（LPのティザー用。実名はDOMに出さない）。 */
 export function VoiceTypeBlock({
   vt,
-  score,
   shareRef,
   maskArtists = false,
 }: {
   vt: any;
-  score: number;
   shareRef?: any;
   maskArtists?: boolean;
 }) {
@@ -38,7 +37,6 @@ export function VoiceTypeBlock({
       <div className="p-4">
         <div className="flex items-center gap-2">
           <span className="text-2xl font-black leading-none">{vt.name}</span>
-          <span className="ml-auto text-right text-xs text-white/80">総合<br /><b className="text-lg">{score}</b></span>
         </div>
         <p className="mt-1.5 text-[13px] font-medium leading-snug text-white/95">{vt.desc}</p>
         <VoiceAxisBars pos={axisPos} tone="onColor" className="mt-3" />
@@ -71,14 +69,14 @@ export function VoiceTypeBlock({
 }
 
 /** Xシェア＋画像保存。診断結果を拡散の入口にする。 */
-export function ShareButtons({ vt, score, shareRef }: { vt: any; score: number; shareRef: any }) {
+export function ShareButtons({ vt, shareRef }: { vt: any; shareRef: any }) {
   if (!vt) return null;
-  // タイプ別の共有ランディング（Xでカード画像＝OGPが出る）。スコアを ?s= で渡しOGタイトルに反映。
+  // タイプ別の共有ランディング（Xでカード画像＝OGPが出る）。総合点は共有しない。
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const shareUrl = `${origin}/voice-type/share/${vt.id}?s=${score}`;
+  const shareUrl = `${origin}/voice-type/share/${vt.id}`;
   const near = [vt.artists?.female?.[0], vt.artists?.male?.[0]].filter(Boolean).join("・");
   const text =
-    `🎤 わたしの声タイプは【${vt.name}${vt.emoji}】総合${score}点でした！\n` +
+    `🎤 わたしの声タイプは【${vt.name}${vt.emoji}】でした！\n` +
     (near ? `声質が近い例：${near}\n` : "") +
     `あなたは何タイプ？15秒で診断して、結果を見せ合おう👇\n#声診断 #ボイトレ #ソラ先生`;
   const xUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;

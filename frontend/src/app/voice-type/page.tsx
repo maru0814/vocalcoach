@@ -295,10 +295,10 @@ export default function VoiceTypePage() {
           <section ref={resultRef} className="scroll-mt-4 space-y-3">
             <div className="rounded-2xl bg-white/90 p-4 shadow-card">
               <div ref={shareRef} className="space-y-0">
-                <VoiceTypeBlock vt={result.voice_type} score={result.score} />
+                <VoiceTypeBlock vt={result.voice_type} />
               </div>
               <div className="mt-3">
-                <ShareButtons vt={result.voice_type} score={result.score} shareRef={shareRef} />
+                <ShareButtons vt={result.voice_type} shareRef={shareRef} />
               </div>
 
               {/* セクションプレビュー帯（docs/72）。記事の目次を先出しして「下に何があるか」を
@@ -411,7 +411,7 @@ export default function VoiceTypePage() {
           <section ref={resultRef} className="scroll-mt-4 space-y-3">
             <div className="relative overflow-hidden rounded-2xl bg-white/90 p-4 shadow-card">
               <div className="pointer-events-none select-none blur-[7px]" aria-hidden="true">
-                <VoiceTypeBlock vt={result.voice_type} score={result.score} />
+                <VoiceTypeBlock vt={result.voice_type} />
               </div>
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/45 px-6 text-center backdrop-blur-[2px]">
                 <CoachAvatar size={72} pose="clap" />

@@ -2,7 +2,7 @@ import { ImageResponse } from "next/server";
 import { VOICE_TYPE_META, SITE_URL } from "@/components/voice/voiceTypes";
 
 // 診断結果カードの動的OG画像（docs/28 §11）。
-// 背景＝タイプ別モチーフ絵に、タイプ名・総合スコア・説明を焼き込んだ 1200x630 PNG を返す。
+// 背景＝タイプ別モチーフ絵に、タイプ名・説明を焼き込んだ 1200x630 PNG を返す（総合点は出さない）。
 // 失敗時は従来の静的OGへ302（カードが壊れない）。
 export const runtime = "edge";
 
@@ -44,11 +44,6 @@ const SITE_HOST = (() => {
   }
 })();
 
-function parseScore(sp: URLSearchParams): number | null {
-  const s = sp.get("s");
-  return s && /^\d{1,3}$/.test(s) ? Number(s) : null;
-}
-
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const id = params.id;
   const meta = VOICE_TYPE_META[id];
@@ -56,7 +51,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return new Response("Not found", { status: 404 });
   }
   try {
-    const score = parseScore(new URL(req.url).searchParams);
     const [font, art] = await Promise.all([
       fetch(FONT_URL).then((r) => r.arrayBuffer()),
       fetch(ART[id]).then((r) => r.arrayBuffer()),
@@ -113,23 +107,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
                   </span>
                 </div>
               </div>
-              {score != null && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "baseline",
-                    marginLeft: "auto",
-                    backgroundColor: "rgba(255,255,255,0.14)",
-                    border: `3px solid ${c1}`,
-                    borderRadius: 24,
-                    padding: "10px 26px",
-                  }}
-                >
-                  <span style={{ fontSize: 28, color: "#fff", opacity: 0.9, marginRight: 12 }}>総合</span>
-                  <span style={{ fontSize: 74, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{score}</span>
-                  <span style={{ fontSize: 30, color: "#fff", opacity: 0.9, marginLeft: 4 }}>点</span>
-                </div>
-              )}
             </div>
             <div style={{ display: "flex", marginTop: 12, fontSize: 30, color: "rgba(255,255,255,0.96)" }}>
               {meta.desc}
