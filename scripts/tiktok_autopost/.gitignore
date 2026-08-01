@@ -1,0 +1,34 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+# 実行時データ（投稿ID・メトリクスのログ）
+*.jsonl
+# 生成物・キャッシュ
+out/
+trends_cache.json
+narration_test.mp3
+# 素材プール本体はGitに入れない（容量。README/プレースホルダのみ管理）
+assets/demo_clips/*.mp4
+assets/demo_clips/*.webm
+assets/bgm/*.mp3
+assets/bgm/*.wav
+assets/bgm/*.m4a
+assets/bgm/*.ogg
+assets/bgm/*.aac
+assets/audio_samples/*.wav
+assets/audio_samples/*.mp3
+# Playwright 認証セッション（個人情報含む）
+assets/auth_state.json
+assets/bg/*.mp4
+assets/bg/*.mov
+assets/bg/*.webm
+assets/bg/*.mkv
+
+# 実写B-rollのキャッシュ（DL物・容量）
+assets/broll_cache/*.mp4
+assets/broll_cache/raw/
+# 効果音（DL物。READMEのみ管理）
+assets/sfx/*.mp3
+assets/sfx/*.wav
+assets/sfx/*.m4a
