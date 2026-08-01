@@ -5,6 +5,8 @@
 #     2. 新規登録者数                        … 本番SQLite users（@example.com のテストは除外＝実会員）
 #     3. ログインUU(＝アクティビティUU)       … その日に認証必須の操作(チャット/録音/FB)をした
 #                                              ユニーク実会員。真のログイン記録が無いための代替値。
+#     4. メール経由の訪問/同日ログイン        … ウェルカムメールのリンク(src=welcome_mail)を
+#                                              踏んだIPと、同日のログインAPI成功IPの突合（推定）。
 #
 # 設計は scripts/ops/access_funnel.py（週次ファネル）と同じ「VPSホストcron + docker exec」方式で、
 # 訪問者数・実会員の定義もそれに揃える（週次と日次で数字がブレないように）。
@@ -46,11 +48,21 @@ def yesterday_window(now: datetime) -> tuple[datetime, datetime]:
 
 
 def access_stats(start: datetime, end: datetime) -> dict:
-    """Caddyアクセスログから前日(JST)のページ閲覧数とユニーク訪問IPを数える。"""
+    """Caddyアクセスログから前日(JST)のページ閲覧数・ユニーク訪問IPに加え、
+    メール経由の流入を数える。
+
+    メール経由の定義（docs/86。ウェルカムメールのリンクは src=welcome_mail 付き）:
+      - mail_visits    … src=welcome_mail 付きURIを踏んだユニークIP数
+      - mail_logins_est … そのIPのうち、同日中に POST /api/v1/auth/login が 200 を
+                          返したIP数（IP突合の推定値。真のクリック→ログイン紐付けでは
+                          ない。モバイル回線のIP変動で取りこぼす可能性あり）
+    """
     s, e = start.timestamp(), end.timestamp()
     raw = sh(["docker", "exec", CADDY, "sh", "-c", "cat /data/access.log* 2>/dev/null"])
     views = 0
     ips: set[str] = set()
+    mail_ips: set[str] = set()
+    login_ips: set[str] = set()
     for line in raw.splitlines():
         try:
             d = json.loads(line)
@@ -60,17 +72,32 @@ def access_stats(start: datetime, end: datetime) -> dict:
         if not (s <= ts < e):
             continue
         req = d.get("request", {})
-        if req.get("method") != "GET":
-            continue
         full_uri = req.get("uri") or ""
         path = full_uri.split("?", 1)[0]
+        ip = req.get("client_ip") or req.get("remote_ip")
+        # メール経由の突合はページ閲覧の除外規則より前に見る（/api も対象のため）
+        if ip and "src=welcome_mail" in full_uri:
+            mail_ips.add(ip)
+        if (
+            ip
+            and req.get("method") == "POST"
+            and path == "/api/v1/auth/login"
+            and d.get("status") == 200
+        ):
+            login_ips.add(ip)
+        if req.get("method") != "GET":
+            continue
         if not path or any(path.startswith(p) for p in SKIP_PREFIX) or ASSET.search(full_uri):
             continue
         views += 1
-        ip = req.get("client_ip") or req.get("remote_ip")
         if ip:
             ips.add(ip)
-    return {"page_views": views, "visitors": len(ips)}
+    return {
+        "page_views": views,
+        "visitors": len(ips),
+        "mail_visits": len(mail_ips),
+        "mail_logins_est": len(mail_ips & login_ips),
+    }
 
 
 # backend コンテナ内で走らせるDB集計。窓の境界は US/UE 環境変数で渡す（文字列クォート事故を避ける）。
@@ -140,7 +167,9 @@ def build_message(day: datetime, acc: dict, db: dict | None) -> str:
         f"{'─' * 16}\n"
         f"👥 訪問者(非会員含む): {acc['visitors']}人 / PV {acc['page_views']}\n"
         f"{reg_line}\n"
-        f"{uu_line}"
+        f"{uu_line}\n"
+        f"📩 メール経由: 訪問 {acc.get('mail_visits', 0)}人 / "
+        f"同日ログイン {acc.get('mail_logins_est', 0)}人(IP突合の推定)"
     )
 
 
@@ -178,6 +207,8 @@ def main() -> int:
         "page_views": acc["page_views"],
         "registrations": db["registrations"] if db else None,
         "active_uu": db["active_uu"] if db else None,
+        "mail_visits": acc["mail_visits"],
+        "mail_logins_est": acc["mail_logins_est"],
     }
     try:
         with open(JSONL, "a") as f:

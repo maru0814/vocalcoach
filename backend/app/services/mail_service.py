@@ -108,9 +108,12 @@ def mail_enabled() -> bool:
 
 
 def build_welcome_email() -> tuple[str, str, str]:
-    """（件名, テキスト本文, HTML本文）を返す。CTAは frontend_base_url に追随（AC-06）。"""
+    """（件名, テキスト本文, HTML本文）を返す。CTAは frontend_base_url に追随（AC-06）。
+
+    src=welcome_mail はメール経由の流入計測用（daily_metrics_line.py がCaddyログで突合）。
+    """
     base = settings.frontend_base_url.rstrip("/")
-    cta_url = base + "/coach"
+    cta_url = base + "/coach?src=welcome_mail"
     logo_url = base + "/icons/icon-192.png"
     body = WELCOME_BODY.format(cta_url=cta_url, contact_email=settings.mail_from_address)
     html = WELCOME_HTML.format(
