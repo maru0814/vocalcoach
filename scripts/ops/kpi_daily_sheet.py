@@ -40,6 +40,26 @@ OUTAGE = {date(2026, 7, 11) + timedelta(days=i) for i in range(4)}  # VPS電源�
 
 DEFAULT_EXCLUDES = "yumaruyama0814@gmail.com"
 
+# KPI_* 設定は環境変数を優先し、無ければ sns の .env（VPS上の運用設定の正）から読む。
+# host cron は .env を読まないため、KPI_SHEET_ID 等と同じ場所に置けるようにする。
+SNS_ENV_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "sns_autopost", ".env"
+)
+
+
+def kpi_conf(key: str, default: str = "") -> str:
+    if os.getenv(key):
+        return os.environ[key]
+    try:
+        with open(SNS_ENV_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1]
+    except OSError:
+        pass
+    return default
+
 # access_funnel.py / daily_metrics_line.py と同じページ判定
 ASSET = re.compile(r"\.(css|js|mjs|png|jpe?g|svg|ico|gif|webp|woff2?|ttf|map|txt|xml|webmanifest)(\?|$)", re.I)
 SKIP_PREFIX = ("/api", "/sns", "/healthz", "/_next", "/favicon")
@@ -75,8 +95,11 @@ def jst_day_of(ts: float) -> date:
     return datetime.fromtimestamp(ts, JST).date()
 
 
-def parse_access(days: set[date]) -> dict[date, dict]:
-    """Caddyアクセスログを1回読み、対象日ごとに LP UU / リンク別UU / 診断UU(IP) を集計する。"""
+def parse_access(days: set[date], exclude_ips: set[str] = frozenset()) -> dict[date, dict]:
+    """Caddyアクセスログを1回読み、対象日ごとに LP UU / リンク別UU / 診断UU(IP) を集計する。
+
+    exclude_ips（KPI_EXCLUDE_IPS: オーナーの自宅等の固定IP）は全IPベース指標から除外する。
+    """
     raw = subprocess.run(
         ["docker", "exec", CADDY, "sh", "-c", "cat /data/access.log* 2>/dev/null"],
         capture_output=True, text=True,
@@ -96,7 +119,7 @@ def parse_access(days: set[date]) -> dict[date, dict]:
             continue
         req = rec.get("request", {})
         ip = req.get("client_ip") or req.get("remote_ip")
-        if not ip:
+        if not ip or ip in exclude_ips:
             continue
         ua = (req.get("headers", {}).get("User-Agent") or [""])[0]
         if BOT_UA.search(ua):
@@ -132,10 +155,15 @@ def parse_access(days: set[date]) -> dict[date, dict]:
 # 窓・除外メールは環境変数で渡す。login_events / 診断identity列は存在しない版の
 # DBでも動くように毎回スキーマを確認する（デプロイ順序に依存しない）。
 _DB_SCRIPT = r"""
-import sqlite3, json, os, datetime
+import sqlite3, json, os, datetime, hashlib
 c = sqlite3.connect('/data/app.db').cursor()
 windows = json.loads(os.environ["WINDOWS"])
 excludes = {e.strip().lower() for e in json.loads(os.environ["EXCLUDES"]) if e.strip()}
+# 除外IPの匿名診断も落とす: backend の _visitor_hash と同じ式（sha256("JWT_SECRET:ip")）で
+# ハッシュを再現して照合する。JWT_SECRET は backend コンテナ自身の env にある。
+_secret = os.environ.get("JWT_SECRET", "")
+excl_hashes = {hashlib.sha256(f"{_secret}:{ip}".encode()).hexdigest()
+               for ip in json.loads(os.environ.get("EXCLUDE_IPS", "[]")) if _secret}
 
 def has_table(name):
     return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
@@ -194,7 +222,7 @@ for day, us, ue in windows:
             if uid is not None:
                 if uid in real_ids:
                     idents.add(f"u:{uid}")
-            elif vh:
+            elif vh and vh not in excl_hashes:
                 idents.add(f"v:{vh}")
         diag_uu = len(idents)
     paid_new_created = 0
@@ -220,7 +248,8 @@ print(json.dumps({"days": days, "first_login": first_login,
 """
 
 
-def db_stats(days: list[date], excludes: list[str]) -> dict | None:
+def db_stats(days: list[date], excludes: list[str],
+             exclude_ips: list[str] | None = None) -> dict | None:
     windows = []
     for d in days:
         start = datetime(d.year, d.month, d.day, tzinfo=JST)
@@ -233,6 +262,7 @@ def db_stats(days: list[date], excludes: list[str]) -> dict | None:
         ["docker", "exec", "-i",
          "-e", f"WINDOWS={json.dumps(windows)}",
          "-e", f"EXCLUDES={json.dumps(excludes)}",
+         "-e", f"EXCLUDE_IPS={json.dumps(exclude_ips or [])}",
          BACKEND, "python3", "-"],
         input=_DB_SCRIPT, capture_output=True, text=True,
     )
@@ -371,9 +401,12 @@ def main() -> int:
         return 1
 
     excludes = [e.strip() for e in
-                os.getenv("KPI_EXCLUDE_EMAILS", DEFAULT_EXCLUDES).split(",") if e.strip()]
-    acc = parse_access({d for d in days if d >= LOG_START})
-    db = db_stats(days, excludes)
+                kpi_conf("KPI_EXCLUDE_EMAILS", DEFAULT_EXCLUDES).split(",") if e.strip()]
+    exclude_ips = {i.strip() for i in kpi_conf("KPI_EXCLUDE_IPS").split(",") if i.strip()}
+    if exclude_ips:
+        print(f"[kpi_daily_sheet] 除外IP {len(exclude_ips)}件を適用")
+    acc = parse_access({d for d in days if d >= LOG_START}, exclude_ips)
+    db = db_stats(days, excludes, sorted(exclude_ips))
     daily_rows, link_rows = build_rows(days, acc, db, is_backfill)
     payload = {"daily": daily_rows, "links": link_rows}
 
