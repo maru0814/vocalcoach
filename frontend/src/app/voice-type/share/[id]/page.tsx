@@ -5,11 +5,6 @@ import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
 import { VOICE_TYPE_LIST, VOICE_TYPE_META, SITE_URL, VTYPE_STYLE } from "@/components/voice/voiceTypes";
 
 type SP = { [k: string]: string | string[] | undefined };
-function parseScore(searchParams?: SP): number | null {
-  const raw = searchParams?.s;
-  const s = Array.isArray(raw) ? raw[0] : raw;
-  return s && /^\d{1,3}$/.test(s) ? Number(s) : null;
-}
 
 // 8タイプ分を静的生成（Xクローラが読む og/twitter メタを各タイプで出す）
 export function generateStaticParams() {
@@ -17,18 +12,16 @@ export function generateStaticParams() {
 }
 
 export function generateMetadata(
-  { params, searchParams }: { params: { id: string }; searchParams?: SP },
+  { params }: { params: { id: string }; searchParams?: SP },
 ): Metadata {
   const m = VOICE_TYPE_META[params.id];
   if (!m) return {};
-  const score = parseScore(searchParams);
-  const scoreSuffix = score != null ? ` 総合${score}点` : "";
-  const title = `あなたの声タイプは【${m.name}${m.emoji}】${scoreSuffix}`;
+  const title = `あなたの声タイプは【${m.name}${m.emoji}】`;
   const description = `${m.desc} あなたの声も15秒歌うだけで無料診断🎤`;
   const path = `/voice-type/share/${params.id}`;
-  // 診断結果の一枚絵（スコア入りカード）を動的生成。失敗時はルート側で静的OGへフォールバック
+  // 診断結果の一枚絵（総合点なしカード）を動的生成。失敗時はルート側で静的OGへフォールバック
   // 注: /api/* は本番Caddyがbackendへ振るため、Next側ルートは /og/ 配下に置く（docs/28 §11）
-  const ogImage = `/og/voice-type/${params.id}${score != null ? `?s=${score}` : ""}`;
+  const ogImage = `/og/voice-type/${params.id}`;
   return {
     metadataBase: new URL(SITE_URL),
     title,
@@ -53,12 +46,11 @@ export function generateMetadata(
 }
 
 export default function VoiceTypeShareLanding(
-  { params, searchParams }: { params: { id: string }; searchParams?: SP },
+  { params }: { params: { id: string }; searchParams?: SP },
 ) {
   const m = VOICE_TYPE_META[params.id];
   if (!m) notFound();
   const grad = VTYPE_STYLE[params.id] || "from-brand-500 to-pink-500";
-  const score = parseScore(searchParams);
 
   return (
     <div className="bg-studio min-h-[100dvh] pb-16">
@@ -73,9 +65,6 @@ export default function VoiceTypeShareLanding(
           <div className="p-5">
             <div className="flex items-center gap-2">
               <div className="text-2xl font-black">{m.name} {m.emoji}</div>
-              {score != null && (
-                <span className="ml-auto text-right text-xs text-white/85">総合<br /><b className="text-lg">{score}</b></span>
-              )}
             </div>
             <p className="mt-1.5 text-sm font-medium leading-relaxed text-white/95">{m.desc}</p>
           </div>
