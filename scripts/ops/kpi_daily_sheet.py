@@ -19,6 +19,7 @@
 cron 登録は scripts/deploy/remote_deploy.sh と scripts/sns_autopost/setup_approval.sh の両方。
 """
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -95,11 +96,43 @@ def jst_day_of(ts: float) -> date:
     return datetime.fromtimestamp(ts, JST).date()
 
 
+def _ip_matcher(entries: set[str]):
+    """KPI_EXCLUDE_IPS のエントリから判定関数を作る。
+
+    完全一致に加えて CIDR 表記（例: 2404:7a82:621:7700::/64）を受ける。
+    家庭用IPv6は末尾64bitが定期的に変わるため、/64 プレフィックスで除外できないと
+    実用にならない。不正なエントリは無視する。
+    """
+    exact, nets = set(), []
+    for e in entries:
+        if "/" in e:
+            try:
+                nets.append(ipaddress.ip_network(e, strict=False))
+            except ValueError:
+                print(f"WARN: KPI_EXCLUDE_IPS の不正なCIDRを無視: {e}", file=sys.stderr)
+        else:
+            exact.add(e)
+
+    def match(ip: str) -> bool:
+        if ip in exact:
+            return True
+        if nets:
+            try:
+                addr = ipaddress.ip_address(ip)
+            except ValueError:
+                return False
+            return any(addr in n for n in nets)
+        return False
+
+    return match
+
+
 def parse_access(days: set[date], exclude_ips: set[str] = frozenset()) -> dict[date, dict]:
     """Caddyアクセスログを1回読み、対象日ごとに LP UU / リンク別UU / 診断UU(IP) を集計する。
 
-    exclude_ips（KPI_EXCLUDE_IPS: オーナーの自宅等の固定IP）は全IPベース指標から除外する。
+    exclude_ips（KPI_EXCLUDE_IPS: オーナーの自宅等の固定IP・CIDR可）は全IPベース指標から除外する。
     """
+    is_excluded = _ip_matcher(set(exclude_ips))
     raw = subprocess.run(
         ["docker", "exec", CADDY, "sh", "-c", "cat /data/access.log* 2>/dev/null"],
         capture_output=True, text=True,
@@ -119,7 +152,7 @@ def parse_access(days: set[date], exclude_ips: set[str] = frozenset()) -> dict[d
             continue
         req = rec.get("request", {})
         ip = req.get("client_ip") or req.get("remote_ip")
-        if not ip or ip in exclude_ips:
+        if not ip or is_excluded(ip):
             continue
         ua = (req.get("headers", {}).get("User-Agent") or [""])[0]
         if BOT_UA.search(ua):
@@ -406,7 +439,8 @@ def main() -> int:
     if exclude_ips:
         print(f"[kpi_daily_sheet] 除外IP {len(exclude_ips)}件を適用")
     acc = parse_access({d for d in days if d >= LOG_START}, exclude_ips)
-    db = db_stats(days, excludes, sorted(exclude_ips))
+    # 匿名診断のハッシュ照合は完全一致IPのみ（CIDRのハッシュ再現は原理的に不可能）
+    db = db_stats(days, excludes, sorted(i for i in exclude_ips if "/" not in i))
     daily_rows, link_rows = build_rows(days, acc, db, is_backfill)
     payload = {"daily": daily_rows, "links": link_rows}
 

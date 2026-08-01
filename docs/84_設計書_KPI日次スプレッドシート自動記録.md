@@ -86,8 +86,10 @@
 - 適用範囲: 登録数・ログインUU・チャットUU・有料系・診断UU（user_id が取れた分のみ）。
 - **IP除外（2026-08-01 追加）**: `KPI_EXCLUDE_IPS`（カンマ区切り。環境変数優先、無ければ
   `scripts/sns_autopost/.env` から読む）に登録した固定IPは、LP遷移UU・リンク別UU・
-  診断UU(IP推定) の全IPベース指標から除外する。さらに backend コンテナ内で
-  `sha256("JWT_SECRET:ip")` を再現照合し、除外IPからの**匿名診断（visitor_hash）も除外**する。
+  診断UU(IP推定) の全IPベース指標から除外する。**CIDR表記可**（例: IPv6の
+  `2404:xxxx:xxxx:xxxx::/64` — 家庭用IPv6は末尾が変わるためプレフィックスで指定する）。
+  さらに backend コンテナ内で `sha256("JWT_SECRET:ip")` を再現照合し、除外IPからの
+  **匿名診断（visitor_hash）も除外**する（ハッシュ照合は完全一致IPのみ・CIDR不可）。
 - **残る限界**: IPが変わる回線（モバイル等）からのオーナーのアクセスは除外できない。
   固定IPが変わったら `KPI_EXCLUDE_IPS` を更新する。
 
