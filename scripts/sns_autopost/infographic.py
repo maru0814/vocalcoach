@@ -303,6 +303,16 @@ def build_data(pillar: str, day_index: int, override: dict | None = None) -> dic
         return data
     if pillar in ("voice_type", "self_type", "visual"):
         return parse_diagnosis(pillar, day_index)  # 各タイプの実画像を使う図鑑（キャラは無し）
+    if pillar == "artist_analysis":
+        # アーティスト発声解説（docs/84）: hook1行目を見出しに、body の①②③を手順図解で描く。
+        # 末尾の診断ブリッジ（「8タイプ診断だと〜」）は投稿のリプ専用なので図解には載せない。
+        e = themes.ARTIST_ANALYSIS[day_index % len(themes.ARTIST_ANALYSIS)]
+        body = "\n".join(ln for ln in e["body"].splitlines() if "8タイプ診断" not in ln)
+        data = parse_tip(e["hook"].splitlines()[0] + "\n" + body)
+        data["type"] = "tip"  # レイアウトは手順図解（templates/infographic.html の tip 型）を流用
+        data["hashtags"] = "#ボイトレ #歌声分析"
+        data["character"] = _char_data_uri("explain")
+        return data
     if pillar == "contrarian":
         hook, body = themes.CONTRARIAN[day_index % len(themes.CONTRARIAN)]
         data = parse_contrarian(hook, body)

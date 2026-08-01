@@ -5,7 +5,7 @@
 （slot番号は歴史的経緯: 昼/夜の2枠運用に 2026-08-01 朝枠=slot3 を追加）
   1) 曜日とスロットに応じて投稿の柱（診断誘導 / Tips / 声タイプ紹介 / 会話）を選ぶ
   2) Gemini で投稿文を生成（失敗・未設定ならテンプレートを使用）
-     tip/contrarian は2部構成: 本投稿=好奇心フックで寸止め / リプ(自己返信)=手順・本体。
+     tip/contrarian/artist_analysis は2部構成: 本投稿=好奇心フックで寸止め / リプ(自己返信)=手順・本体。
      リプを開かせてエンゲージを伸ばす設計（診断導線型は単発）。
   3) X API v2 に投稿: 本投稿→リプ本体→(任意)URL の順でスレッド化。
      キー未設定 or DRY_RUN=1 なら本文を表示して終了。
@@ -119,7 +119,7 @@ def _budget_check(post_has_link: bool, post_has_reply: bool = False,
 
 def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
     """{text, reply, link} を返す。text=本投稿、reply=リプに置く本体 or None。
-    tip/contrarian は2部構成（フック＋手順本体）で生成。診断導線(self_type/voice_type/visual)は
+    tip/contrarian/artist_analysis は2部構成（フック＋本体）で生成。診断導線(self_type/voice_type/visual)は
     フックだけ生成し早見リプはテンプレ固定。GEMINI_API_KEY 無しなら全型テンプレ。"""
     post = themes.template_post(pillar, day_index, app_url)  # {text, reply, link}
     api_key = os.getenv("GEMINI_API_KEY")
@@ -279,7 +279,8 @@ def post_to_x(text: str, reply: str | None, link: str | None,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pillar",
-                    choices=["self_type", "tip", "voice_type", "contrarian", "visual"],
+                    choices=["self_type", "tip", "voice_type", "contrarian", "visual",
+                             "artist_analysis"],
                     help="投稿の型を指定")
     ap.add_argument("--slot", type=int, choices=[1, 2, 3], default=None,
                     help="1=昼枠（既定）/2=夜枠/3=朝枠。同日に別の型を出すために使う")
