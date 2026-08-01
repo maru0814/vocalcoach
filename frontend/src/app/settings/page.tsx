@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BillingMe, getBillingMe, openPortal, startCheckout } from "@/lib/api";
+import {
+  BillingMe,
+  getBillingMe,
+  getMe,
+  openPortal,
+  setNewsletterOptIn as apiSetNewsletterOptIn,
+  startCheckout,
+} from "@/lib/api";
 import { PREMIUM_PRICE_LABEL } from "@/lib/pricing";
 import { redirectToLoginIfAuthError } from "@/lib/authRedirect";
 import NotificationToggle from "@/components/pwa/NotificationToggle";
@@ -14,17 +21,34 @@ export default function SettingsPage() {
   const [me, setMe] = useState<BillingMe | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // お知らせメール同意（docs/88 FR-03）。null=読み込み中
+  const [newsletter, setNewsletter] = useState<boolean | null>(null);
+  const [newsletterBusy, setNewsletterBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         setMe(await getBillingMe());
+        setNewsletter((await getMe()).newsletter_opt_in);
       } catch (err) {
         if (redirectToLoginIfAuthError(err, router)) return;
         setError(err instanceof Error ? err.message : "取得に失敗しました");
       }
     })();
   }, [router]);
+
+  const toggleNewsletter = async () => {
+    if (newsletter === null) return;
+    setNewsletterBusy(true);
+    try {
+      const { opt_in } = await apiSetNewsletterOptIn(!newsletter);
+      setNewsletter(opt_in);
+    } catch {
+      setError("お知らせメール設定を変更できませんでした。時間をおいてお試しください。");
+    } finally {
+      setNewsletterBusy(false);
+    }
+  };
 
   const goCheckout = async () => {
     setBusy(true);
@@ -102,6 +126,26 @@ export default function SettingsPage() {
       </section>
 
       <NotificationToggle />
+
+      <section className="space-y-3 rounded bg-white p-5 shadow">
+        <h2 className="font-semibold">お知らせメール</h2>
+        <p className="text-sm text-gray-700">
+          新機能やアップデートのお知らせをメールで受け取ります（いつでも停止できます）。
+        </p>
+        {newsletter === null ? (
+          <p className="text-sm text-gray-500">読み込み中…</p>
+        ) : (
+          <button
+            className={`rounded px-4 py-2 text-sm disabled:opacity-50 ${
+              newsletter ? "border" : "bg-blue-600 text-white"
+            }`}
+            onClick={toggleNewsletter}
+            disabled={newsletterBusy}
+          >
+            {newsletter ? "受け取りをやめる（現在: ON）" : "受け取る（現在: OFF）"}
+          </button>
+        )}
+      </section>
     </div>
   );
 }

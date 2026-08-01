@@ -52,14 +52,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** ログイン状態の確認。未ログインなら例外（401）。 */
 export async function getMe() {
-  return request<{ user_id: number; email: string }>("/api/v1/auth/me");
+  return request<{ user_id: number; email: string; newsletter_opt_in: boolean }>(
+    "/api/v1/auth/me",
+  );
 }
 
-export async function register(email: string, password: string) {
+export async function register(email: string, password: string, newsletterOptIn = false) {
   return request<{ user_id: number }>("/api/v1/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, newsletter_opt_in: newsletterOptIn }),
+  });
+}
+
+/** お知らせメールの同意を変更（docs/88 FR-03）。 */
+export async function setNewsletterOptIn(optIn: boolean) {
+  return request<{ opt_in: boolean }>("/api/v1/auth/newsletter", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ opt_in: optIn }),
   });
 }
 

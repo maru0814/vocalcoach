@@ -6,7 +6,14 @@ from app.db.session import get_db
 from app.deps import get_current_user
 from app.models.login_event import LoginEvent
 from app.models.user import User
-from app.schemas.auth import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
+from app.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    NewsletterOptInRequest,
+    RegisterRequest,
+    RegisterResponse,
+)
+from app.security.tokens_util import new_unsubscribe_token
 from app.security.passwords import hash_password, verify_password
 from app.services.mail_service import send_welcome_email
 from app.security.token import create_access_token
@@ -18,7 +25,25 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 @router.get("/me")
 def me(user: User = Depends(get_current_user)) -> dict:
     """ログイン状態の確認用。未ログインなら 401。"""
-    return {"user_id": user.id, "email": user.email}
+    return {
+        "user_id": user.id,
+        "email": user.email,
+        "newsletter_opt_in": bool(user.newsletter_opt_in),
+    }
+
+
+@router.post("/newsletter")
+def update_newsletter_opt_in(
+    body: NewsletterOptInRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """お知らせメールの同意を本人が変更する（docs/88 FR-03）。"""
+    user.newsletter_opt_in = body.opt_in
+    if body.opt_in and not user.unsubscribe_token:
+        user.unsubscribe_token = new_unsubscribe_token()
+    db.commit()
+    return {"opt_in": bool(user.newsletter_opt_in)}
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
@@ -31,7 +56,13 @@ def register(
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
-    user = User(email=body.email, password_hash=hash_password(body.password))
+    user = User(
+        email=body.email,
+        password_hash=hash_password(body.password),
+        newsletter_opt_in=body.newsletter_opt_in,
+        # 同意者には配信停止トークンを先行発行（docs/88 FR-01/FR-04）
+        unsubscribe_token=new_unsubscribe_token() if body.newsletter_opt_in else None,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)

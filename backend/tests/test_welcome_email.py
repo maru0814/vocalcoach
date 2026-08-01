@@ -128,8 +128,8 @@ class MailServiceUnitTest(_MailSettingsMixin):
         self.assertIn("AIボーカルトレーナー ソラ先生", html)
         self.assertNotIn("ソラのステージ", html)  # 内輪ブランド名は使わない
         self.assertIn("無料で歌を見てもらう", html)
-        # メール経由の流入計測パラメータ（daily_metrics_line.py がログ突合に使う）
-        self.assertIn("/coach?src=welcome_mail", html)
+        # メール経由の流入計測パラメータ（daily_metrics_line.py が src=mail 前方一致で突合）
+        self.assertIn("/coach?src=mail_welcome", html)
 
 
 class RegisterHookTest(_MailSettingsMixin):

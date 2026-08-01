@@ -107,13 +107,59 @@ def mail_enabled() -> bool:
     return settings.mail_enabled
 
 
+def send_mail(user_id: int, to_email: str, subject: str, text: str, html: str | None = None) -> bool:
+    """Brevo経由で1通送る共通処理（docs/89 §5）。成功/失敗を返し、例外は漏らさない。
+
+    ログには宛先でなく user_id を出す（FR-05。メール本文・APIキーも出さない）。
+    """
+    if not mail_enabled():
+        logger.info("mail skip（未設定） user_id=%s", user_id)
+        return False
+    try:
+        import requests
+
+        payload: dict = {
+            "sender": {"name": settings.mail_from_name, "email": settings.mail_from_address},
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "textContent": text,
+        }
+        if html:
+            payload["htmlContent"] = html
+        resp = requests.post(
+            BREVO_SEND_URL,
+            headers={"api-key": settings.mail_api_key, "content-type": "application/json"},
+            json=payload,
+            timeout=settings.mail_timeout_sec,
+        )
+        if 200 <= resp.status_code < 300:
+            return True
+        logger.warning("mail failed user_id=%s status=%s", user_id, resp.status_code)
+        return False
+    except Exception as e:  # noqa: BLE001 — 呼び出し元の処理を守るため全例外を隔離
+        logger.warning("mail failed user_id=%s error=%s", user_id, type(e).__name__)
+        return False
+
+
+def build_newsletter_text(body: str, unsubscribe_url: str) -> str:
+    """お知らせメール本文に法定フッターを付ける（docs/88 FR-06 / AC-08）。"""
+    return (
+        body.rstrip()
+        + "\n\n--\n"
+        + f"{settings.mail_from_name}\n"
+        + f"お問い合わせ: {settings.mail_from_address}\n"
+        + f"配信停止はこちら（ワンクリック）: {unsubscribe_url}\n"
+    )
+
+
 def build_welcome_email() -> tuple[str, str, str]:
     """（件名, テキスト本文, HTML本文）を返す。CTAは frontend_base_url に追随（AC-06）。
 
-    src=welcome_mail はメール経由の流入計測用（daily_metrics_line.py がCaddyログで突合）。
+    src=mail_welcome はメール経由の流入計測用（daily_metrics_line.py が
+    src=mail 前方一致でCaddyログと突合。docs/89 §2）。
     """
     base = settings.frontend_base_url.rstrip("/")
-    cta_url = base + "/coach?src=welcome_mail"
+    cta_url = base + "/coach?src=mail_welcome"
     logo_url = base + "/icons/icon-192.png"
     body = WELCOME_BODY.format(cta_url=cta_url, contact_email=settings.mail_from_address)
     html = WELCOME_HTML.format(
@@ -132,28 +178,8 @@ def send_welcome_email(user_id: int, to_email: str) -> None:
         logger.info("welcome mail skip（未設定） user_id=%s", user_id)
         return
 
-    try:
-        import requests
-
-        subject, body, html = build_welcome_email()
-        resp = requests.post(
-            BREVO_SEND_URL,
-            headers={"api-key": settings.mail_api_key, "content-type": "application/json"},
-            json={
-                "sender": {"name": settings.mail_from_name, "email": settings.mail_from_address},
-                "to": [{"email": to_email}],
-                "subject": subject,
-                "textContent": body,
-                "htmlContent": html,
-            },
-            timeout=settings.mail_timeout_sec,
-        )
-        if 200 <= resp.status_code < 300:
-            logger.info("welcome mail sent user_id=%s", user_id)
-        else:
-            # 4xx（キー無効・無料枠超過等）もリトライしない（docs/85 §7）
-            logger.warning(
-                "welcome mail failed user_id=%s status=%s", user_id, resp.status_code
-            )
-    except Exception as e:  # noqa: BLE001 — 登録を守るため全例外を隔離（FR-02）
-        logger.warning("welcome mail failed user_id=%s error=%s", user_id, type(e).__name__)
+    subject, body, html = build_welcome_email()
+    if send_mail(user_id, to_email, subject, body, html):
+        logger.info("welcome mail sent user_id=%s", user_id)
+    else:
+        logger.warning("welcome mail failed user_id=%s", user_id)
