@@ -84,8 +84,12 @@
 - 本件でオーナー本人 `yumaruyama0814@gmail.com` を追加除外。
 - 実装: `kpi_daily_sheet.py` 内の定数 `EXCLUDE_EMAILS`（環境変数 `KPI_EXCLUDE_EMAILS` で上書き可、カンマ区切り）。
 - 適用範囲: 登録数・ログインUU・チャットUU・有料系・診断UU（user_id が取れた分のみ）。
-- **限界**: IPベースの指標（LP遷移UU・診断UUのIP推定分）はアカウント紐付けが無いため
-  オーナー自身のアクセスを除外できない。備考欄と本設計書に明記して運用でカバーする。
+- **IP除外（2026-08-01 追加）**: `KPI_EXCLUDE_IPS`（カンマ区切り。環境変数優先、無ければ
+  `scripts/sns_autopost/.env` から読む）に登録した固定IPは、LP遷移UU・リンク別UU・
+  診断UU(IP推定) の全IPベース指標から除外する。さらに backend コンテナ内で
+  `sha256("JWT_SECRET:ip")` を再現照合し、除外IPからの**匿名診断（visitor_hash）も除外**する。
+- **残る限界**: IPが変わる回線（モバイル等）からのオーナーのアクセスは除外できない。
+  固定IPが変わったら `KPI_EXCLUDE_IPS` を更新する。
 
 ## 6. アクセスログ集計の規則
 
