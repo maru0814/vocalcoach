@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -7,6 +7,7 @@ from app.deps import get_current_user
 from app.models.user import User
 from app.schemas.auth import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
 from app.security.passwords import hash_password, verify_password
+from app.services.mail_service import send_welcome_email
 from app.security.token import create_access_token
 
 
@@ -22,6 +23,7 @@ def me(user: User = Depends(get_current_user)) -> dict:
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 def register(
     body: RegisterRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> RegisterResponse:
     existing = db.query(User).filter(User.email == body.email).first()
@@ -32,6 +34,8 @@ def register(
     db.add(user)
     db.commit()
     db.refresh(user)
+    # ウェルカムメール（docs/84/85）。レスポンス返却後に実行され、失敗しても登録には影響しない
+    background_tasks.add_task(send_welcome_email, user.id, user.email)
     return RegisterResponse(user_id=user.id)
 
 

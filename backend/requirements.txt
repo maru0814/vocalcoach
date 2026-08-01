@@ -24,3 +24,6 @@ stripe==15.2.0
 
 # Web Push（練習リマインド通知 / PWA。docs/73〜75。VAPIDで標準Web Push Protocolを送信）
 pywebpush==2.0.0
+
+# ウェルカムメール送信（Brevo REST API。docs/84/85。pywebpush 経由の推移依存を明示ピン）
+requests==2.34.2
