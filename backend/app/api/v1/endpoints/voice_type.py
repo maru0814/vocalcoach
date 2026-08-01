@@ -4,6 +4,7 @@
 発声指標を解析して8つの「声タイプ」を判定し、シェア用のカードデータを返す。
 チャットセッションには一切依存しない（任意のタイミングで何度でも実行可）。
 """
+import hashlib
 import os
 import uuid
 
@@ -29,6 +30,24 @@ _TYPE_NAMES = {v["id"]: v["name"] for v in voice_coach.VOICE_TYPES.values()}
 _TYPE_ORDER = [v["id"] for v in voice_coach.VOICE_TYPES.values()]
 
 
+def _client_ip(request: Request) -> str:
+    """実クライアントIPを返す。
+
+    本番は Caddy のリバースプロキシ配下で、uvicorn は --proxy-headers なしのため
+    request.client.host はプロキシのIPになる。Caddy が付ける X-Forwarded-For の
+    先頭（=実クライアント）を優先する。
+    """
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _visitor_hash(ip: str) -> str:
+    """未ログイン診断者の仮名化識別子（診断UU算出用・docs/84）。生IPは保存しない。"""
+    return hashlib.sha256(f"{settings.jwt_secret}:{ip}".encode()).hexdigest()
+
+
 @router.post("/analyze")
 def analyze_voice_type(
     request: Request,
@@ -43,7 +62,8 @@ def analyze_voice_type(
     登録に誘導する。レート制限はログイン時はユーザー単位、未登録時はIP単位。
     """
     # --- rate limit（解析はCPU負荷が高いので悪用防止。未登録はIP単位で絞る）---
-    rl_key = f"voicetype:{user.id}" if user else f"voicetype:ip:{request.client.host if request.client else 'unknown'}"
+    # X-Forwarded-For を見ないと本番では全員がプロキシIPで同一バケツになる
+    rl_key = f"voicetype:{user.id}" if user else f"voicetype:ip:{_client_ip(request)}"
     if not check_rate_limit(
         rl_key, settings.rate_limit_max_audio, settings.rate_limit_window_sec
     ):
@@ -118,9 +138,16 @@ def analyze_voice_type(
 
         scores = scoring.voice_scores(analysis, None)
         total = scores.get("total_score")
-        # 社会的証明（累計・分布）用に診断イベントを記録。best-effort（失敗しても診断は返す）。
+        # 社会的証明（累計・分布）＋診断UU（docs/84）用に診断イベントを記録。
+        # best-effort（失敗しても診断は返す）。ログイン時は user_id、未ログイン時は
+        # ソルト付きIPハッシュで同一人物の再診断を1UUに畳めるようにする。
         try:
-            db.add(VoiceTypeDiagnosis(type_id=vt.get("id", ""), score=total))
+            db.add(VoiceTypeDiagnosis(
+                type_id=vt.get("id", ""),
+                score=total,
+                user_id=user.id if user else None,
+                visitor_hash=None if user else _visitor_hash(_client_ip(request)),
+            ))
             db.commit()
         except Exception:
             db.rollback()

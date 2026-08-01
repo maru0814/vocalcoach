@@ -143,11 +143,13 @@ if [ "$DO_CRON" = 1 ]; then
     "45 22 * * 0 python3 $REPO_ROOT/scripts/ops/access_funnel.py >> /var/log/access_funnel.log 2>&1"
     # 毎朝の定例メトリクス（前日の訪問者/登録/ログインUUをLINE通知。host実行）
     "0 8 * * * python3 $REPO_ROOT/scripts/ops/daily_metrics_line.py >> /var/log/daily_metrics.log 2>&1"
+    # KPI日次スプレッドシート記録（docs/84。前日分をGoogle Sheetsにupsert。host実行）
+    "10 8 * * * python3 $REPO_ROOT/scripts/ops/kpi_daily_sheet.py >> /var/log/kpi_sheet.log 2>&1"
   )
   # 再同期(reconcile): 追加専用だとコマンド形態変更時（旧 .venv直 → 新 docker compose exec）に
   # 旧行が生きたcrontabに残って同時刻で二重発火する（2026-07 実障害）。管理行をマーカー
   # （jobスクリプト名）で一掃してから正典セットを書き直し、収束させる。remote_deploy.sh と同一方針。
-  CRON_MARKER='generate_and_post\.py|fetch_metrics\.py|lead_finder\.py|lead_metrics\.py|access_funnel\.py|daily_metrics_line\.py'
+  CRON_MARKER='generate_and_post\.py|fetch_metrics\.py|lead_finder\.py|lead_metrics\.py|access_funnel\.py|daily_metrics_line\.py|kpi_daily_sheet\.py'
   CUR="$(crontab -l 2>/dev/null | grep -vE "$CRON_MARKER" || true)"
   for l in "${LINES[@]}"; do
     CUR="$CUR"$'\n'"$l"; ok "cron 正典: $l"

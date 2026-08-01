@@ -398,3 +398,27 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - **教訓**: 「本番で実験しない」原則の具体形。**PR前のコードをVPSに直接置いて検証すると、
   そのファイルがマージ時の地雷になる**。検証はローカル compose か worktree で行い、VPSの
   作業ツリーは常に「remote_deploy.sh だけが動かす」状態を保つ。
+
+## KPI日次スプレッドシート自動記録（kpi_daily_sheet.py）（2026-08-01 追加・docs/84）
+- **何をするか**: 毎朝 **08:10 JST** に前日(JST)分のKPIを Google スプレッドシートへ upsert する。
+  タブは「日次KPI」（1日1行）と「リンク別LP流入」（UTM別UU）。
+  指標と除外規則（オーナー `yumaruyama0814@gmail.com`・`@example.com` テスト除外）は docs/84 参照。
+- **構成**: host cron → `scripts/ops/kpi_daily_sheet.py`（host python3・標準ライブラリのみ）
+  → `docker exec` で caddy（アクセスログ）/ backend（SQLite）を集計
+  → `docker exec sns python kpi_sheets_push.py`（gspread）でシートに書き込み。
+- **秘密情報**: `scripts/sns_autopost/.env`（VPSのみ・git管理外）に2行:
+  - `KPI_SHEET_ID=<スプレッドシートURLの /d/ と /edit の間のID>`
+  - `GOOGLE_SA_JSON_B64=<サービスアカウントJSONを base64 -w0 したもの>`
+  シート側はサービスアカウントのメールアドレスに**編集者**で共有しておく。
+  `.env` を変えたら `docker compose -f docker-compose.prod.yml --env-file .env up -d sns` で反映。
+- **バックフィル（初回のみ）**: リリース日からの全日分を1回で書く:
+  `python3 /opt/vocalcoach/scripts/ops/kpi_daily_sheet.py --since 2026-06-06`
+  アクセスログ由来の列（LP遷移UU等）は **2026-07-08 以降のみ**・保持30日なので、
+  バックフィルはデプロイ後すみやかに実行する（遅れるほど古いログがローテで消える）。
+- **動作確認**: `DRY_RUN=1 python3 scripts/ops/kpi_daily_sheet.py` で集計結果だけ表示（シート書き込みなし）。
+  cron ログは `/var/log/kpi_sheet.log`。有料会員の前日スナップショットは `/var/log/kpi_premium_state.json`。
+- **注意**:
+  - 数字の定義が `daily_metrics_line.py`（LINE通知）と少し違う: シート側は **bot/監視UA を除外**する
+    （uptime.yml の15分毎 curl 等）。LINEの「訪問者数」より小さく出るのは正常で、シート側が実態に近い。
+  - 「診断UU」「ログインUU」は計測実装（PR本件）デプロイ日以降が真値。過去分は備考列に代替値の注記が入る。
+  - シートの自動2タブはスクリプトが全面書き直しで管理する。**手動メモは別タブに書く**こと。

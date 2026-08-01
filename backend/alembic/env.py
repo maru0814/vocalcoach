@@ -19,7 +19,7 @@ if config.config_file_name is not None:
 from app.db.base import Base
 
 # Import models so that SQLAlchemy mappings are registered.
-from app.models import billing, coaching, evaluation, push, recording, user, voice_type  # noqa: F401
+from app.models import billing, coaching, evaluation, login_event, push, recording, user, voice_type  # noqa: F401
 
 target_metadata = Base.metadata
 
