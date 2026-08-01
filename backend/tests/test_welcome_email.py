@@ -69,6 +69,7 @@ class MailServiceUnitTest(_MailSettingsMixin):
         self.assertEqual(body["sender"]["email"], "sora@example.com")
         self.assertEqual(body["subject"], mail_service.WELCOME_SUBJECT)
         self.assertIn("/coach", body["textContent"])
+        self.assertIn("/coach", body["htmlContent"])  # HTML版も同梱（docs/86 HTML版）
         self.assertTrue(any("sent" in m and "user_id=7" in m for m in logs.output))
 
     # TC-02 (AC-02/05): 未設定なら HTTP 呼び出しゼロで "skip" ログ
@@ -102,10 +103,31 @@ class MailServiceUnitTest(_MailSettingsMixin):
         self._enable_mail()
         for base in ("https://sora-vocal-ai.duckdns.org", "https://sora-vocal-ai.duckdns.org/"):
             settings.frontend_base_url = base
-            _, body = mail_service.build_welcome_email()
+            _, body, html = mail_service.build_welcome_email()
             self.assertIn("https://sora-vocal-ai.duckdns.org/coach", body)
             self.assertNotIn(".org//coach", body)
+            self.assertIn("https://sora-vocal-ai.duckdns.org/coach", html)
         self.assertIn("sora@example.com", body)  # 連絡先フッター（FR-04）
+
+    # TC-10: HTML版の成立要件（docs/86 HTML版デザイン仕様）
+    def test_html_version_is_well_formed(self):
+        self._enable_mail()
+        settings.frontend_base_url = "https://sora-vocal-ai.duckdns.org"
+        _, _, html = mail_service.build_welcome_email()
+        # ロゴは https絶対URL（Gmailは data URI 不可）
+        self.assertIn('src="https://sora-vocal-ai.duckdns.org/icons/icon-192.png"', html)
+        self.assertNotIn("data:image", html)
+        # プレースホルダの埋め残しがない
+        self.assertNotIn("{cta_url}", html)
+        self.assertNotIn("{logo_url}", html)
+        self.assertNotIn("{contact_email}", html)
+        # 連絡先フッター（FR-04）と画像altの存在
+        self.assertIn("sora@example.com", html)
+        self.assertIn('alt="ソラ先生"', html)
+        # Who/CTA（docs/86 Who/What/How 改訂 2026-08-01）: 対外正式名＋LPと同一の読み手主語CTA
+        self.assertIn("AIボーカルトレーナー ソラ先生", html)
+        self.assertNotIn("ソラのステージ", html)  # 内輪ブランド名は使わない
+        self.assertIn("無料で歌を見てもらう", html)
 
 
 class RegisterHookTest(_MailSettingsMixin):
