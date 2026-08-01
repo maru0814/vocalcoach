@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"login" | "register">("register");
+  const [newsletterOptIn, setNewsletterOptIn] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -29,7 +30,7 @@ export default function LoginPage() {
     try {
       if (mode === "register") {
         try {
-          await register(email, password);
+          await register(email, password, newsletterOptIn);
         } catch (regErr) {
           // 新規フォームで既存メールが入力されたら、そのままログインを試す
           // （既存ユーザーが「ログインしようとして登録済みエラー」になる問題を解消）。
@@ -136,6 +137,20 @@ export default function LoginPage() {
                     minLength={8}
                   />
                 </label>
+
+                {mode === "register" && (
+                  <label className="flex items-start gap-2 text-xs text-slate-500">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 accent-brand-600"
+                      checked={newsletterOptIn}
+                      onChange={(e) => setNewsletterOptIn(e.target.checked)}
+                    />
+                    <span>
+                      新機能・お知らせメールを受け取る（いつでも1クリックで停止できます）
+                    </span>
+                  </label>
+                )}
 
                 {error && (
                   <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>

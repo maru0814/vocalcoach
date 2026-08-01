@@ -5,7 +5,7 @@
 #     2. 新規登録者数                        … 本番SQLite users（@example.com のテストは除外＝実会員）
 #     3. ログインUU(＝アクティビティUU)       … その日に認証必須の操作(チャット/録音/FB)をした
 #                                              ユニーク実会員。真のログイン記録が無いための代替値。
-#     4. メール経由の訪問/同日ログイン        … ウェルカムメールのリンク(src=welcome_mail)を
+#     4. メール経由の訪問/同日ログイン        … メールのリンク(src=mail_* 前方一致)を
 #                                              踏んだIPと、同日のログインAPI成功IPの突合（推定）。
 #
 # 設計は scripts/ops/access_funnel.py（週次ファネル）と同じ「VPSホストcron + docker exec」方式で、
@@ -51,8 +51,9 @@ def access_stats(start: datetime, end: datetime) -> dict:
     """Caddyアクセスログから前日(JST)のページ閲覧数・ユニーク訪問IPに加え、
     メール経由の流入を数える。
 
-    メール経由の定義（docs/86。ウェルカムメールのリンクは src=welcome_mail 付き）:
-      - mail_visits    … src=welcome_mail 付きURIを踏んだユニークIP数
+    メール経由の定義（docs/86/89。メールのリンクは src=mail_* 付き。
+    welcome=mail_welcome、お知らせ=mail_news_<campaign>）:
+      - mail_visits    … src=mail 前方一致のURIを踏んだユニークIP数
       - mail_logins_est … そのIPのうち、同日中に POST /api/v1/auth/login が 200 を
                           返したIP数（IP突合の推定値。真のクリック→ログイン紐付けでは
                           ない。モバイル回線のIP変動で取りこぼす可能性あり）
@@ -76,7 +77,7 @@ def access_stats(start: datetime, end: datetime) -> dict:
         path = full_uri.split("?", 1)[0]
         ip = req.get("client_ip") or req.get("remote_ip")
         # メール経由の突合はページ閲覧の除外規則より前に見る（/api も対象のため）
-        if ip and "src=welcome_mail" in full_uri:
+        if ip and "src=mail" in full_uri:
             mail_ips.add(ip)
         if (
             ip
