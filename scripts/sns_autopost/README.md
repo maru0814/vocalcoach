@@ -15,7 +15,7 @@
   - **tip / contrarian → 図解インフォグラフィック**（16:9）。`themes.py` の手順を自動構造化し `templates/infographic.html` をPlaywrightでPNG化。ソラ先生キャラ（`assets/characters/sora/`）を合成。Playwright未導入/失敗時はカードに自動フォールバック。
   - **診断導線（self_type/voice_type/visual）→ カード**（縦4:5）。背景はGemini(Imagen 4)→失敗/キー無しでPillowグラデにフォールバック（`SNS_IMAGE_AI=0` でグラデ固定）。Imagen単価 約$0.04/枚。
   - 設計: `docs/46_デザイン仕様_X投稿インフォグラフィック.md`
-- 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日2投稿（`MAX_POSTS_PER_DAY=2`）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥450前後（投稿60件＋計測）。
+- 💴 **月2000円以内の方針**: ①**本文/リプにURLを入れない**（$0.20回避＆reach優先。リンクはプロフィール固定で誘導＝`POST_LINK=0` 既定）②1日3投稿（`MAX_POSTS_PER_DAY=3`。2026-08-01〜）③`MONTHLY_COST_CAP_USD` で上限ガード。これでAPIは月¥650前後（投稿90件＋リプ＋計測）。
 - 🚀 **X Premium（Web版が安い）** に入るとインプレ約6倍。これが最大の費用対効果（docs/29）。
 - ⚠️ Instagram/TikTok の完全自動投稿は制限が厳しく非推奨（半自動）。
 
@@ -154,11 +154,12 @@ cd docker && docker compose -f docker-compose.prod.yml --env-file .env up -d --b
 # 生成cron（host側）はコンテナ内で実行する形にする
 0 12 * * * cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --slot 1 >> /var/log/sns_autopost.log 2>&1
 0 21 * * * cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --slot 2 >> /var/log/sns_autopost.log 2>&1
+0 8 * * * cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --slot 3 >> /var/log/sns_autopost.log 2>&1
 0 23 * * * cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml exec -T sns python fetch_metrics.py >> /var/log/sns_metrics.log 2>&1
 ```
 - 昼枠(slot1)の型は `themes.py` の `PILLARS`（Tips中心＋診断導線・逆張り）。
-- 夜枠(slot2)は `PILLARS_2ND`。同日の昼とは必ず別の型になる。
-- 1日2投稿なので `.env` の `MAX_POSTS_PER_DAY=2` を忘れず設定する。
+- 夜枠(slot2)は `PILLARS_2ND`、朝枠(slot3)は `PILLARS_3RD`。同日の他枠とは必ず別の型になる。
+- 1日3投稿なので `MAX_POSTS_PER_DAY=3` を忘れず設定する（本番は docker-compose.prod.yml の environment が正）。
 
 ## 安全装置 / 予算ガード
 - `APPROVAL_MODE` 既定=1（**投稿前に必ずLINEで人間が承認**。誤爆・炎上を防ぐ最重要ガード）。

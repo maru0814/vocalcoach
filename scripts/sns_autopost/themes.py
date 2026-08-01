@@ -148,7 +148,7 @@ CONTRARIAN = [
 
 # 投稿の柱（曜日 → 型）。Tipsを主役に、診断導線(self_type/voice_type/visual)と
 # 逆張りで変化をつける。question(リプ乞い)とempathyはローテから外す。
-# slot1（昼）と slot2（夜）は同日に必ず別の型（同内容の重複を避ける）。
+# slot1（昼）/ slot2（夜）/ slot3（朝）は同日に必ず別の型（同内容の重複を避ける）。
 PILLARS = [
     "tip",         # 月: 実践Tips
     "voice_type",  # 火: 声タイプ図鑑（診断導線）
@@ -169,10 +169,22 @@ PILLARS_2ND = [
     "visual",      # 日夜: ビジュアル診断導線
 ]
 
+# 朝枠（slot3。2026-08-01 運用者決定で1日3投稿化）。tip は毎日どちらかの既存枠に
+# 必ず居るため、朝枠は非tipのみで組む（同日重複の禁止を守るとtipは置けない）。
+PILLARS_3RD = [
+    "voice_type",  # 月朝: 声タイプ図鑑（月=tip/contrarian と重複しない）
+    "self_type",   # 火朝: 自己分類（火=voice_type/tip）
+    "contrarian",  # 水朝: 逆張り（水=tip/self_type）
+    "self_type",   # 木朝: 自己分類（木=contrarian/tip）
+    "visual",      # 金朝: ビジュアル診断導線（金=tip/voice_type）
+    "contrarian",  # 土朝: 逆張り（土=self_type/tip）
+    "voice_type",  # 日朝: 声タイプ図鑑（日=tip/visual）
+]
+
 
 def pillar_for(weekday: int, slot: int) -> str:
-    """曜日(0=月)とスロット(1=昼/2=夜)から投稿の型を返す。"""
-    table = PILLARS_2ND if slot == 2 else PILLARS
+    """曜日(0=月)とスロット(1=昼/2=夜/3=朝)から投稿の型を返す。"""
+    table = {2: PILLARS_2ND, 3: PILLARS_3RD}.get(slot, PILLARS)
     return table[weekday % 7]
 
 

@@ -40,11 +40,21 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 ```
 
 ### 運用
-- 生成cron（昼12時/夜21時）と計測cron（23時）は `--cron` で登録済み。
+- 生成cron（朝8時/昼12時/夜21時）と計測cron（23時）は `--cron` で登録済み。
+  （2026-08-01 運用者決定で朝枠slot3を追加し1日3投稿化。`MAX_POSTS_PER_DAY=3` は
+  docker-compose.prod.yml の environment で上書き＝VPSの .env より優先。
+  承認タップも**1日3件まで**。4件目は上限日タップ罠で failed 確定する点は従来どおり）
 - 毎日その時刻に下書きがLINEに届く → 承認したものだけ投稿される。
 - 即投稿したいとき（緊急）: `docker compose -f docker-compose.prod.yml exec -T sns python generate_and_post.py --pillar tip --post-now --force`
 
 ### Xフォロー候補（docs/58/59。2026-07 追加、07-06に方針転換）
+> ⛔ **2026-07-31 停止（運用者指示）**: リード探索（lead_finder・毎朝10時）とフォロバ計測
+> （lead_metrics・日曜22:30）の cron を停止。理由: X API read課金の削減（月¥2,000運用への移行。
+> `LEAD_DAILY_READ_BUDGET_USD=0.60` は最悪ケースで単独月$18≒¥2,800と支配項だった）。
+> 停止方法: `remote_deploy.sh`/`setup_approval.sh` の cron 正典リストから2行を除去
+> （CRON_MARKER には残置→デプロイの再同期で既存行が自動撤去）。GitHub Actions「SNS Ops」の
+> lead-finder 系タスクも手動では起動しない運用とする。再開時は両ファイルの正典リストに2行を戻す。
+> 以下の本節の記述は再開時のために残す。
 - **2026-07-06 方針転換**: 提案返信・専門家ゲート（`lead_reply.py`/返信用ルーブリック）を廃止し、
   「フォローすべき人だけ」を一覧で届ける形に変更。理由: Xの自動化ポリシーはフォロー/返信の
   「大量・機械的な実行」自体を禁止しており、人間操作を模した一括自動化はボタン化しても
@@ -366,6 +376,7 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 
 ### 完了判定
 - `crontab -l | grep -c generate_and_post.py` が **2**（slot1/slot2 各1）＝重複解消。
+  （2026-08-01 の朝枠slot3追加後は **3** が正）。
 - 承認LINEが1通だけ届き、タップで X 投稿まで通る。
 - 以降、昼12時/夜21時の自動生成→承認→投稿が1系統で回る。
 

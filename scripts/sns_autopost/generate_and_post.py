@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """ソラ先生 SNS自動投稿（X / 旧Twitter）。
 
-1日2回（昼=slot1 / 夜=slot2）cron で実行する想定。
+1日3回（朝=slot3 8時 / 昼=slot1 12時 / 夜=slot2 21時）cron で実行する想定。
+（slot番号は歴史的経緯: 昼/夜の2枠運用に 2026-08-01 朝枠=slot3 を追加）
   1) 曜日とスロットに応じて投稿の柱（診断誘導 / Tips / 声タイプ紹介 / 会話）を選ぶ
   2) Gemini で投稿文を生成（失敗・未設定ならテンプレートを使用）
      tip/contrarian は2部構成: 本投稿=好奇心フックで寸止め / リプ(自己返信)=手順・本体。
@@ -16,8 +17,8 @@
   GEMINI_API_KEY=...        … あれば文面をAI生成（無くてもテンプレで動く）
   X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_SECRET … X投稿用（OAuth1.0a）
   POST_LINK=0               … 1で自己リプにURLを付与。URL投稿は$0.20と高い＆reach減のため既定OFF
-  POST_SLOT=1               … 1=昼枠/2=夜枠。1日2投稿で別の型を出すため（--slot でも指定可）
-  MAX_POSTS_PER_DAY=2       … 1日の投稿上限（予算ガード）
+  POST_SLOT=1               … 1=昼枠/2=夜枠/3=朝枠。同日に別の型を出すため（--slot でも指定可）
+  MAX_POSTS_PER_DAY=3       … 1日の投稿上限（予算ガード）
   MONTHLY_COST_CAP_USD=12   … 月間概算コスト上限（超えたら投稿停止）
 
 コスト方針(docs/29): 本文/リプにURLを入れない（$0.20回避＆reach優先）。リンクはプロフィール固定で誘導。
@@ -280,8 +281,8 @@ def main() -> int:
     ap.add_argument("--pillar",
                     choices=["self_type", "tip", "voice_type", "contrarian", "visual"],
                     help="投稿の型を指定")
-    ap.add_argument("--slot", type=int, choices=[1, 2], default=None,
-                    help="1=昼枠（既定）/2=夜枠。1日2投稿時に別の型を出すために使う")
+    ap.add_argument("--slot", type=int, choices=[1, 2, 3], default=None,
+                    help="1=昼枠（既定）/2=夜枠/3=朝枠。同日に別の型を出すために使う")
     ap.add_argument("--force", action="store_true",
                     help="手動投稿用。1日の投稿上限を無視して追加投稿する（月間コスト上限は維持）")
     ap.add_argument("--dry-run", action="store_true",
