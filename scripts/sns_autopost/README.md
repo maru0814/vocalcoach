@@ -99,6 +99,7 @@ python generate_and_post.py --pillar contrarian  # 逆張り（2部構成: 誤�
 python generate_and_post.py --pillar self_type   # 自己分類フック（診断導線・単発）
 python generate_and_post.py --pillar voice_type  # 声タイプ図鑑（診断導線・単発）
 python generate_and_post.py --pillar visual      # ビジュアル誘導（診断導線・単発）
+python generate_and_post.py --pillar artist_analysis  # アーティスト発声解説（2部構成: 実名フック→分解＋診断ブリッジはリプ。docs/84）
 
 # 承認フローに乗せる（DRY_RUN=0。生成→キュー→LINE通知。投稿は承認後）
 DRY_RUN=0 python generate_and_post.py
@@ -108,7 +109,7 @@ DRY_RUN=0 python generate_and_post.py --pillar tip --post-now --force
 ```
 
 ### 投稿は2部構成（リプに本体を置く）
-`tip` / `contrarian` は **本投稿＝好奇心フックで寸止め／リプ（自己返信）＝手順・根拠の本体** の2部構成で投稿する。読者にリプを促す“リプ乞い”ではなく、**自分の自己返信に続きを置いて「リプを開きたくなる」導線**にする設計。診断導線型（self_type/voice_type/visual）は単発。
+`tip` / `contrarian` / `artist_analysis` は **本投稿＝好奇心フックで寸止め／リプ（自己返信）＝手順・根拠の本体** の2部構成で投稿する。読者にリプを促す“リプ乞い”ではなく、**自分の自己返信に続きを置いて「リプを開きたくなる」導線**にする設計。診断導線型（self_type/voice_type/visual）は単発。
 `generate_post()` が `{text, reply, link}` を返し、承認キュー（`enqueue`）→ LINEプレビュー（本投稿＋リプ本体を表示）→ `webhook.py` が承認時に **本投稿→リプ本体→(任意)URL** の順でスレッド投稿する。
 
 > **本文にもリプにもURLを入れない**のが既定（`POST_LINK=0`）。リンクは**プロフィール固定**で誘導（reach減＆$0.20課金を回避）。リプ本体はURLなしの中身なので $0.015。

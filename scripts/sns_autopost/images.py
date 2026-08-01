@@ -38,6 +38,7 @@ _EYEBROW = {
     "voice_type": "声タイプ診断",
     "self_type": "声タイプ診断",
     "visual": "声タイプ診断",
+    "artist_analysis": "歌声のヒミツ",
 }
 _SIGNATURE = "ソラ先生 ・ Vocal Coach"
 
@@ -153,6 +154,8 @@ def _ai_prompt(pillar: str) -> str:
         "voice_type": "eight soft floating orbs of light in a gentle arc, each a different soft hue",
         "self_type": "a soft luminous microphone silhouette dissolving into light particles",
         "visual": "a soft luminous microphone silhouette dissolving into light particles",
+        "artist_analysis": "a soft glowing waveform blooming out of a microphone, "
+                           "light particles rising like applause",
     }.get(pillar, "a soft rising arc of light")
     return (
         "Soft, dreamy vocal-studio aesthetic. Smooth gradient flowing from violet "
