@@ -80,15 +80,20 @@ export default function InstallPrompt() {
   return (
     <>
       <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t bg-white px-4 py-3 shadow-lg [padding-bottom:env(safe-area-inset-bottom)]">
-        <img src="/icons/icon-192.png" alt="" aria-hidden className="h-9 w-9 rounded" />
-        <p className="flex-1 text-sm text-slate-800">ホーム画面に置いて、毎日サッと練習</p>
+        <img src="/icons/icon-192.png" alt="" aria-hidden className="h-10 w-10 shrink-0 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-slate-800">ソラ先生をアプリに追加</p>
+          <p className="truncate text-xs text-slate-500">
+            ワンタップ起動・練習リマインド・オフラインでも開ける
+          </p>
+        </div>
         <button
           onClick={add}
-          className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white"
+          className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white"
         >
-          追加する
+          追加
         </button>
-        <button onClick={dismiss} aria-label="あとで" className="px-1 text-slate-400">
+        <button onClick={dismiss} aria-label="あとで" className="shrink-0 px-1 text-slate-400">
           ×
         </button>
       </div>
@@ -105,16 +110,19 @@ export default function InstallPrompt() {
             className="w-full rounded-t-2xl bg-white p-5 [padding-bottom:calc(1.25rem+env(safe-area-inset-bottom))]"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="mb-3 text-lg font-bold text-slate-800">
-              ホーム画面への追加方法（iPhone）
+            <h2 className="mb-1 text-lg font-bold text-slate-800">
+              ソラ先生をホーム画面に
             </h2>
+            <p className="mb-3 text-sm text-slate-600">
+              アプリのように1タップで開けて、練習を続けやすくなります。
+            </p>
             <ol className="space-y-2 text-sm text-slate-700">
               <li>1. 画面下の共有アイコン（□に↑）をタップ</li>
               <li>2. メニューを下にスクロールして「ホーム画面に追加」</li>
               <li>3. 右上の「追加」をタップ</li>
             </ol>
             <p className="mt-3 text-xs text-slate-500">
-              追加すると通知も受け取れるようになります。
+              追加すると、練習リマインド通知も受け取れるようになります。
             </p>
             <button
               onClick={dismiss}
