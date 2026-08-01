@@ -69,6 +69,18 @@ def _truthy(v: str | None) -> bool:
     return str(v or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _with_utm(link: str | None, pillar: str, slot: int) -> str | None:
+    """投稿リンクに流入元識別のUTMを付ける（KPI: リンク別LP流入UU。docs/84）。
+
+    Caddyアクセスログの request.uri にクエリごと残るため、これだけで
+    kpi_daily_sheet.py がリンク別UUを分計できる（フロント側の実装は不要）。
+    """
+    if not link:
+        return link
+    sep = "&" if "?" in link else "?"
+    return f"{link}{sep}utm_source=x&utm_medium=post&utm_campaign={pillar}_slot{slot}"
+
+
 def _read_jsonl(path: str) -> list:
     rows = []
     if os.path.exists(path):
@@ -336,6 +348,7 @@ def main() -> int:
         pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
         post = generate_post(pillar, day_index, app_url)
     text, reply, link = post["text"], post.get("reply"), post.get("link")
+    link = _with_utm(link, pillar, slot)
     # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
     post_link = _truthy(os.getenv("POST_LINK", "0")) and bool(link)
     # 全投稿にブランド画像を添付（tip/contrarian=図解 / 診断導線=カード。SNS_IMAGE=0で無効）。

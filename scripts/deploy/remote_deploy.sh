@@ -58,13 +58,15 @@ CRON_LINES=(
   "45 22 * * 0 python3 $REPO/scripts/ops/access_funnel.py >> /var/log/access_funnel.log 2>&1"
   # 毎朝の定例メトリクス（前日の訪問者/登録/ログインUUをLINE通知。host実行）
   "0 8 * * * python3 $REPO/scripts/ops/daily_metrics_line.py >> /var/log/daily_metrics.log 2>&1"
+  # KPI日次スプレッドシート記録（docs/84。前日分をGoogle Sheetsにupsert。host実行）
+  "10 8 * * * python3 $REPO/scripts/ops/kpi_daily_sheet.py >> /var/log/kpi_sheet.log 2>&1"
 )
 # 再同期(reconcile): VocalCoach管理のcron行を「マーカー(=実行するjobスクリプト名)」で
 # いったん全除去してから正典セットを書き直す。append専用だと、コマンド形態を変えた時
 # （旧: .venv直 → 新: docker compose exec）に旧行が生きたcrontabに取り残され、文字列
 # 完全一致の重複判定をすり抜けて同時刻に二重発火する（2026-07 実障害）。マーカー除去なら
 # 過去のどの形態も一掃して収束するため、二重投稿・二重課金の再発を根から断てる。
-CRON_MARKER='generate_and_post\.py|fetch_metrics\.py|lead_finder\.py|lead_metrics\.py|access_funnel\.py|daily_metrics_line\.py'
+CRON_MARKER='generate_and_post\.py|fetch_metrics\.py|lead_finder\.py|lead_metrics\.py|access_funnel\.py|daily_metrics_line\.py|kpi_daily_sheet\.py'
 CUR="$(crontab -l 2>/dev/null | grep -vE "$CRON_MARKER" || true)"
 for l in "${CRON_LINES[@]}"; do
   CUR="$CUR"$'\n'"$l"

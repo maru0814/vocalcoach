@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.deps import get_current_user
+from app.models.login_event import LoginEvent
 from app.models.user import User
 from app.schemas.auth import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
 from app.security.passwords import hash_password, verify_password
@@ -46,6 +47,13 @@ def login(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     token = create_access_token(user.id)
+
+    # KPI「ログインUU」用のイベント記録（docs/84）。best-effort＝失敗してもログインは通す。
+    try:
+        db.add(LoginEvent(user_id=user.id))
+        db.commit()
+    except Exception:
+        db.rollback()
 
     # FrontendはCookie参照する前提（HTTPOnly）
     response.set_cookie(

@@ -8,3 +8,6 @@ playwright==1.49.0         # 図解インフォグラフィック（HTML→PNG�
 # 承認フロー（LINEで投稿前に確認）の Webhook 常駐サーバ
 fastapi==0.115.6
 uvicorn[standard]==0.30.6
+
+# KPI日次スプレッドシート書き込み（docs/84。kpi_sheets_push.py が使用）
+gspread==6.1.4
