@@ -124,6 +124,10 @@ class MailServiceUnitTest(_MailSettingsMixin):
         # 連絡先フッター（FR-04）と画像altの存在
         self.assertIn("sora@example.com", html)
         self.assertIn('alt="ソラ先生"', html)
+        # Who/CTA（docs/86 Who/What/How 改訂 2026-08-01）: 対外正式名＋LPと同一の読み手主語CTA
+        self.assertIn("AIボーカルトレーナー ソラ先生", html)
+        self.assertNotIn("ソラのステージ", html)  # 内輪ブランド名は使わない
+        self.assertIn("無料で歌を見てもらう", html)
 
 
 class RegisterHookTest(_MailSettingsMixin):

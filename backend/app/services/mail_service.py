@@ -19,14 +19,15 @@ WELCOME_SUBJECT = "ご登録ありがとうございます。最初の1曲、聴
 WELCOME_BODY = """こんにちは、AIボーカルトレーナーのソラです。
 ご登録ありがとうございます🎵
 
-わたしにできるのは、あなたの歌の録音を聴いて、
-「今どこまでできていて、次に何を練習すればいいか」を
-具体的にお返しすることです。
+わたしは、あなたの歌の録音から「直す場所」と「直し方」を
+具体的にお返しするAIボーカルトレーナーです。
 
-スマホの録音そのままで大丈夫です。
-30秒のワンフレーズでも、最初の1曲として十分ですよ。
+使い方は3ステップです。
+1. スマホでワンフレーズ録音する（30秒でOK）
+2. チャットにアップロードする
+3. その場でフィードバックが届く
 
-▼ 録音を聴かせてください
+▼ 無料で歌を見てもらう
 {cta_url}
 
 それでは、お待ちしていますね。
@@ -54,20 +55,30 @@ style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;ov
       <img src="{logo_url}" width="64" height="64" alt="ソラ先生" \
 style="display:block;border-radius:50%;margin:0 auto 10px;">
       <div style="font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',Meiryo,sans-serif;\
-font-size:16px;font-weight:bold;color:#ffffff;">ソラのステージ</div>
+font-size:16px;font-weight:bold;color:#ffffff;">AIボーカルトレーナー ソラ先生</div>
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',Meiryo,sans-serif;\
+font-size:12px;color:#c7d2fe;margin-top:4px;">歌をAIが解析・添削</div>
     </td></tr>
     <tr><td style="padding:32px 32px 8px;font-family:-apple-system,BlinkMacSystemFont,\
 'Hiragino Sans',Meiryo,sans-serif;font-size:15px;line-height:1.9;color:#1f2937;">
       <p style="margin:0 0 16px;">こんにちは、AIボーカルトレーナーのソラです。<br>ご登録ありがとうございます🎵</p>
-      <p style="margin:0 0 16px;">わたしにできるのは、あなたの歌の録音を聴いて、「今どこまでできていて、次に何を練習すればいいか」を具体的にお返しすることです。</p>
-      <p style="margin:0 0 16px;">スマホの録音そのままで大丈夫です。<br>30秒のワンフレーズでも、最初の1曲として十分ですよ。</p>
+      <p style="margin:0 0 16px;">わたしは、あなたの歌の録音から「直す場所」と「直し方」を具体的にお返しするAIボーカルトレーナーです。</p>
+      <p style="margin:0 0 8px;font-weight:bold;">使い方は3ステップです。</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
+        <tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',Meiryo,\
+sans-serif;font-size:15px;line-height:2.1;color:#1f2937;">
+          <span style="color:#0891b2;font-weight:bold;">1.</span> スマホでワンフレーズ録音する（30秒でOK）<br>
+          <span style="color:#0891b2;font-weight:bold;">2.</span> チャットにアップロードする<br>
+          <span style="color:#0891b2;font-weight:bold;">3.</span> その場でフィードバックが届く
+        </td></tr>
+      </table>
     </td></tr>
     <tr><td align="center" style="padding:8px 32px 24px;">
       <table role="presentation" cellpadding="0" cellspacing="0">
         <tr><td align="center" style="background-color:#22d3ee;border-radius:8px;">
           <a href="{cta_url}" style="display:inline-block;padding:14px 36px;\
 font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',Meiryo,sans-serif;\
-font-size:15px;font-weight:bold;color:#0f0a2e;text-decoration:none;">録音を聴かせてください</a>
+font-size:15px;font-weight:bold;color:#0f0a2e;text-decoration:none;">無料で歌を見てもらう</a>
         </td></tr>
       </table>
     </td></tr>
