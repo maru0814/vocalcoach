@@ -14,8 +14,10 @@ FB品質の正本: docs/42_FB品質基準_単一ソース.md（SSOT）。
     正直に短いメッセージ（やり直し依頼）を返す。
 
 コスト最適化:
-  - 最安クラスの Gemini Flash-Lite（無料枠あり）を既定モデルに。
+  - 最安クラスの Gemini Flash-Lite（無料枠あり）を既定モデルに。バージョンは固定
+    （"-latest" エイリアス禁止。世代切替で thinking 指定が壊れた障害＝docs/91 原因1）。
   - thinking(思考)を無効化してコスト・レイテンシを抑制（短いコーチ返答に十分）。
+    ただし thinking_budget=0 を受け付けるのは 2.5 系のみ（_thinking_off 参照）。
   - 出力トークンは短く制限。
 """
 
@@ -339,8 +341,10 @@ def generate_feedback(
                 system_instruction=ANALYSIS_SYSTEM_PROMPT,
                 max_output_tokens=settings.llm_analysis_max_tokens,
                 temperature=0.4,
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=settings.llm_analysis_thinking_budget
+                # thinking_budget の明示指定は 2.5 系のみ（3系以降は INVALID_ARGUMENT。docs/91）
+                thinking_config=(
+                    types.ThinkingConfig(thinking_budget=settings.llm_analysis_thinking_budget)
+                    if _supports_thinking_budget(settings.llm_analysis_model) else None
                 ),
             ),
         )
@@ -824,6 +828,26 @@ def _scrub_invented_seconds(reply: str, allowed: set[int]) -> str:
     return _SCRUB_SEC_RE.sub(repl, reply)
 
 
+def _supports_thinking_budget(model: Optional[str]) -> bool:
+    """thinking_budget の明示指定を受け付けるモデルか（Gemini 2.5 系のみ）。"""
+    return "2.5" in (model or "")
+
+
+def _thinking_off(model: Optional[str]):
+    """thinking(思考)を無効化する ThinkingConfig を返す（対応モデルのみ）。
+
+    Gemini 2.5 系は thinking_budget=0 で思考を切れる（思考トークンが出力枠を
+    食い潰して本文が途切れるのを防ぐ）。Gemini 3 系以降は thinking_budget=0 を
+    受け付けず INVALID_ARGUMENT になり、テキスト返答そのものが失敗する
+    （会話が全滅した障害の原因＝docs/91）。2.5 系以外には thinking_config を
+    渡さず、モデル既定に任せる。
+    """
+    if not _supports_thinking_budget(model):
+        return None
+    from google.genai import types
+    return types.ThinkingConfig(thinking_budget=0)
+
+
 def _complete(contents, timeout_sec: Optional[float] = None,
               max_tokens: Optional[int] = None,
               model: Optional[str] = None) -> Optional[str]:
@@ -855,8 +879,8 @@ def _complete(contents, timeout_sec: Optional[float] = None,
                 max_output_tokens=(max_tokens or settings.llm_max_tokens),
                 # 低めの温度で、事実から逸脱した創作（歌詞・母音の捏造）を抑える
                 temperature=0.3,
-                # 思考を無効化＝コスト/レイテンシ削減（短い返答に十分）
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                # 思考を無効化＝コスト/レイテンシ削減（2.5系のみ。3系以降はモデル既定に任せる）
+                thinking_config=_thinking_off(model or settings.llm_model),
             ),
         )
         text = (resp.text or "").strip()
@@ -1030,7 +1054,8 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
                 tool_config=tool_config,
                 # 思考を無効化。2.5-flash は思考が ON だと出力枠(max_output_tokens)を食い潰して
                 # 本文が途中で切れる（_complete と揃える。docs/66 で対話を 2.5-flash に格上げした際に露呈）。
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                # 3系以降は thinking_budget=0 を受け付けないため指定しない（docs/91）。
+                thinking_config=_thinking_off(model or settings.llm_model),
             )
 
         convo = list(contents)
@@ -1213,8 +1238,8 @@ def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> 
         cfg = types.GenerateContentConfig(
             max_output_tokens=600, temperature=0.3,
             # thinking を無効化。これが無いと思考トークンが出力枠を食い尽くし、本文が
-            # 数文字で途切れる（声区回答が壊れていた原因）。
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            # 数文字で途切れる（声区回答が壊れていた原因）。2.5系のみ指定可（docs/91）。
+            thinking_config=_thinking_off(settings.llm_audio_model),
         )
         last_err = None
         for attempt in range(2):  # 503(過負荷)など一過性失敗を1回リトライ
@@ -1286,7 +1311,7 @@ def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> O
                 system_instruction=SYSTEM_PROMPT,
                 max_output_tokens=settings.llm_max_tokens,
                 temperature=0.3,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                thinking_config=_thinking_off(settings.llm_audio_model),
             ),
         )
         return (resp.text or "").strip() or None

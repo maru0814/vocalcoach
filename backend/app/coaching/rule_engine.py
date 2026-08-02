@@ -734,6 +734,26 @@ _PRACTICE_INSTR = (
     "最後に『やってみて録音を送ってね』と自然にうながす。事実に無い数値・秒数は作らない。"
 )
 
+# 同じ課題を続ける時の励まし指示（docs/91: 改善検知→具体的に励ましステップバイステップ）。
+_ENCOURAGE_INSTR = (
+    "ソラ先生として、同じ課題に取り組み続けているユーザーを励ます。話し言葉で2〜4文・120字程度。"
+    "点数・◎○△×・指標の数値羅列・箇条書き・見出しは使わない。"
+    "事実に「前回→今回で良くなった点」があれば、必ずその中から1つを具体的に挙げて"
+    "「少しずつ良くなっていますよ！」「その感覚です！」のように、方向性が合っていることを伝えて褒める。"
+    "良くなった点が事実に無い場合は、できていない事の羅列（ダメ出し）をせず、取り組み自体を認めて"
+    "「フォームを変えている途中は数値が動きにくい時期もある」と前向きに支える。"
+    "課題と練習はいま続けているものから変えず、次の一歩（意識するポイントを1つだけ）を添えて"
+    "続けるようやさしくうながす。事実に無い数値・秒数・改善は作らない。"
+)
+
+# 課題クリア時の指示（docs/91: クリアを一緒に大きく喜ぶ）。
+_CLEAR_INSTR = (
+    "ソラ先生として、取り組んできた課題がクリアできたことを一緒に大きく喜ぶ。"
+    "話し言葉で2〜4文・120字程度。点数・◎○△×・箇条書き・見出しは使わない。"
+    "事実にある「良くなった点」を根拠に、何がどう良くなったかを具体的に伝える。"
+    "このメッセージでは新しい練習はまだ出さない。事実に無い数値・秒数は作らない。"
+)
+
 
 # 発声診断(voice_coach)の課題 → 対応する基礎練タスク（動画つき）
 _ISSUE_TASK = {
@@ -761,6 +781,24 @@ def _voice_issue_task(analysis: dict, compare_data: Optional[dict], exclude: lis
     return None
 
 
+def _task_detected(task: Optional[dict], analysis: Optional[dict], compare_data: Optional[dict]) -> bool:
+    """課題が解析で検知されるか（taxonomy 診断＋発声診断(voice_coach)→課題対応の両方を見る）。
+
+    クリア判定（docs/91）に使う。current_task は taxonomy の diagnose だけでなく
+    _voice_issue_task 経由（発声診断→対応課題）でも選ばれるため、両経路で確認する。
+    """
+    if not task or not analysis:
+        return False
+    if _safe_diag(task, analysis, compare_data):
+        return True
+    try:
+        from app.coaching import voice_coach
+        return any(_ISSUE_TASK.get(i["id"]) == task["id"]
+                   for i in voice_coach.diagnose(analysis, compare_data))
+    except Exception:
+        return False
+
+
 def _audio_diagnose(
     state: dict, analysis: dict, compare_data: Optional[dict], history: Optional[list[dict]],
     user_comment: Optional[str] = None,
@@ -774,15 +812,15 @@ def _audio_diagnose(
     avoid = state.get("avoid_task")
     exclude = [avoid] if avoid else []
 
-    # 内部判断: 明確な課題があるか（focus指定 → 弱点検知 → 発声診断）。
+    # 内部判断: 明確な課題があるか（主訴(focus)最優先 → 弱点検知 → 発声診断）。
     # 見つからなければ task=None のまま＝良い録音として練習を出さない。
+    # 主訴（ユーザーが「ここを直したい」と言った focus_task）は、解析で検知できるか
+    # どうかに関わらず最優先で採用する（docs/91。感覚を否定せず寄り添う）。
     task = None
     focus = state.get("focus_task")
     if focus and focus not in exclude:
         task = get_task(focus)
-        if task and not _safe_diag(task, analysis, compare_data):
-            task = diagnose_task(analysis, compare_data, exclude=exclude) or task
-    else:
+    if task is None:
         task = diagnose_task(analysis, compare_data, exclude=exclude)
     if task is None:
         task = _voice_issue_task(analysis, compare_data, exclude)
@@ -792,8 +830,17 @@ def _audio_diagnose(
     goods = "／".join(feedback_builder.build_voice_good_points(analysis, compare_data)[:2])
     dur = analysis.get("duration_sec", 0) or 0
     comment_block = f"ユーザーからのコメント・質問: 「{user_comment}」\n→ この悩みや質問に、感想を返す中で自然に答えること。\n" if user_comment else ""
+    focus_line = ""
+    if task and focus and task["id"] == focus:
+        focus_line = (
+            f"ユーザーの主訴（最優先で診断・指導に反映する）: 「{task['label']}」"
+            + ("" if _task_detected(task, analysis, compare_data)
+               else "（解析ではこの課題は強くは検知されていない。感覚を否定せず、主訴に寄り添って指導する）")
+            + "\n"
+        )
     base_facts = (
         comment_block
+        + focus_line
         + "歌を発声の観点で解析した。\n"
         + f"録音の長さ: 約{dur:.0f}秒（この秒数を超える時刻は言わない）\n"
         + f"発声の一言総評: {headline}\n"
@@ -874,62 +921,100 @@ def _audio_recheck(
     compare_data: Optional[dict] = None,
     user_comment: Optional[str] = None,
 ) -> tuple[list[dict], dict]:
-    """同じ箇所の歌い直し → 初回との改善判定（基礎練確認を飛ばしたい人向け）。"""
+    """同じ箇所の歌い直し → 前回との比較（docs/91: 同一課題フォーカス＋微改善の励まし）。
+
+    課題は「解析で検知されなくなる＝クリア」まで同じものにフォーカスし続ける
+    （以前の『前回課題を exclude して別のダメ出しに乗り換える』仕様は廃止）。
+    未クリアでも、前回→今回の音響指標を比べて わずかな改善・方向性の一致 を実測で拾い、
+    具体的に励ましてステップバイステップで導く。主訴（focus_task）があれば最優先。
+    比較基準（baseline_analysis）は毎回今回の解析へ更新する＝常に「前回 vs 今回」。
+    """
     out: list[dict] = []
     baseline = state.get("baseline_analysis") or {}
-    next_task = diagnose_task(analysis, None, exclude=[state.get("current_task")])
-    progress = feedback_builder.build_progress_payload(baseline, analysis, next_task)  # 内部判定にだけ使う（カードなし）
+    # 主訴（「ここを直したい」）が最優先。無ければ現在の課題を継続（docs/91）
+    task = get_task(state.get("focus_task")) or get_task(state.get("current_task"))
+    if task is None:
+        return _audio_diagnose(state, analysis, compare_data, history, user_comment)
+
+    micro = feedback_builder.build_micro_progress(baseline, analysis)
+    gains_txt = "\n".join("  ・" + g for g in micro["gains"])
     brief = _voice_brief(analysis)
     comment_prefix = f"ユーザーのコメント・質問: 「{user_comment}」→ この悩みに自然に答えること。\n" if user_comment else ""
     cmp_brief = _compare_brief(compare_data)
     if cmp_brief:
         brief = brief + " " + cmp_brief
 
-    if progress["improved"]:
-        praise = progress.get("praise") or "最初より良くなっています。"
-        if next_task:
-            # ① 改善を喜ぶ ② 次の練習を1つ（2吹き出し）
-            facts = (
-                comment_prefix
-                + f"歌い直しの結果、最初の録音より改善した。{praise}\n"
-                + f"今回の声の状態: {brief}"
-            )
-            instr = (
-                "ソラ先生として、良くなった点を具体的に話し言葉で一緒に喜ぶ（2〜4文・点数や表は使わない）。"
-                "このメッセージでは練習法はまだ出さない（次のメッセージで伝えるため）。"
-            )
-            fallback = f"良くなっていますね😊 {praise}"
-            out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
+    # クリア判定: 前回は検知されていた課題が、今回は検知されなくなった時だけ。
+    # （主訴が解析で検知できないケースを「クリア」と言わないためのガード）
+    detected_before = _task_detected(task, baseline, None)
+    detected_now = _task_detected(task, analysis, compare_data)
+    prac = (task.get("practices") or [{}])[0]
 
-            prac = next_task["practices"][0]
+    if detected_before and not detected_now:
+        # 課題クリア 🎉 → ① 一緒に大きく喜ぶ ② 自然に検知される次の課題があれば練習を1つ
+        facts = (
+            comment_prefix
+            + f"取り組んできた課題「{task['label']}」が、今回の録音では検知されなくなった＝クリア！\n"
+            + (("前回→今回で良くなった点（実測）:\n" + gains_txt + "\n") if micro["any_gain"] else "")
+            + f"今回の声の状態: {brief}"
+        )
+        fallback = (
+            f"「{task['label']}」、クリアです！🎉 "
+            + (f"{micro['gains'][0]}。" if micro["any_gain"] else "")
+            + "積み重ねがちゃんと声に出ていますよ✨"
+        )
+        out.append(coach_msg("text", _llm_or(fallback, facts, _CLEAR_INSTR, history)))
+
+        # 人工的な除外はしない。クリアした課題は検知されなくなっているので自然に次が選ばれる。
+        next_task = diagnose_task(analysis, compare_data) or _voice_issue_task(analysis, compare_data, [])
+        if next_task and next_task["id"] != task["id"]:
+            nprac = next_task["practices"][0]
             prac_facts = (
                 f"次の課題: 「{next_task['label']}」（根拠: {next_task['reason'](analysis, None)}）。\n"
-                f"おすすめ基礎練『{prac['name']}』: " + "／".join(prac.get("steps", [])[:3]) + "\n"
-                f"目安: {prac.get('checkpoint', '')}"
+                f"おすすめ基礎練『{nprac['name']}』: " + "／".join(nprac.get("steps", [])[:3]) + "\n"
+                f"目安: {nprac.get('checkpoint', '')}"
             )
-            prac_fallback = f"次は『{prac['name']}』を試してみましょう。やってみたら録音を送ってくださいね😊"
-            prac_text = _append_video_link(_llm_or(prac_fallback, prac_facts, _PRACTICE_INSTR, history), prac)
+            prac_fallback = f"次は『{nprac['name']}』を試してみましょう。やってみたら録音を送ってくださいね😊"
+            prac_text = _append_video_link(_llm_or(prac_fallback, prac_facts, _PRACTICE_INSTR, history), nprac)
             out.append(coach_msg("text", prac_text))
-            updates = {"phase": LESSON, "current_task": next_task["id"], "baseline_analysis": analysis}
+            updates = {"phase": LESSON, "current_task": next_task["id"],
+                       "baseline_analysis": analysis, "focus_task": None}
         else:
-            facts = f"歌い直しの結果、最初より改善し、大きな課題はほぼ無くなった。{praise}\n今回の声の状態: {brief}"
-            instr = (
-                "ソラ先生として、改善を大いに喜ぶ。話し言葉で2〜4文、点数や表は使わない。"
-                "今日はここまででも別の曲でも続けられると前向きに伝える。"
-            )
-            fallback = "ぐっと良くなりましたね、すばらしいです✨ 今日はここまででも、別の曲でも続けられますよ🎶"
-            out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
-            updates = {"phase": DONE}
-    else:
-        facts = f"歌い直したが、初回と比べて大きな改善はまだ出ていない。\n今回の声の状態: {brief}"
-        instr = (
-            "ソラ先生として、落ち込ませないよう励ます。話し言葉で2〜4文、点数や表は使わない。"
-            "もう少し続けるか別のところを見るかを、やさしく提案する。"
+            updates = {"phase": DONE, "baseline_analysis": analysis, "focus_task": None}
+        return out, updates
+
+    # 未クリア → 課題・練習は変えずに、微改善を具体的に励まして続けてもらう（docs/91）
+    detect_note = "" if detected_now else (
+        "（解析ではこの課題は強くは検知されていない。ユーザーの感覚・主訴を尊重して寄り添う）"
+    )
+    if micro["any_gain"]:
+        facts = (
+            comment_prefix
+            + f"引き続き課題「{task['label']}」に取り組み中{detect_note}。まだクリアには届いていないが、\n"
+            + "前回→今回で良くなった点（実測。この中から1つを根拠に励ます）:\n" + gains_txt + "\n"
+            + f"いま続けている基礎練『{prac.get('name', '')}』（チェックポイント: {prac.get('checkpoint', '')}）。"
+            + f"クリアの目安: {task['achieve_label']}\n"
+            + f"今回の声の状態: {brief}"
         )
-        fallback = "今回はまだ大きな変化は出ていないみたいですね。でも大丈夫、もう少し続けるか、別のところを見てみましょう💪"
-        out.append(coach_msg("text", _llm_or(fallback, facts, instr, history)))
-        updates = {"phase": LESSON}
-    return out, updates
+        fallback = (
+            f"少しずつ良くなっていますよ！{micro['gains'][0]}。その感覚です😊 "
+            f"引き続き『{prac.get('name', '')}』で「{task['label']}」を一緒に磨いていきましょう💪"
+        )
+    else:
+        facts = (
+            comment_prefix
+            + f"引き続き課題「{task['label']}」に取り組み中{detect_note}。前回→今回の音響指標に、"
+            + "測定ゆらぎを超える改善はまだ出ていない（嘘の励ましはしない）。\n"
+            + f"いま続けている基礎練『{prac.get('name', '')}』（チェックポイント: {prac.get('checkpoint', '')}）。"
+            + f"クリアの目安: {task['achieve_label']}\n"
+            + f"今回の声の状態: {brief}"
+        )
+        fallback = (
+            "数値はまだ大きく動いていませんが、フォームを変えている途中はそういう時期もあります。"
+            f"焦らず『{prac.get('name', '')}』を、{prac.get('checkpoint', '')}を意識してもう一度試してみましょう💪"
+        )
+    out.append(coach_msg("text", _llm_or(fallback, facts, _ENCOURAGE_INSTR, history)))
+    return out, {"phase": LESSON, "current_task": task["id"], "baseline_analysis": analysis}
 
 
 def handle_audio(
