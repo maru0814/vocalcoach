@@ -35,7 +35,17 @@ services:
       ENABLE_YOUTUBE_REFERENCE: ${ENABLE_YOUTUBE_REFERENCE:-false}
       # ソラ先生の自然言語チャット応答（Gemini。空ならルールベースにフォールバック）
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-gemini-flash-lite-latest}
+      # モデルIDは全て env で上書き可にしておく（docs/92）。Google 側の都合でモデルが
+      # 予告なく 404/400 になった時、再デプロイを待たず docker/.env の1行＋再起動で
+      # 載せ替えられるようにするため。既定値はコード側（app/core/config.py）に置き、
+      # ここでは空なら未設定として扱う（compose の既定値でコード既定を隠さない）。
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_CHAT_MODEL: ${LLM_CHAT_MODEL:-}
+      LLM_AUDIO_MODEL: ${LLM_AUDIO_MODEL:-}
+      LLM_ANALYSIS_MODEL: ${LLM_ANALYSIS_MODEL:-}
+      # 音声入力の thinking/出力枠。世代を跨ぐ載せ替え時の調整用（docs/92 §2-3）
+      LLM_AUDIO_THINKING_BUDGET: ${LLM_AUDIO_THINKING_BUDGET:-}
+      LLM_AUDIO_MAX_TOKENS: ${LLM_AUDIO_MAX_TOKENS:-}
       UPLOADS_DIR: "/data/uploads"
       COACH_AUDIO_DIR: "/data/uploads/coach"
       REFERENCE_CACHE_DIR: "/data/uploads/reference"

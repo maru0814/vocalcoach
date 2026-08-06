@@ -186,11 +186,17 @@ class ThinkingBudgetGuard(unittest.TestCase):
         self.assertIsNone(llm._thinking_off("gemini-flash-lite-latest"))
 
     def test_default_models_are_pinned_versions(self):
-        # "-latest" エイリアス禁止（世代切替でテキスト会話が壊れた障害の再発防止）
+        # "-latest" エイリアス禁止（世代切替でテキスト会話が壊れた障害の再発防止）。
+        # かつ世代番号が明示されていること（gemini-3.5-flash-lite のように x.y を含む）。
+        #
+        # 以前はここで「必ず '2.5' を含む」と断言していたが、その前提自体が壊れた:
+        # gemini-2.5-flash-lite は 404 で死んでおり、2.5 縛りは死んだ世代への固定を
+        # 強制してしまう。世代の妥当性は実APIの疎通確認で担保する（docs/92 §0）。
+        import re
         for field in ("llm_model", "llm_chat_model", "llm_audio_model", "llm_analysis_model"):
             default = Settings.model_fields[field].default
             self.assertNotIn("latest", default, field)
-            self.assertIn("2.5", default, field)
+            self.assertRegex(default, r"^gemini-\d+\.\d+-", field)
 
 
 if __name__ == "__main__":
