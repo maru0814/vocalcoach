@@ -142,7 +142,8 @@ SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という名前の{COACH_ROLE}
 - 間違いを指摘されたら、もっともらしい別の詳細を作ってごまかさないこと。分からないことは「歌詞までは聞き取れないんです」と正直に伝え、数値で分かる範囲だけ話します。相手に媚びて事実を変えないこと。
 
 # 出力
-- プレーンテキストの返答のみ。Markdownの見出しや箇条書き記号（#, *, -）は使わない。
+- プレーンテキストの返答のみ。Markdown記法は一切使わない（見出し `#`、箇条書き `- *`、
+  そして**太字 `**〜**`・斜体 `*〜*` も禁止**）。強調したい言葉があっても記号で飾らず、言葉で伝える。
 - 自己紹介の繰り返しや、毎回の決まり文句は不要。自然な続きの会話として返す。"""
 
 
@@ -188,6 +189,8 @@ ANALYSIS_SYSTEM_PROMPT = f"""あなたは「{COACH_NAME}」という{COACH_ROLE}
 
 # 出力フォーマット（会話チャット・段階的エンゲージメント docs/42 §8）
 - 採点・点数・◎○△×・指標の数値羅列・大きな表・カード・Markdown見出しは使わない。普通の会話文。
+- **Markdown記法を一切使わない（`**太字**`・`*斜体*`・`- 箇条書き` も禁止）。** 練習名や大事な言葉を
+  強調したくなっても記号で飾らない（画面には記号がそのまま出てしまう）。
 - **初回（まだ基礎練を勧めていない・ユーザーが練習を求めていない）**: ユーザーの質問（「これミックス？」等）があれば最初に答える → 良かった点を1つ具体的に褒める → 一番効く1点を機構→原因までやさしく伝える（練習＝処方はまだ出さない）→ 最後に深掘りの問いかけを1つだけ。「やってみて録音を送ってね」等の再提出要求はしない。
 - **問いかけは応答全体で1つだけ（絶対）**: 疑問文・提案は応答の最後の1つに限る。「原曲をもらえたら音程まで細かく比べられますよ」と「あなたに合わせた練習メニューを作りましょうか？」を**同じ応答に並べない**。原曲が無い初回は原曲の問いかけを選ぶ（練習メニューの提案は、ユーザーが上達したい気持ちをはっきり見せた時だけ）。
 - **ユーザーが練習を求めた時・すでにレッスン中の基礎練がある時**: 練習を1つだけ、やり方（身体感覚・響かせる位置・口の形・母音）とともに渡し、最後に「やってみて録音を送ってね」と促す。
@@ -361,6 +364,8 @@ def generate_feedback(
         # 接地ガード: 証拠に無い秒の捏造を抑制＋“カードを出す約束”を除去
         reply = _scrub_invented_seconds(reply, _allowed_seconds(evidence, prompt))
         reply = scrub_card_promise(reply)
+        # 素テキスト描画なので Markdown 記法を落とす（docs/42 §2）
+        reply = scrub_markdown(reply)
         return reply or None
     except Exception as e:
         logger.warning("ゼロベースFB生成に失敗（ルールベースにフォールバック）: %s", e)
@@ -1156,6 +1161,29 @@ def scrub_card_promise(text: Optional[str]) -> Optional[str]:
     return re.sub(r"\n{3,}", "\n\n", out).strip() or text
 
 
+# Markdown装飾の除去（docs/42 §2）。フロントの吹き出しは素テキスト描画
+# （Bubbles.tsx の whitespace-pre-wrap）なので、`**リップロール**` と書かれると記号がそのまま出る。
+# プロンプトで禁じても漏れる（実測: 6回中2回）ため、返す直前に機械的に落とす。
+# 行頭の記号だけでなくインラインの強調も対象。改行をまたぐ誤マッチを避けるため1行内に限定する。
+_MD_HEADING_RE = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+", re.M)     # 「## 見出し」
+_MD_BULLET_RE = re.compile(r"^[ \t]{0,3}[-*+][ \t]+", re.M)       # 「- 項目」「* 項目」
+_MD_BOLD_RE = re.compile(r"\*\*([^*\n]+?)\*\*")                   # **太字**
+_MD_BOLD_US_RE = re.compile(r"__([^_\n]+?)__")                    # __太字__
+_MD_ITALIC_RE = re.compile(r"(?<!\*)\*([^*\n]+?)\*(?!\*)")        # *斜体*（**は上で処理済み）
+
+
+def scrub_markdown(text: Optional[str]) -> Optional[str]:
+    """Markdown記法を落として素の会話文にする（中の言葉は残す）。"""
+    if not text:
+        return text
+    out = _MD_BOLD_RE.sub(r"\1", text)
+    out = _MD_BOLD_US_RE.sub(r"\1", out)
+    out = _MD_ITALIC_RE.sub(r"\1", out)
+    out = _MD_HEADING_RE.sub("", out)
+    out = _MD_BULLET_RE.sub("", out)
+    return out.strip() or text
+
+
 def generate_reply(
     state: dict, user_text: str, history: Optional[list[dict]] = None
 ) -> Optional[str]:
@@ -1185,6 +1213,8 @@ def generate_reply(
         reply = _scrub_invented_seconds(reply, _allowed_seconds(context, user_text))
         # チャット返信はカードを伴わないので、カードを出す約束文を消す
         reply = scrub_card_promise(reply)
+        # 素テキスト描画なので Markdown 記法を落とす（docs/42 §2）
+        reply = scrub_markdown(reply)
         # カタログに無い URL（でっち上げリンク）を除去する。ツールが実際に返した
         # 原曲候補URL（実在保証つき）は許可する（docs/72）
         reply = _scrub_foreign_urls(reply, extra_allowed=tool_urls)
@@ -1288,7 +1318,7 @@ def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> 
                 )
                 text = (resp.text or "").strip()
                 if text:
-                    return _scrub_lyrics(text)
+                    return scrub_markdown(_scrub_lyrics(text))
             except Exception as e:
                 last_err = e
                 import time as _t
@@ -1354,7 +1384,7 @@ def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> O
                 thinking_config=types.ThinkingConfig(thinking_budget=_budget),
             ),
         )
-        return (resp.text or "").strip() or None
+        return scrub_markdown((resp.text or "").strip()) or None
     except Exception as e:
         logger.warning("発音解析（音声入力）に失敗: %s", e)
         return None
@@ -1395,4 +1425,6 @@ def generate_coach_comment(
     if reply:
         # facts に無い秒数は伏せる（捏造防止の最終ガード）
         reply = _scrub_invented_seconds(reply, _allowed_seconds(facts))
+        # 素テキスト描画なので Markdown 記法を落とす（docs/42 §2）
+        reply = scrub_markdown(reply)
     return reply
