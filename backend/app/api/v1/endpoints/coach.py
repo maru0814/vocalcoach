@@ -272,7 +272,10 @@ def _register_reply(db: Session, s: ChatSession) -> dict:
             prev = {"text": row.text or "",
                     "same_recording": pl.get("audio_msg_id") == last_audio.id}
             break
-    reply = llm.classify_register_audio(user_bytes, dsp_hint=hint, prev_verdict=prev)
+    # 音域移動の有無は実測（f0）から渡す。モデルは耳では取り違えるため（docs/92 §5.7）
+    range_hint = llm.build_range_hint(s.last_analysis)
+    reply = llm.classify_register_audio(
+        user_bytes, dsp_hint=hint, prev_verdict=prev, range_hint=range_hint)
     if not reply:
         return {"type": "text", "text": "今うまく聞き取れませんでした。少し時間をおいてもう一度試してくださいね。"}
     return {"type": "text", "text": reply,
