@@ -50,13 +50,69 @@ class TestNoEscapeHatch:
         # 逃げ道の文言が無い
         assert "断定しづらければ" not in p
         assert "と答えてOK" not in p
-        # 代わりに正直な判定の指示がある
-        assert "聴こえたとおりに判定" in p
-        assert "無難な答えとして『ミックス』を使わない" in p
+        # 迷った時の逃げ場としてのミックスも禁止のまま（docs/92 §5.5 の決定を維持）
+        assert "無難な答えとして『ミックス』という言葉に逃げない" in p
 
-    def test_uncertainty_instruction_is_honest(self, captured):
+    def test_prompt_defines_mix_as_muscular_coordination(self, captured):
+        """ミックスの定義を「音色の混合」ではなく「TA→CTの滑らかな移行」として渡す。
+
+        単一の音から声区を断定するのは機構的に不可能（つながりは音域移動時にしか
+        現れない）。定義を誤ると、純ファルセットを「理想的なミックス」と褒める事故が起きる。
+        docs/42 §4・docs/92 §5.7。
+        """
         llm.classify_register_audio(b"RIFFfake")
-        assert "確信が持てない場合は無理に断定せず" in captured["prompt"]
+        p = captured["prompt"]
+        assert "「地声と裏声の音色を混ぜたもの」ではありません" in p
+        assert "段差が出ない" in p
+        assert "1つの音だけを切り取って" in p
+
+
+class TestRangeHintGrounding:
+    """音域移動の有無は DSP の実測を事実として渡す（耳では取り違えるため）。"""
+
+    def test_moves_asks_for_passaggio_step(self, captured):
+        llm.classify_register_audio(
+            b"RIFFfake", range_hint={"moves": True, "text": "約2.5オクターブの移動を含む"})
+        p = captured["prompt"]
+        assert "音域移動が含まれます" in p
+        assert "『段差』があるかを聴き取って" in p
+        assert "約2.5オクターブの移動を含む" in p  # 実測が本文に載る
+
+    def test_single_register_refuses_to_judge_connection(self, captured):
+        """単一音域では「つながっている＝理想的」と褒めさせない（純ファルセット誤認の防止）。"""
+        llm.classify_register_audio(
+            b"RIFFfake", range_hint={"moves": False, "text": "ほぼ単一の音域"})
+        p = captured["prompt"]
+        assert "この録音からは判定できません" in p
+        assert "つながりを評価する言い方もしないこと" in p
+        assert "サイレンのようにつなげた録音" in p
+
+    def test_no_hint_is_conservative(self, captured):
+        """実測が無い時は、つながりを断定させない安全側に倒す。"""
+        llm.classify_register_audio(b"RIFFfake")
+        p = captured["prompt"]
+        assert "断定せず" in p
+
+
+class TestBuildRangeHint:
+    def test_detects_wide_movement(self):
+        r = llm.build_range_hint({
+            "f0_median_hz": 84.8,
+            "timeline": {"sustained_segments": [{"mean_f0_hz": 486.4}, {"mean_f0_hz": 335.5}]}})
+        assert r["moves"] is True
+        assert r["octaves"] == pytest.approx(2.52, abs=0.05)
+        assert "オクターブ" in r["text"]
+
+    def test_single_register_is_not_movement(self):
+        r = llm.build_range_hint({
+            "f0_median_hz": 312.0,
+            "timeline": {"sustained_segments": [{"mean_f0_hz": 330.0}]}})
+        assert r["moves"] is False
+        assert "含まない" in r["text"]
+
+    def test_returns_none_without_enough_data(self):
+        assert llm.build_range_hint(None) is None
+        assert llm.build_range_hint({"f0_median_hz": 220.0}) is None  # 1点だけでは判定不能
 
 
 class TestPrevVerdictMemory:
