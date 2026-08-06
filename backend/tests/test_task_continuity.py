@@ -92,10 +92,15 @@ class TaskContinuity(unittest.TestCase):
         self.assertEqual(updates.get("phase"), rule_engine.LESSON)
         # 次回は「前回 vs 今回」で比べる＝基準を今回の解析へ更新
         self.assertIs(updates.get("baseline_analysis"), SLIGHTLY_BETTER)
-        # 微改善を実測つきで励ます（フォールバック文の契約）
+        # 微改善を励ます（フォールバック文の契約）
         self.assertIn("少しずつ良くなっていますよ", text)
         self.assertIn("その感覚です", text)
         self.assertIsNone(BAD_SCORE.search(text), "点数/記号は出さない")
+        # 数値の生読みはしない。体感語に翻訳して伝える（docs/42 §6・運用者FB）
+        # （"→" は練習名『リップロール → 母音ロングトーン』に正当に含まれるため禁止対象外）
+        for banned in ("cents", "dB", "40", "34"):
+            self.assertNotIn(banned, text)
+        self.assertIn("声の揺れが落ち着いて", text)  # ジッター減の体感語
 
     def test_recheck_no_gain_is_honest_not_scolding(self):
         st = _state(phase="practice", current_task="pitch_wobble", baseline_analysis=BASELINE)
@@ -147,6 +152,22 @@ class MicroProgress(unittest.TestCase):
         self.assertIn("音程の細かな揺れ", joined)
         self.assertIn("40", joined)
         self.assertIn("34", joined)
+
+    def test_spoken_translation_has_no_raw_numbers(self):
+        """spoken はユーザーに口に出す体感語。数値・単位を含まない（docs/42 §6・運用者FB）。"""
+        r = feedback_builder.build_micro_progress(BASELINE, SLIGHTLY_BETTER)
+        self.assertEqual(len(r["spoken"]), len(r["gains"]))  # gains と同順で対応
+        for s in r["spoken"]:
+            for banned in ("cents", "dB", "%", "Hz", "→"):
+                self.assertNotIn(banned, s)
+            self.assertFalse(any(ch.isdigit() for ch in s), s)
+
+    def test_every_metric_has_spoken_phrase(self):
+        """全指標に体感語が定義されている（追加した指標の翻訳漏れを防ぐ）。"""
+        for row in feedback_builder._MICRO_METRICS:
+            self.assertEqual(len(row), 7, row[0])
+            self.assertTrue(row[6], row[0])
+            self.assertFalse(any(ch.isdigit() for ch in row[6]), row[0])
 
     def test_no_gain_when_identical(self):
         r = feedback_builder.build_micro_progress(BASELINE, BASELINE)
