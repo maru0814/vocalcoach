@@ -422,3 +422,37 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
     （uptime.yml の15分毎 curl 等）。LINEの「訪問者数」より小さく出るのは正常で、シート側が実態に近い。
   - 「診断UU」「ログインUU」は計測実装（PR本件）デプロイ日以降が真値。過去分は備考列に代替値の注記が入る。
   - シートの自動2タブはスクリプトが全面書き直しで管理する。**手動メモは別タブに書く**こと。
+
+## Geminiモデルの生存確認（gemini_model_healthcheck.py）（2026-08-06 追加・docs/92）
+
+- **目的**: 設定中の Gemini モデルが**実際に呼べるか**を毎朝確かめる。死んでいたら LINE で通知。
+- **なぜ要るか**: Google はモデルを公称の終了日より先に「新規ユーザー利用不可」へ切り替えることがあり、
+  その時 **404 NOT_FOUND** を返す。この事象は
+  **公式 deprecation ページに載らず**（該当モデルは "No shutdown date announced" のまま）、
+  **`models.list()` にも残ったまま**なので、外形監視では気付けない。
+  さらにアプリ側は例外を握り潰してルールベースに落ちるため、**画面上は何も壊れて見えない**。
+  実際に 2026-08 に `gemini-2.5-flash-lite` がこれで死に、ソラ先生のチャット返答が
+  無言で劣化した（docs/92 §0）。**実APIを1回叩く以外に検知手段が無い。**
+- **時刻**: 毎朝 **8:20 JST**（host cron。8:00 daily_metrics / 8:10 KPI の後）
+- **構成**: host cron → `scripts/ops/gemini_model_healthcheck.py`（host python3・標準ライブラリのみ）
+  → `docker exec backend` で**実効設定のモデルIDを読み**、重複を除いて各モデルに最小リクエストを1回
+  → 失敗があれば `docker exec sns python line_client.push_text()` で通知（daily_metrics と同方式）。
+  モデル名をスクリプトにベタ書きしない（設定を変えたのに旧モデルを検査する事故を防ぐ）。
+- **通知条件**: **1つでも失敗した時だけ**。全部OKなら黙る（毎日鳴らさない）。
+- **動作確認**:
+  ```
+  DRY_RUN=1 python3 /opt/vocalcoach/scripts/ops/gemini_model_healthcheck.py    # 判定だけ・LINE送信なし
+  FORCE_NOTIFY=1 python3 /opt/vocalcoach/scripts/ops/gemini_model_healthcheck.py  # 正常でも1通送る（配線確認）
+  ```
+  cron ログは `/var/log/gemini_health.log`、履歴は `/var/log/gemini_model_health.jsonl`。
+  異常時は exit 1（ログから追える）。
+- **通知が来たときの対処**（通知本文にも同じ手順が入る）:
+  1. 生きているモデルIDを**実APIで確認**する（`models.list` に載っていても死んでいることがある）
+  2. `/opt/vocalcoach/docker/.env` に該当行を書く（例 `LLM_CHAT_MODEL=gemini-3.5-flash-lite`）
+  3. `cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml up -d backend`
+  - `LLM_MODEL` / `LLM_CHAT_MODEL` / `LLM_AUDIO_MODEL` / `LLM_ANALYSIS_MODEL` /
+    `LLM_AUDIO_THINKING_BUDGET` / `LLM_AUDIO_MAX_TOKENS` が compose 経由で渡る（**再デプロイ不要**）
+  - 音声パスを Gemini 3 系へ載せ替える場合、thinking は切れないがコード側
+    （`llm._safe_thinking_budget` / `_safe_max_tokens`）が自動で安全値に寄せる
+- **注意**: モデルIDに `*-latest` エイリアスを指定しないこと。
+  世代が切り替わると呼び出しパラメータの互換性ごと壊れる（実際にテキスト会話が全滅した。docs/91）。
