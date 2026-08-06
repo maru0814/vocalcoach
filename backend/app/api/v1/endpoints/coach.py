@@ -228,7 +228,12 @@ def _pronunciation_reply(db: Session, s: ChatSession) -> dict:
 
 
 def _register_reply(db: Session, s: ChatSession) -> dict:
-    """最新の録音を Gemini に聴かせ、声区（地声/ミックス/裏声）を音色から聞き分けて答える。"""
+    """最新の録音を Gemini に聴かせ、声区（地声/ミックス/裏声）を音色から聞き分けて答える。
+
+    毎回その場で実際に聴く（キャッシュしない＝運用者決定 2026-08-08）。前回の判定は
+    payload マーカーで覚えておき、判定が変わる時は「変化」として自然に触れさせる
+    （テイクごとに黙って逆のことを言う不信感を防ぐ。docs/92）。
+    """
     last_audio = (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == s.id, ChatMessage.type == "audio")
@@ -251,10 +256,27 @@ def _register_reply(db: Session, s: ChatSession) -> dict:
     rh = ((s.last_analysis or {}).get("voice") or {}).get("register_high") or {}
     jp = {"chest": "地声寄り", "mix": "ミックス", "head": "裏声寄り"}.get(rh.get("register"))
     hint = f"高音は{jp}" if jp else None
-    reply = llm.classify_register_audio(user_bytes, dsp_hint=hint)
+    # 前回の声区判定（このセッション内の直近1件）。同じ録音への再質問か、別テイクかも添える
+    prev_row = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == s.id, ChatMessage.role == "coach",
+                ChatMessage.type == "text")
+        .order_by(ChatMessage.id.desc())
+        .limit(50)
+        .all()
+    )
+    prev = None
+    for row in prev_row:
+        pl = row.payload or {}
+        if pl.get("register_reply"):
+            prev = {"text": row.text or "",
+                    "same_recording": pl.get("audio_msg_id") == last_audio.id}
+            break
+    reply = llm.classify_register_audio(user_bytes, dsp_hint=hint, prev_verdict=prev)
     if not reply:
         return {"type": "text", "text": "今うまく聞き取れませんでした。少し時間をおいてもう一度試してくださいね。"}
-    return {"type": "text", "text": reply}
+    return {"type": "text", "text": reply,
+            "payload": {"register_reply": True, "audio_msg_id": last_audio.id}}
 
 
 def _rediagnose_reply(db: Session, s: ChatSession, text: str, history: list[dict]) -> list[dict]:
