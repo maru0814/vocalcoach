@@ -711,6 +711,11 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
     voiced_f0 = voiced_f0[~np.isnan(voiced_f0)]
     if len(voiced_f0) > 0:
         f0_median = float(np.median(voiced_f0))
+        # 音域の下端・上端（外れ値に強い5/95パーセンタイル）。換声点のつながり判定に使う:
+        # サイレンのような連続的な上下降には伸ばし区間が1つも検出されないため、
+        # 伸ばし区間からは音域移動の有無を判定できない（docs/92 §5.7）。
+        f0_p5 = float(np.percentile(voiced_f0, 5))
+        f0_p95 = float(np.percentile(voiced_f0, 95))
         cents = hz_to_cents(voiced_f0)
         d = np.abs(np.diff(cents))
         # フレーム間隔が広いほど隣接フレーム差は大きく出るので、基準ホップへ正規化して
@@ -718,6 +723,8 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         f0_jitter = (float(np.median(d)) * (JITTER_REF_HOP / HOP_LENGTH)) if len(d) > 0 else None
     else:
         f0_median = None
+        f0_p5 = None
+        f0_p95 = None
         f0_jitter = None
 
     key, mode = estimate_key(y, sr)
@@ -789,6 +796,9 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         "duration_sec": round(duration, 2),
         "voiced_ratio": round(voiced_ratio, 3),
         "f0_median_hz": round(f0_median, 1) if f0_median else None,
+        # 音域の下端/上端（docs/92 §5.7: 換声点のつながり判定の材料）
+        "f0_low_hz": round(f0_p5, 1) if f0_p5 else None,
+        "f0_high_hz": round(f0_p95, 1) if f0_p95 else None,
         "f0_jitter_cents": round(f0_jitter, 1) if f0_jitter else None,
         "estimated_key": f"{key} {mode}",
         "estimated_mode": mode,

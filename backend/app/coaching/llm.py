@@ -1288,18 +1288,26 @@ def build_range_hint(analysis: Optional[dict]) -> Optional[dict]:
     """
     if not analysis:
         return None
-    cands = []
-    med = analysis.get("f0_median_hz")
-    if med:
-        cands.append(float(med))
-    for seg in ((analysis.get("timeline") or {}).get("sustained_segments") or []):
-        f = seg.get("mean_f0_hz")
-        if f:
-            cands.append(float(f))
-    cands = [c for c in cands if c and c > 0]
-    if len(cands) < 2:
-        return None
-    lo, hi = min(cands), max(cands)
+    # 第一候補: 解析が出す音域の下端/上端（サイレンのように伸ばし区間が0でも取れる）
+    lo = analysis.get("f0_low_hz")
+    hi = analysis.get("f0_high_hz")
+    if lo and hi and lo > 0 and hi > 0:
+        lo, hi = float(lo), float(hi)
+    else:
+        # 後方互換: f0_low/high を持たない古い解析は中央値＋伸ばし区間から推定する
+        # （伸ばし区間が無い録音では材料が足りず None＝つながりを断定しない安全側に倒れる）
+        cands = []
+        med = analysis.get("f0_median_hz")
+        if med:
+            cands.append(float(med))
+        for seg in ((analysis.get("timeline") or {}).get("sustained_segments") or []):
+            f = seg.get("mean_f0_hz")
+            if f:
+                cands.append(float(f))
+        cands = [c for c in cands if c and c > 0]
+        if len(cands) < 2:
+            return None
+        lo, hi = min(cands), max(cands)
     octaves = math.log2(hi / lo) if lo > 0 else 0.0
     # 長6度(0.75oct)以上動いていれば換声点をまたぐ可能性がある＝「移動あり」とみなす
     moves = octaves >= 0.75
@@ -1359,10 +1367,20 @@ def classify_register_audio(
             "# 答え方\n"
             + (
                 # 音域移動の有無は DSP の実測を事実として渡す（耳では取り違えるため。docs/92 §5.7）
+                # ⚠️ 段差の有無は「聴いた印象」では断定させない（docs/92 §5.8）。
+                #    正解が「段差なし」と分かっているサイレンでも、両モデルとも6回中2〜3回
+                #    「段差あり」と誤答し、融合できている人にダメ出しと練習処方をしてしまう。
+                #    DSP による段差検出が入るまでは、観察の共有にとどめる。
                 ("この録音には音域移動が含まれます（下の実測を参照）。"
-                 "換声点で音色が急に切り替わる『段差』があるかを聴き取って答えてください。"
-                 "段差があれば『〜秒あたりで音色が急に切り替わる段差がありました』のように位置と様子を、"
-                 "無ければ『段差なく滑らかにつながっています。これがミックスで目指している状態です』と伝えます。\n")
+                 "低い音から高い音へ移る間、声の音色（芯・厚み・息の混じり・軽さ）が"
+                 "どのように移り変わって聴こえたかを描写してください。\n"
+                 "重要: 『段差がありました』『段差なく滑らかにつながっています』のように"
+                 "断定しないでください。換声点の段差の有無は聴いた印象だけでは判定が安定せず、"
+                 "誤って断定すると、できている人にダメ出しをしたり、"
+                 "つながっていない人を『理想的です』と褒めたりしてしまいます。"
+                 "『〜秒あたりで音色が軽くなっていくのが聴こえます』のように"
+                 "聴こえたままを共有し、断定的な評価や『理想的な状態です』という褒めはしないこと。"
+                 "練習の処方も、この段差の判断を根拠にしては出さないでください。\n")
                 if (range_hint or {}).get("moves") else
                 ("この録音はほぼ単一の音域で、換声点をまたぐ移動を含みません（下の実測を参照）。"
                  "したがって、つながり（＝ミックスができているか）はこの録音からは判定できません。"
@@ -1380,12 +1398,12 @@ def classify_register_audio(
                  "つながりまで見られる、と次の一歩を伝えます。\n")
             )
             + "迷った時の無難な答えとして『ミックス』という言葉に逃げないこと。\n\n"
-            "# 段差があった時の見立て（処方につなげる）\n"
-            "・段差の手前まで芯が強く、そこで急に破綻する → 地声で引っぱりすぎ(pulled chest)。"
-            "サイレンやリップトリルで換声点をなめらかに通す練習が効きます。\n"
-            "・段差の後で急に息っぽく細くなる → 薄い裏声へ逃げている。"
-            "ネイ(nay)やギ(gee)で前に当てる練習が効きます。\n"
-            "見立てが立つ場合は、練習を1つだけ添えてください。\n\n"
+            # ⚠️ 見立て→処方は、段差の判定が信頼できるようになってから復活させる（docs/92 §5.8）。
+            #    聴覚だけの段差判定に基づく処方は、できている人への不要なダメ出しになる。
+            "# 参考（練習を出す時の対応。この判断だけを根拠に処方しないこと）\n"
+            "・地声を高い位置まで引っぱりすぎる(pulled chest)にはサイレンやリップトリル。\n"
+            "・薄い裏声へ逃げてしまう場合はネイ(nay)やギ(gee)で前に当てる。\n"
+            "ユーザーが練習を求めている時だけ、1つだけ添えてください。\n\n"
             "根拠になった音色の特徴を一言添え、やわらかい敬体で3〜4文。"
             + (f"\n\n# 音域の実測（この事実に従う。聴いた印象より優先）\n{range_hint['text']}"
                if range_hint else "")

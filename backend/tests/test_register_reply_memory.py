@@ -70,13 +70,21 @@ class TestNoEscapeHatch:
 class TestRangeHintGrounding:
     """音域移動の有無は DSP の実測を事実として渡す（耳では取り違えるため）。"""
 
-    def test_moves_asks_for_passaggio_step(self, captured):
+    def test_moves_describes_transition_without_asserting(self, captured):
+        """音域移動ありでも段差の有無は断定させない（docs/92 §5.8）。
+
+        正解が「段差なし」と分かっているサイレンで、両モデルとも6回中2〜3回誤答した。
+        誤断定は「できている人へのダメ出し」「つながっていない人への理想的です」の
+        両方向に事故る。DSP検出が入るまでは観察の共有にとどめる。
+        """
         llm.classify_register_audio(
             b"RIFFfake", range_hint={"moves": True, "text": "約2.5オクターブの移動を含む"})
         p = captured["prompt"]
         assert "音域移動が含まれます" in p
-        assert "『段差』があるかを聴き取って" in p
         assert "約2.5オクターブの移動を含む" in p  # 実測が本文に載る
+        assert "断定しないでください" in p
+        assert "『理想的な状態です』という褒めはしないこと" in p
+        assert "この段差の判断を根拠にしては出さないでください" in p
 
     def test_single_register_refuses_to_judge_connection(self, captured):
         """単一音域では「つながっている＝理想的」と褒めさせない（純ファルセット誤認の防止）。"""
@@ -113,6 +121,25 @@ class TestBuildRangeHint:
     def test_returns_none_without_enough_data(self):
         assert llm.build_range_hint(None) is None
         assert llm.build_range_hint({"f0_median_hz": 220.0}) is None  # 1点だけでは判定不能
+
+    def test_siren_without_sustained_segments(self):
+        """サイレンは伸ばし区間が0個。f0_low/high から音域移動を取れること（docs/92 §5.7）。
+
+        つながり判定の本命入力がサイレンなので、ここで None になると機能が成立しない。
+        """
+        r = llm.build_range_hint({
+            "f0_median_hz": 178.1, "f0_low_hz": 70.0, "f0_high_hz": 359.0,
+            "timeline": {"sustained_segments": []}})
+        assert r is not None
+        assert r["moves"] is True
+        assert r["octaves"] == pytest.approx(2.36, abs=0.05)
+
+    def test_f0_range_takes_priority_over_segments(self):
+        """f0_low/high があれば伸ばし区間より優先（区間は一部しか拾わないため）。"""
+        r = llm.build_range_hint({
+            "f0_median_hz": 200.0, "f0_low_hz": 100.0, "f0_high_hz": 400.0,
+            "timeline": {"sustained_segments": [{"mean_f0_hz": 210.0}]}})
+        assert r["low_hz"] == 100.0 and r["high_hz"] == 400.0
 
 
 class TestPrevVerdictMemory:
