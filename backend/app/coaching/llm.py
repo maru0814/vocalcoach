@@ -1267,8 +1267,15 @@ def _safe_max_tokens(model: str, budget: int, want: int) -> int:
     return max(want, _MIN_MAX_TOKENS_WITH_THINKING)
 
 
-def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> Optional[str]:
+def classify_register_audio(
+    user_wav: bytes, dsp_hint: Optional[str] = None,
+    prev_verdict: Optional[dict] = None,
+) -> Optional[str]:
     """録音そのものを Gemini に聴かせ、声区（地声/ミックス/裏声）を音色から聞き分ける。
+
+    prev_verdict（任意）: {"text": 前回の判定文, "same_recording": bool}。
+    渡すと、判定が前回と変わる場合に「変化」として自然に触れる（黙って逆を言わない）。
+    前回に合わせて判定を曲げる方向には使わない（プロンプトで明示）。
 
     DSP（倍音バランス）だけでは閉じの効いた裏声を地声と誤りやすいため、マルチモーダルで
     音色（倍音の豊かさ・明るさ・厚み・息の混じり）から判断させる。dsp_hint があれば
@@ -1286,16 +1293,40 @@ def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> 
             api_key=settings.gemini_api_key,
             http_options=types.HttpOptions(timeout=int(settings.llm_audio_timeout_sec * 1000)),
         )
+        # ⚠️ 「迷ったらミックスと答えてよい」という逃げ道は書かない（運用者決定 2026-08-08）。
+        #    逃げ道があると全モデルが不確実な時に一様に「ミックス」へ収束し、
+        #    一貫して見えるだけの無難な誤判定を量産する（docs/92）。聴こえたとおりに判定させ、
+        #    確信が持てない時はどの特徴がどちらに聴こえるかを正直に言わせる。
         prompt = (
             "あなたは発声の専門家です。この歌声の、特に高い音の箇所について、"
             "地声（チェスト）／ミックス／裏声（ヘッド・ファルセット）のどれで歌っているかを、"
             "声の『音色』（倍音の豊かさ・明るさ・厚み・息の混じり方）から聞き分けてください。"
-            "1つに断定しづらければ『ミックス（地声寄り／裏声寄り）』と答えてOKです。"
+            "聴こえたとおりに判定してください。迷った時の無難な答えとして『ミックス』を使わないこと。"
+            "ミックスと言うのは、地声の芯と裏声の軽さが実際に混ざって聴こえた時だけです。"
+            "確信が持てない場合は無理に断定せず、どの特徴が地声っぽく・どの特徴が裏声っぽく"
+            "聴こえるかを正直にそのまま伝えてください。"
             "判断の根拠になった音色の特徴を一言添え、やわらかい敬体で2〜3文。"
             + (f"（参考: 数値解析の推定は『{dsp_hint}』ですが、最終判断は実際の音色を優先してください）" if dsp_hint else "")
             + " 重要: 歌詞・曲名・英語や日本語の歌詞フレーズを絶対に引用しない（「」で歌詞を囲まない）。"
             + "場所は『高い音の箇所』『サビあたり』『〜秒あたり』のように音楽的にだけ言う。母音も推測しない。Markdown記号は使わない。"
         )
+        # 前回判定の文脈（docs/92: テイク間・再質問で黙って逆を言わない。判定は曲げない）
+        if prev_verdict and prev_verdict.get("text"):
+            if prev_verdict.get("same_recording"):
+                prompt += (
+                    "\n\n# 前回のあなたの判定（同じ録音への再質問です）\n"
+                    f"「{prev_verdict['text']}」\n"
+                    "→ もう一度聴き直して、聴こえたとおりに答えてください。前回に合わせる必要は"
+                    "ありません。結論が変わる場合は、どこを聴いてそう判断が変わったかを一言添えてください。"
+                )
+            else:
+                prompt += (
+                    "\n\n# 前回の録音（別テイク）へのあなたの判定\n"
+                    f"「{prev_verdict['text']}」\n"
+                    "→ 今回の録音で判断が変わる場合は、『前回は〜でしたが、今回は〜』のように"
+                    "変化として自然に触れてください。歌い方が変われば判定が変わるのは普通のことです。"
+                    "前回に引きずられて今回の判定を曲げないこと。"
+                )
         parts = [types.Part.from_bytes(data=user_wav, mime_type="audio/wav"),
                  types.Part.from_text(text=prompt)]
         _model = settings.llm_audio_model
