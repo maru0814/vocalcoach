@@ -51,7 +51,25 @@ class Settings(BaseSettings):
     # （丸山CEO判断 2026-07-12: 会話モードのプロンプト側だけ採用）。必要なら env で 2.5-flash に格上げ可。
     llm_chat_model: str = "gemini-2.5-flash-lite"
     # 発音の聞き取り（音声入力）用。Flash-Lite は音声が弱いので Flash を使う。
+    # ⚠️ モデルIDは意図的に「バージョン固定」。`gemini-flash-latest` 等のエイリアスは使わない。
+    #    理由: エイリアスは予告なく指す実体が変わり、その時に呼び出しパラメータの互換性まで壊れる。
+    #    実測 2026-08-05: `gemini-flash-lite-latest` / `gemini-flash-latest` は既に Gemini 3 系を
+    #    指しており、`thinking_budget=0` を 400 INVALID_ARGUMENT で拒否する（2.5 系は受け付ける）。
+    #    固定IDなら「いつ壊れるか」をこちらの都合で選べる。実測記録は docs/92。
+    # 次の終了予定日: 公式 deprecation ページ（2026-08-03 更新時点）では gemini-2.5-flash は
+    #    "No shutdown date announced"＝**未定**。ただし終了日より先に「新規ユーザー利用不可」で
+    #    404 になる前例あり（同世代の gemini-2.5-flash-lite が実際にこれで死亡・実測確認済み）。
+    #    公式ページはこの事象を載せないので、ページだけを監視源にしないこと。
+    # 緊急時: env に LLM_AUDIO_MODEL=gemini-3.6-flash を置いて再起動すれば載せ替わる（再デプロイ不要）。
+    #    Gemini 3 系は thinking を切れないため、下の 2 設定がコード側で自動的に安全値へ寄る。
     llm_audio_model: str = "gemini-2.5-flash"
+    # 音声入力時の thinking 予算。0＝無効（2.5 系のみ可）。Gemini 3 系に載せ替えると
+    # コード側（llm._safe_thinking_budget）が自動で最小値まで引き上げる。
+    llm_audio_thinking_budget: int = 0
+    # 音声入力時の出力トークン上限。thinking が有効な世代では思考トークンが同じ枠を食うため、
+    # 実測で 400 だと 8回中5回 finish=MAX_TOKENS（本文12文字で途切れ）。1024 なら 8/8 STOP。
+    # 2.5 系（thinking=0）では 600 で足りるが、載せ替え時に事故らない値を既定にしておく。
+    llm_audio_max_tokens: int = 1024
     llm_max_tokens: int = 400
     llm_timeout_sec: float = 20.0
     # 音声入力は処理が重いのでタイムアウトを長めに
@@ -83,6 +101,9 @@ class Settings(BaseSettings):
     # 分析ターン専用モデル（推論＋音色判断）。雑談は従来の llm_model のまま。
     # 既定 flash: 安定供給＋安価で完全な講評を返す（実測 pro は 503 多発）。最高品質が
     # 要る時だけ env で gemini-2.5-pro に上書き可。
+    # ⚠️ ここも意図的にバージョン固定（理由・終了予定日は llm_audio_model のコメント参照）。
+    # 後継検証済み: gemini-3.6-flash は下の thinking_budget=512 / max_tokens=2048 の組み合わせを
+    #   そのまま受け付け finish=STOP（実測 2026-08-05・応答 7.4秒）。載せ替えは env だけで可。
     llm_analysis_model: str = "gemini-2.5-flash"
     # ⚠️ Gemini 2.5 では thinking トークンも出力枠を消費する。max は thinking より十分大きく
     #    すること（thinking=512+本文 で実測 finish=STOP。max<thinking だと本文が途中で切れる）。

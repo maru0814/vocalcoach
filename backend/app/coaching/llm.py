@@ -1204,6 +1204,39 @@ def _scrub_lyrics(text: Optional[str]) -> Optional[str]:
     return re.sub(r"[ 　]{2,}", " ", out).strip() or text
 
 
+# --- モデル世代差の吸収（音声入力パス）------------------------------------------------
+# チャット経路は _thinking_off() で「2.5 系以外には thinking_config を渡さない」対処をしている。
+# 音声パスはそれだけでは足りない: 思考をモデル既定に任せると思考トークンが出力枠を食い、
+# 本文が途中で切れる（実測 gemini-flash-latest・thinking_config なし・max=600 で MAX_TOKENS）。
+# そこで音声パスは「最小予算を明示 ＋ 出力枠の下限を確保」の2段構えにする。
+# モデルが突然死んだときに env の LLM_AUDIO_MODEL 差し替え＋再起動だけで復旧できるよう、
+# 危険な組み合わせはここで安全側へ寄せる（再デプロイを待たずに載せ替えるための保険）。
+# 思考を切れない世代での最小予算。0 は不可、128 は実測で受理される。
+_MIN_THINKING_BUDGET = 128
+# 思考が有効な世代で本文が途中で切れないための出力枠の下限。実測（gemini-3.6-flash・
+# thinking_budget=128・N=8）で max=400 は 5/8 が finish=MAX_TOKENS、max=1024 は 8/8 STOP。
+_MIN_MAX_TOKENS_WITH_THINKING = 1024
+
+
+def _thinking_off_ok(model: str) -> bool:
+    """このモデルで thinking_budget=0 が使えるか（判定は _supports_thinking_budget に一本化）。"""
+    return _supports_thinking_budget(model)
+
+
+def _safe_thinking_budget(model: str, budget: int) -> int:
+    """thinking を切れない世代なら 0 指定を最小予算へ引き上げる。"""
+    if budget > 0 or _thinking_off_ok(model):
+        return budget
+    return _MIN_THINKING_BUDGET
+
+
+def _safe_max_tokens(model: str, budget: int, want: int) -> int:
+    """思考トークンが出力枠を食う世代では、本文が切れないよう下限を確保する。"""
+    if budget <= 0 and _thinking_off_ok(model):
+        return want
+    return max(want, _MIN_MAX_TOKENS_WITH_THINKING)
+
+
 def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> Optional[str]:
     """録音そのものを Gemini に聴かせ、声区（地声/ミックス/裏声）を音色から聞き分ける。
 
@@ -1235,17 +1268,21 @@ def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> 
         )
         parts = [types.Part.from_bytes(data=user_wav, mime_type="audio/wav"),
                  types.Part.from_text(text=prompt)]
+        _model = settings.llm_audio_model
+        # thinking は原則無効。これが有効だと思考トークンが出力枠を食い尽くし、本文が
+        # 数文字で途切れる（声区回答が壊れていた原因）。ただし Gemini 3 系は 0 を拒否するので、
+        # その場合だけ最小予算＋広い出力枠に自動で寄せる（_safe_* 参照）。
+        _budget = _safe_thinking_budget(_model, settings.llm_audio_thinking_budget)
         cfg = types.GenerateContentConfig(
-            max_output_tokens=600, temperature=0.3,
-            # thinking を無効化。これが無いと思考トークンが出力枠を食い尽くし、本文が
-            # 数文字で途切れる（声区回答が壊れていた原因）。2.5系のみ指定可（docs/91）。
-            thinking_config=_thinking_off(settings.llm_audio_model),
+            max_output_tokens=_safe_max_tokens(_model, _budget, settings.llm_audio_max_tokens),
+            temperature=0.3,
+            thinking_config=types.ThinkingConfig(thinking_budget=_budget),
         )
         last_err = None
         for attempt in range(2):  # 503(過負荷)など一過性失敗を1回リトライ
             try:
                 resp = client.models.generate_content(
-                    model=settings.llm_audio_model,
+                    model=_model,
                     contents=[types.Content(role="user", parts=parts)],
                     config=cfg,
                 )
@@ -1304,14 +1341,17 @@ def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> O
             + " ソラ先生として、やわらかい敬体で2〜4文・前向きに。Markdown記号は使わない。"
         )
         parts.append(prompt)
+        # thinking と出力枠はモデル世代に合わせて安全側へ（classify_register_audio と同じ理由）
+        _model = settings.llm_audio_model
+        _budget = _safe_thinking_budget(_model, settings.llm_audio_thinking_budget)
         resp = client.models.generate_content(
-            model=settings.llm_audio_model,
+            model=_model,
             contents=parts,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=settings.llm_max_tokens,
+                max_output_tokens=_safe_max_tokens(_model, _budget, settings.llm_audio_max_tokens),
                 temperature=0.3,
-                thinking_config=_thinking_off(settings.llm_audio_model),
+                thinking_config=types.ThinkingConfig(thinking_budget=_budget),
             ),
         )
         return (resp.text or "").strip() or None
