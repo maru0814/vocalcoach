@@ -120,6 +120,66 @@ class IntentAwareListening(unittest.TestCase):
         self.assertIn("ガラガラ", reply)
         self.assertEqual(ictx.get("heard"), "practice", "聴いた判定が書き戻る")
 
+    @staticmethod
+    def _call_with_prompt_capture(ictx):
+        """generate_feedback を呼び、LLMに渡ったテキストプロンプトを返す。"""
+        from unittest import mock
+        from app.coaching import llm
+
+        captured = {}
+
+        class _Resp:
+            text = "INTENT: practice\n\nサイレンの録音ですね。低音から高音までなめらかに繋がっています。"
+
+        class _Models:
+            def generate_content(self, **kw):
+                for content in kw.get("contents", []):
+                    for p in content.parts:
+                        if getattr(p, "text", None):
+                            captured["prompt"] = p.text
+                return _Resp()
+
+        class _Client:
+            def __init__(self, **kw):
+                self.models = _Models()
+
+        state = {"phase": "practice", "current_task": "weak_resonance",
+                 "last_analysis": {"duration_sec": 5.0}, "baseline_analysis": None,
+                 "song_ref_url": None, "song_ref_path": None}
+        orig_flag, orig_key = settings.enable_zero_base_fb, settings.gemini_api_key
+        settings.enable_zero_base_fb, settings.gemini_api_key = True, "TEST_DUMMY"
+        try:
+            with mock.patch("google.genai.Client", _Client):
+                reply = llm.generate_feedback(state, user_wav=b"RIFFfake", intent_ctx=ictx)
+        finally:
+            settings.enable_zero_base_fb, settings.gemini_api_key = orig_flag, orig_key
+        return captured.get("prompt", ""), reply
+
+    def test_prompt_has_mismatch_branch_when_practice_recommended(self):
+        """AC-09: 基礎練勧奨中は「実演＝勧めた基礎練」と決めつけない指示が入る。
+
+        再現事故: 宿題がハミング→母音の状態でサイレンを送ったら、ハミング練習を
+        やったことにして「ハミングから母音へ移す際に…」と録音に無い動作を講評した。
+        """
+        ictx = {"kind_hint": "song", "task_label": "響きを前に集める（芯・通り）",
+                "practice_name": "ハミング → 母音（マスクに集める）"}
+        prompt, reply = self._call_with_prompt_capture(ictx)
+        self.assertIn("実演が勧めた基礎練と一致するとは限らない", prompt)
+        self.assertIn("一致しない・確信が持てない時", prompt)
+        self.assertIn("録音に無い動作", prompt)
+        self.assertIn("サイレン", prompt, "意図判定の練習例にサイレンを含める")
+        self.assertIsNotNone(reply)
+        self.assertEqual(ictx.get("heard"), "practice")
+
+    def test_prompt_without_recommended_practice_skips_match_logic(self):
+        """基礎練を勧めていない時は一致判定を出さず、聴こえた練習の特定から入る。"""
+        ictx = {"kind_hint": "practice", "task_label": None, "practice_name": None}
+        prompt, _ = self._call_with_prompt_capture(ictx)
+        self.assertIn("特定の基礎練はまだ勧めていません", prompt)
+        self.assertNotIn("実演が勧めた基礎練と一致するとは限らない", prompt)
+        self.assertIn("何の練習に聞こえるか", prompt)
+        self.assertIn("録音に無い動作を描写しない", prompt)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
