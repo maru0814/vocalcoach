@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.db.base import Base  # noqa: E402
 import app.models  # noqa: E402,F401  (全モデル登録)
+import app.models.coaching  # noqa: E402,F401  (ChatSession/ChatMessage を create_all に登録)
 from app.services import karte_service  # noqa: E402
 from app.coaching import llm, rule_engine  # noqa: E402
 
@@ -131,11 +132,24 @@ class SessionOpener(unittest.TestCase):
             k.last_summary = summary
         return k
 
-    def test_homework_opener(self):
+    def test_opener_never_mentions_homework(self):
+        # 開始挨拶は宿題・練習名に言及しない（実ユーザーFB 2026-08-06 / AC-01改）。
+        # 宿題があってもモードは continue（前回サマリ）に落ちる
         ctx = karte_service.session_opener_context(self._karte(3))
-        self.assertEqual(ctx["mode"], "homework")
+        self.assertEqual(ctx["mode"], "continue")
         msgs = rule_engine.initial_messages(ctx)
-        self.assertIn("ストロー発声", msgs[0]["text"], "宿題に言及する（AC-01）")
+        self.assertNotIn("ストロー発声", msgs[0]["text"], "挨拶で宿題を蒸し返さない")
+        self.assertIn("前回", msgs[0]["text"])
+
+    def test_same_day_short_welcome(self):
+        # 同日の再訪: 要約も宿題も読み上げず、短い出迎えだけ
+        ctx = karte_service.session_opener_context(self._karte(0))
+        self.assertEqual(ctx["mode"], "continue_recent")
+        msgs = rule_engine.initial_messages(ctx)
+        self.assertIn("おかえりなさい", msgs[0]["text"])
+        self.assertNotIn("ストロー発声", msgs[0]["text"])
+        self.assertNotIn("前回", msgs[0]["text"])
+        self.assertNotIn("さっき", msgs[0]["text"], "「さっき◯◯した」系の記憶主張をしない")
 
     def test_reopen_after_30_days(self):
         ctx = karte_service.session_opener_context(self._karte(31))
@@ -149,6 +163,93 @@ class SessionOpener(unittest.TestCase):
         self.assertIn("はじめまして", msgs[0]["text"], "初回は現行挨拶（AC-03）")
 
 
+class HomeworkTruthfulness(unittest.TestCase):
+    """宿題は「会話に実際に登場した練習」だけ（docs/53 FR-06 捏造防止・2026-08-06 実ユーザー報告）。
+
+    ゼロベースFBは初回に練習を出さないため、診断時に無条件でカタログ練習名を
+    記録すると、次回の開始挨拶が「さっき『◯◯』のお話をしましたね」と
+    実在しない会話を引用する。
+    """
+
+    def test_practice_mentioned_full_name(self):
+        self.assertTrue(karte_service.practice_mentioned(
+            ["おすすめ基礎練『ストロー発声（SOVT）』を試しましょう"], "ストロー発声（SOVT）"))
+
+    def test_practice_mentioned_by_keyword(self):
+        # LLMが言い換えても、練習名に含まれる既知語彙（ハミング）で言及ありとみなす
+        self.assertTrue(karte_service.practice_mentioned(
+            ["まずはハミングで響きを確かめましょう"], "ハミング → 母音（マスクに集める）"))
+
+    def test_practice_not_mentioned(self):
+        self.assertFalse(karte_service.practice_mentioned(
+            ["高音で喉が締まる傾向がありますね。原因は…"], "ハミング → 母音（マスクに集める）"))
+        self.assertFalse(karte_service.practice_mentioned([], "ハミング → 母音（マスクに集める）"))
+        self.assertFalse(karte_service.practice_mentioned(["何か"], None))
+
+    def test_record_prescription_sets_homework(self):
+        db = _db()
+        karte_service.record_prescription(db, 1, task_id="mixed_voice",
+                                          practice_name="ハミング → 母音（マスクに集める）")
+        k = karte_service.get_or_none(db, 1)
+        self.assertEqual(k.homework["practice_name"], "ハミング → 母音（マスクに集める）")
+        self.assertEqual(k.homework["task_id"], "mixed_voice")
+
+    def _seed_conversation(self, db, user_id, coach_texts_after_user, opener_text=None):
+        """セッション1件: （opener→）ユーザー発言→コーチ発言…の順で会話を作る。"""
+        from app.models.coaching import ChatMessage, ChatSession
+        s = ChatSession(user_id=user_id, phase="A")
+        db.add(s)
+        db.flush()
+        if opener_text:
+            db.add(ChatMessage(session_id=s.id, role="coach", type="text", text=opener_text))
+        db.add(ChatMessage(session_id=s.id, role="user", type="text", text="録音送ります"))
+        for t in coach_texts_after_user:
+            db.add(ChatMessage(session_id=s.id, role="coach", type="text", text=t))
+        db.flush()
+
+    def test_drop_unmentioned_homework_clears_fabricated(self):
+        db = _db()
+        # 汚染データ: 宿題はあるが、会話でその練習を一度も提示していない
+        karte_service.record_prescription(db, 1, task_id="mixed_voice",
+                                          practice_name="ハミング → 母音（マスクに集める）")
+        self._seed_conversation(db, 1, ["高音で喉が締まる傾向がありますね"])
+        karte_service.drop_unmentioned_homework(db, 1)
+        self.assertIsNone(karte_service.get_or_none(db, 1).homework,
+                          "会話に無い練習の宿題は破棄（開始挨拶の捏造防止）")
+
+    def test_drop_ignores_opener_self_mention(self):
+        db = _db()
+        # 過去の捏造挨拶（ユーザー発言より前のコーチ発言）だけが練習名を口にしているケース。
+        # これを根拠に宿題を自己正当化してはいけない
+        karte_service.record_prescription(db, 1, task_id="mixed_voice",
+                                          practice_name="ハミング → 母音（マスクに集める）")
+        self._seed_conversation(
+            db, 1, ["高音で喉が締まる傾向がありますね"],
+            opener_text="おかえりなさい😊 さっきは『ハミング → 母音（マスクに集める）』のお話をしましたね。")
+        karte_service.drop_unmentioned_homework(db, 1)
+        self.assertIsNone(karte_service.get_or_none(db, 1).homework,
+                          "開始挨拶自身の言及は照合対象にしない")
+
+    def test_drop_keeps_actually_prescribed(self):
+        db = _db()
+        karte_service.record_prescription(db, 1, task_id="breathy_closure",
+                                          practice_name="ストロー発声（SOVT）")
+        self._seed_conversation(
+            db, 1, ["おすすめ基礎練『ストロー発声（SOVT）』: 細いストローで…"])
+        karte_service.drop_unmentioned_homework(db, 1)
+        k = karte_service.get_or_none(db, 1)
+        self.assertIsNotNone(k.homework, "実際に提示した宿題は残す")
+
+    def test_last_summary_uses_label_not_task_id(self):
+        db = _db()
+        karte_service.update_from_audio(db, 1, diagnosed_task="breathy_closure",
+                                        song_title="曲A")
+        k = karte_service.get_or_none(db, 1)
+        self.assertNotIn("breathy_closure", k.last_summary,
+                         "内部IDを挨拶（continueモード）に露出させない")
+        self.assertIn("息漏れ", k.last_summary)
+
+
 class PromptInjection(unittest.TestCase):
     def test_karte_context_injected_into_session_context(self):
         state = {"phase": "practice", "song_ref_url": None, "song_ref_path": None,
@@ -157,6 +258,15 @@ class PromptInjection(unittest.TestCase):
         ctx = llm.build_session_context(state)
         self.assertIn("この生徒について", ctx)
         self.assertIn("breathy_closure×3", ctx)
+
+    def test_homework_usage_guidance_injected(self):
+        # 宿題があるカルテには「挨拶で蒸し返さず、FB・提案の流れでだけ言及」の作法を添える
+        state = {"phase": "practice", "song_ref_url": None, "song_ref_path": None,
+                 "current_task": None, "baseline_analysis": None, "last_analysis": None,
+                 "karte_context": "この生徒について:\n- 宿題: 『ストロー発声（SOVT）』（2026-08-01に出した）"}
+        ctx = llm.build_session_context(state)
+        self.assertIn("宿題の使い方", ctx)
+        self.assertIn("持ち出さない", ctx)
 
     def test_no_karte_no_injection(self):
         state = {"phase": "A", "song_ref_url": None, "song_ref_path": None,

@@ -20,7 +20,7 @@ _HISTORY_MAX = 10   # 練習履歴の保持件数
 _NOTES_MAX = 5      # 主観メモの保持件数
 _NOTE_LEN = 120     # 主観メモの要旨長（生ログを溜めない）
 _CONTEXT_LEN = 500  # プロンプト注入の上限（docs/53 FR-02）
-_REOPEN_DAYS = 30   # 宿題確認をやめて「久しぶり」挨拶に切り替える空白日数（FR-06）
+_REOPEN_DAYS = 30   # 引き継ぎ挨拶をやめて「久しぶり」挨拶に切り替える空白日数（FR-06）
 
 # レッドフラグ（FR-05）: 医療診断はしない。検知したら安全側（休声・受診目安の案内）。
 RED_FLAG_RE = re.compile(
@@ -78,6 +78,77 @@ def render_context(karte: StudentKarte | None) -> str:
     return out[:_CONTEXT_LEN] if len(lines) > 1 else ""
 
 
+def practice_mentioned(texts: list[str], practice_name: str | None) -> bool:
+    """コーチが実際に表示した文章に、その練習が登場したかを判定する。
+
+    完全一致の包含に加え、既知の練習語彙（llm.PRACTICE_KEYWORDS）のうち
+    練習名に含まれる語（例: 『ハミング → 母音（マスクに集める）』の「ハミング」）が
+    本文にあれば言及ありとみなす（LLMが練習名を言い換えるケースの取りこぼし防止）。
+    """
+    if not practice_name:
+        return False
+    joined = "\n".join(t for t in texts if t)
+    if not joined:
+        return False
+    if practice_name in joined:
+        return True
+    from app.coaching.llm import PRACTICE_KEYWORDS
+    return any(k in practice_name and k in joined for k in PRACTICE_KEYWORDS)
+
+
+def record_prescription(db: Session, user_id: int, *, task_id: str | None,
+                        practice_name: str) -> None:
+    """会話で実際に提示した基礎練を宿題としてカルテに記録する（FR-06）。
+
+    呼び出し側は practice_mentioned() で「表示テキストに練習名が登場した」ことを
+    確認してから呼ぶこと。会話に無い練習を宿題にすると、次回の開始挨拶が
+    「さっき『◯◯』のお話をしましたね」と存在しない会話を引用してしまう。
+    """
+    k = _get_or_create(db, user_id)
+    k.homework = {"task_id": task_id, "practice_name": practice_name,
+                  "assigned_at": datetime.utcnow().isoformat()}
+
+
+def drop_unmentioned_homework(db: Session, user_id: int) -> None:
+    """会話に一度も登場していない宿題をカルテから破棄する（自己修復・FR-06）。
+
+    過去に「診断＝即・カタログ練習名を宿題記録」していた時期の汚染データが残っていると、
+    開始挨拶が実在しない会話を引用し続ける。照合対象は「ユーザー発言より後のコーチ発言」
+    だけにする（開始挨拶自身が練習名を口にするため、それを根拠に自己正当化しない）。
+    """
+    k = get_or_none(db, user_id)
+    name = ((k.homework or {}) if k else {}).get("practice_name")
+    if not name:
+        return
+    from sqlalchemy import func
+
+    from app.models.coaching import ChatMessage, ChatSession
+
+    first_user = (
+        db.query(ChatMessage.session_id.label("sid"),
+                 func.min(ChatMessage.id).label("first_user_id"))
+        .filter(ChatMessage.role == "user")
+        .group_by(ChatMessage.session_id)
+        .subquery()
+    )
+    rows = (
+        db.query(ChatMessage.text)
+        .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+        .join(first_user, first_user.c.sid == ChatMessage.session_id)
+        .filter(
+            ChatSession.user_id == user_id,
+            ChatMessage.role == "coach",
+            ChatMessage.id > first_user.c.first_user_id,
+            ChatMessage.text.isnot(None),
+        )
+        .order_by(ChatMessage.id.desc())
+        .limit(300)
+        .all()
+    )
+    if not practice_mentioned([r[0] for r in rows], name):
+        k.homework = None
+
+
 def update_from_audio(
     db: Session, user_id: int, *,
     diagnosed_task: str | None = None,
@@ -122,7 +193,10 @@ def update_from_audio(
     if song_title:
         summary_bits.append(f"『{song_title}』を練習")
     if diagnosed_task:
-        summary_bits.append(f"課題は{diagnosed_task}")
+        # 内部ID（breathy_closure 等）をそのまま挨拶に露出させない。ラベルに翻訳する
+        from app.coaching.taxonomy import get_task
+        _label = ((get_task(diagnosed_task) or {}).get("label")) or diagnosed_task
+        summary_bits.append(f"課題は「{_label}」")
     if achieved:
         summary_bits.append("基礎練は達成")
     if summary_bits:
@@ -168,19 +242,21 @@ RED_FLAG_REPLY = (
 
 
 def session_opener_context(karte: StudentKarte | None) -> dict | None:
-    """セッション開始時の引き継ぎ情報（FR-06）。無ければ None＝現行挨拶。"""
+    """セッション開始時の引き継ぎ情報（FR-06）。無ければ None＝現行挨拶。
+
+    開始挨拶は宿題・練習名に言及しない（新しいテーマで始まるかもしれない場に
+    前回の宿題を蒸し返すのは不自然、という実ユーザーFB 2026-08-06。
+    2026-07-08 の「数分前の提案を宿題扱いして聞く」事故も同根）。
+    宿題はカルテに残り、FB・練習提案の文脈でだけ参照される（render_context 経由）。
+    """
     if karte is None or karte.last_session_at is None:
         return None
     days = (datetime.utcnow() - karte.last_session_at).days
-    hw = karte.homework or {}
     if days >= _REOPEN_DAYS:
         return {"mode": "reopen", "days": days}
-    if hw.get("practice_name"):
-        # 同日（前セッションから24時間未満）は「おうちでやってみてどうでした？」が不自然
-        # （数分前に出した練習を宿題扱いして聞く事故。2026-07-08 の実ユーザーが該当）。
-        mode = "homework_recent" if days == 0 else "homework"
-        return {"mode": mode, "practice_name": hw["practice_name"],
-                "task_id": hw.get("task_id"), "last_summary": karte.last_summary}
+    if days == 0:
+        # 同日の再訪: 直前の会話の要約を読み上げるのも不自然なので、短い出迎えだけ
+        return {"mode": "continue_recent"}
     if karte.last_summary:
         return {"mode": "continue", "last_summary": karte.last_summary}
     return None

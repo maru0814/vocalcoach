@@ -73,18 +73,15 @@ def coach_msg(type_: str, text: Optional[str] = None, payload: Optional[dict] = 
 def initial_messages(opener: Optional[dict] = None) -> list[dict]:
     """セッション開始時の挨拶。opener（カルテの引き継ぎ情報, docs/53 FR-06）があれば差し替える。"""
     if opener:
+        # 開始挨拶は宿題・練習名に言及しない（新しいテーマで始まるかもしれない場に
+        # 前回の宿題を蒸し返すのは不自然、という実ユーザーFB 2026-08-06）。
+        # 宿題はカルテに残り、FB・練習提案の文脈でだけ自然に参照される（docs/53 FR-06）。
         mode = opener.get("mode")
-        if mode == "homework":
+        if mode == "continue_recent":
+            # 同日の再訪: 直前の会話の要約を読み上げるのも不自然なので、短く迎えるだけ
             first = (
-                f"おかえりなさい😊 前回は『{opener['practice_name']}』を宿題にしましたね。"
-                "おうちでやってみて、どうでした？感想を聞かせてください🎤 "
-                "（もちろん、すぐ録音を送ってくれてもOKですよ）"
-            )
-        elif mode == "homework_recent":
-            # 同日の続き: 「おうちでやってみて」とは聞かない（数分前の提案かもしれない）
-            first = (
-                f"おかえりなさい😊 さっきは『{opener['practice_name']}』のお話をしましたね。"
-                "続きから一緒にやっていきましょう🎤 試してみたら録音を、質問だけでも大丈夫ですよ😊"
+                "おかえりなさい😊 続きから一緒にやっていきましょう🎤 "
+                "録音でも、質問だけでも大丈夫ですよ😊"
             )
         elif mode == "reopen":
             first = (

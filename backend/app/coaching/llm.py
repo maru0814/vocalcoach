@@ -383,6 +383,14 @@ def build_session_context(state: dict) -> str:
     kc = (state.get("karte_context") or "").strip()
     if kc:
         lines.append(kc)
+        if "宿題" in kc:
+            # 宿題の参照作法（docs/53 FR-06）: 挨拶や脈絡のない場面で蒸し返さない。
+            lines.append(
+                "- 宿題の使い方: 会話の始まりや無関係な話題で宿題を持ち出さない。"
+                "練習を提案する時やFBの流れで内容が繋がる時だけ、"
+                "「前回の宿題『◯◯』と同じ内容ですが」「以前出した『◯◯』をもう一度やってみましょう」"
+                "のように自然に言及する"
+            )
     lines.append(f"- 進行状況: {_phase_label(state.get('phase'))}")
 
     has_ref = bool(state.get("song_ref_url") or state.get("song_ref_path"))
