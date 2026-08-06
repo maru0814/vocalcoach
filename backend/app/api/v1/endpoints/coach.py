@@ -360,6 +360,28 @@ def _get_owned_session(db: Session, session_id: int, user) -> ChatSession:
     return s
 
 
+def _record_prescribed_homework(db: Session, user, s: ChatSession, msgs: list[dict]) -> None:
+    """このターンで実際に提示した基礎練を宿題としてカルテに記録する（docs/53 FR-06）。
+
+    ゼロベースFB（docs/42 §8 段階的エンゲージメント）では練習の提示が診断より後の
+    チャットターンに来るため、録音FB時だけでなくここでも記録する。表示テキストに
+    練習名が確認できた時だけ書く（会話に無い練習を宿題にすると開始挨拶が捏造になる）。
+    """
+    if not (settings.enable_student_karte and s.current_task):
+        return
+    task = rule_engine.get_task(s.current_task)
+    name = task["practices"][0]["name"] if task else None
+    if not name:
+        return
+    from app.services import karte_service
+    if karte_service.practice_mentioned([m.get("text") or "" for m in msgs], name):
+        try:
+            karte_service.record_prescription(db, user.id, task_id=s.current_task,
+                                              practice_name=name)
+        except Exception:
+            logger.warning("宿題の記録に失敗（会話は継続）", exc_info=True)
+
+
 @router.post("/sessions", response_model=ChatResponse)
 def create_session(db: Session = Depends(get_db), user=Depends(get_current_user)) -> ChatResponse:
     s = ChatSession(user_id=user.id, phase="A")
@@ -370,6 +392,9 @@ def create_session(db: Session = Depends(get_db), user=Depends(get_current_user)
     if settings.enable_student_karte:
         try:
             from app.services import karte_service
+            # 会話に一度も登場していない宿題は破棄（開始挨拶が実在しない会話を
+            # 「さっき『◯◯』のお話をしましたね」と引用する捏造の自己修復。docs/53 FR-06）
+            karte_service.drop_unmentioned_homework(db, user.id)
             opener = karte_service.session_opener_context(karte_service.get_or_none(db, user.id))
         except Exception:
             logger.warning("カルテ引き継ぎの読込に失敗（通常挨拶で開始）", exc_info=True)
@@ -592,6 +617,7 @@ def send_message(
         except ReferenceFetchError:
             pass  # 失敗しても録音時に再試行・フォールバックする
 
+    _record_prescribed_homework(db, user, s, msgs)
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
     for r in rows:
@@ -619,6 +645,7 @@ def send_action(
 
     msgs, updates = rule_engine.handle_action(_session_state(s), body.action)
     _apply_updates(s, updates)
+    _record_prescribed_homework(db, user, s, msgs)
     rows = _persist_coach_messages(db, s.id, msgs)
     db.commit()
     for r in rows:
@@ -988,13 +1015,21 @@ def send_audio(
             _diag = updates.get("current_task")  # 診断で新たに確定した課題（診断時のみ）
             _prac_res = updates.get("_practice_result")  # 基礎練チェックの判定（pass/fail）
             _t = rule_engine.get_task(_diag or s.current_task) if (_diag or s.current_task) else None
+            # 表示した講評に実際に登場した練習だけを宿題にする。ゼロベースFBは初回に
+            # 練習を出さない（docs/42 §8）ため、無条件でカタログ練習名を記録すると
+            # 次回の開始挨拶が実在しない会話を引用してしまう（docs/53 FR-06 捏造防止）
+            _prac_name = _t["practices"][0]["name"] if _t else None
+            if _prac_name and not karte_service.practice_mentioned(
+                [m.get("text") or "" for m in msgs], _prac_name
+            ):
+                _prac_name = None
             karte_service.update_from_audio(
                 db, user.id,
                 diagnosed_task=_diag,
                 achieved=(_prac_res == "pass") if _prac_res else None,
                 song_title=s.song_title,
                 analysis=user_analysis,
-                practice_name=(_t["practices"][0]["name"] if _t else None),
+                practice_name=_prac_name,
             )
         except Exception:
             logger.warning("カルテ更新に失敗（FBは継続）", exc_info=True)

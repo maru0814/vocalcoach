@@ -4,7 +4,7 @@
 - confirmed_song_url: 確認質問への肯定/否定の決定論検出（FR-03・AC-02/03/06）
 - handle_text: 承諾で song_ref_url が確定し、決定論メッセージが返る（AC-02/05）
 - _scrub_foreign_urls: ツールが返した候補URLは許可、それ以外の捏造URLは除去
-- session_opener_context: 同日宿題は homework_recent（「おうちでやってみて」と聞かない）
+- session_opener_context: 開始挨拶は宿題に言及しない（同日は短い出迎えのみ・docs/53 FR-06改定）
 """
 import json
 from datetime import datetime, timedelta
@@ -127,7 +127,7 @@ def test_song_confirm_anchor_constant():
     assert llm.SONG_CONFIRM_ANCHOR in CONFIRM_MSG
 
 
-# ---------- 同日宿題の挨拶（homework_recent） ----------
+# ---------- 開始挨拶は宿題に言及しない（docs/53 FR-06 改定 2026-08-06） ----------
 
 def _karte(hours_ago: float, practice: str = "リップロール"):
     return SimpleNamespace(
@@ -137,24 +137,21 @@ def _karte(hours_ago: float, practice: str = "リップロール"):
     )
 
 
-def test_opener_same_day_homework_is_recent():
+def test_opener_same_day_is_short_welcome():
     op = karte_service.session_opener_context(_karte(hours_ago=0.1))
-    assert op["mode"] == "homework_recent"
+    assert op["mode"] == "continue_recent"
+    first = rule_engine.initial_messages(op)[0]["text"]
+    assert "リップロール" not in first  # 宿題を蒸し返さない
+    assert "さっき" not in first        # 実在しない会話の記憶主張をしない
+    assert "前回" not in first          # 同日は要約も読み上げない
 
 
-def test_opener_next_day_homework_unchanged():
+def test_opener_next_day_falls_to_continue():
     op = karte_service.session_opener_context(_karte(hours_ago=30))
-    assert op["mode"] == "homework"
-
-
-def test_initial_messages_homework_recent_wording():
-    msgs = rule_engine.initial_messages({"mode": "homework_recent", "practice_name": "リップロール"})
-    first = msgs[0]["text"]
-    assert "リップロール" in first
-    assert "おうちでやってみて" not in first  # 数分前の提案を宿題扱いしない
-    # 従来モードは従来文言のまま
-    hw = rule_engine.initial_messages({"mode": "homework", "practice_name": "リップロール"})
-    assert "おうちでやってみて" in hw[0]["text"]
+    assert op["mode"] == "continue"
+    first = rule_engine.initial_messages(op)[0]["text"]
+    assert "リップロール" not in first  # 宿題があっても挨拶では言及しない
+    assert "TSUNAMI" in first           # 前回サマリには軽く触れる
 
 
 # ---------- 曲名提示の決定論検出（_names_song_title・FR-01の後押し） ----------
