@@ -64,7 +64,7 @@ class TestBlankEnvFallsBackToDefault:
         s = Settings(_env_file=None)
         assert s.llm_model == "gemini-3.5-flash-lite"
         assert s.llm_chat_model == "gemini-3.5-flash-lite"
-        assert s.llm_audio_model == "gemini-2.5-flash"
+        assert s.llm_audio_model == "gemini-3.5-flash"
         assert s.llm_analysis_model == "gemini-2.5-flash"
 
     def test_blank_numeric_does_not_crash_startup(self, monkeypatch):

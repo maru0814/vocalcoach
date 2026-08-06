@@ -59,7 +59,12 @@ class Settings(BaseSettings):
     # ⚠️ 本番では LLM_MODEL だけが env 上書きされていたため、この項目（上書き無し＝コード既定）が
     #    死んだモデルを指し、generate_reply / generate_coach_comment が 404 で落ちていた。docs/92 §0。
     llm_chat_model: str = "gemini-3.5-flash-lite"
-    # 発音の聞き取り（音声入力）用。Flash-Lite は音声が弱いので Flash を使う。
+    # 発音の聞き取り（音声入力）用。
+    # 既定 gemini-3.5-flash: 正解付き録音（運用者本人が地声のみ/裏声のみ/ミックスのつもりで
+    #   歌い分けた3本・各6回）での実測で、地声5/6・裏声5/6と唯一まともに聞き分けた
+    #   （gemini-2.5-flash は地声を6回全部「裏声」と誤答＝総合2/18。docs/92 §5.6）。
+    #   トレードオフ: 応答が約3秒→7〜12秒（「考えています」ドット表示あり・運用者了承済み）。
+    #   ミックスの検出は全モデル苦手（0/6）。3.5-flash は両方の特徴を正直に描写する。
     # ⚠️ モデルIDは意図的に「バージョン固定」。`gemini-flash-latest` 等のエイリアスは使わない。
     #    理由: エイリアスは予告なく指す実体が変わり、その時に呼び出しパラメータの互換性まで壊れる。
     #    実測 2026-08-05: `gemini-flash-lite-latest` / `gemini-flash-latest` は既に Gemini 3 系を
@@ -69,10 +74,10 @@ class Settings(BaseSettings):
     #    "No shutdown date announced"＝**未定**。ただし終了日より先に「新規ユーザー利用不可」で
     #    404 になる前例あり（同世代の gemini-2.5-flash-lite が実際にこれで死亡・実測確認済み）。
     #    公式ページはこの事象を載せないので、ページだけを監視源にしないこと。
-    # 緊急時: docker/.env に LLM_AUDIO_MODEL=gemini-3.6-flash を置いて再起動すれば載せ替わる
+    # 緊急時: docker/.env に LLM_AUDIO_MODEL=<生きているID> を置いて再起動すれば載せ替わる
     #    （再デプロイ不要。compose 側の受け渡しは docker-compose.prod.yml に定義済み）。
     #    Gemini 3 系は thinking を切れないため、下の 2 設定がコード側で自動的に安全値へ寄る。
-    llm_audio_model: str = "gemini-2.5-flash"
+    llm_audio_model: str = "gemini-3.5-flash"
     # 音声入力時の thinking 予算。0＝無効（2.5 系のみ可）。Gemini 3 系に載せ替えると
     # コード側（llm._safe_thinking_budget）が自動で最小値まで引き上げる。
     llm_audio_thinking_budget: int = 0
