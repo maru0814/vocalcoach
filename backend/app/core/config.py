@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,12 +45,20 @@ class Settings(BaseSettings):
     # ⚠️ "-latest" エイリアスは使わない（docs/91 原因1）: Google 側で新世代（Gemini 3 系）に
     #    切り替わった際、thinking_budget=0 が INVALID_ARGUMENT になりテキスト会話が全滅した。
     #    バージョンは明示的に固定する。
-    llm_model: str = "gemini-2.5-flash-lite"
+    # ⚠️ 固定先は「実APIで疎通確認したモデル」にすること（docs/92 §0）。
+    #    2026-08-06 まで gemini-2.5-flash-lite を指定していたが、これは既に
+    #    404 NOT_FOUND "no longer available to new users" で死んでおり、400 が 404 に
+    #    変わっただけで会話は復旧していなかった。モックのユニットテストでは検出できない。
+    #    本番キーで実測（2026-08-06・履歴4ターン・N=5）: 3.5-flash-lite 1.1s / STOP 5-5。
+    #    従来の実効値 gemini-flash-lite-latest（1.0s）との差は +0.1秒。
+    llm_model: str = "gemini-3.5-flash-lite"
     # 対話ターン（会話返答・コーチコメント）専用モデル（docs/66）。
     # 既定は llm_model（flash-lite）と同じ。格上げ（gemini-2.5-flash）は before/after 測定の結果、
     # カジュアル/感情は改善したが「多ターンの噛み合い」が悪化＋コスト3倍のため既定では採らない
     # （丸山CEO判断 2026-07-12: 会話モードのプロンプト側だけ採用）。必要なら env で 2.5-flash に格上げ可。
-    llm_chat_model: str = "gemini-2.5-flash-lite"
+    # ⚠️ 本番では LLM_MODEL だけが env 上書きされていたため、この項目（上書き無し＝コード既定）が
+    #    死んだモデルを指し、generate_reply / generate_coach_comment が 404 で落ちていた。docs/92 §0。
+    llm_chat_model: str = "gemini-3.5-flash-lite"
     # 発音の聞き取り（音声入力）用。Flash-Lite は音声が弱いので Flash を使う。
     # ⚠️ モデルIDは意図的に「バージョン固定」。`gemini-flash-latest` 等のエイリアスは使わない。
     #    理由: エイリアスは予告なく指す実体が変わり、その時に呼び出しパラメータの互換性まで壊れる。
@@ -60,7 +69,8 @@ class Settings(BaseSettings):
     #    "No shutdown date announced"＝**未定**。ただし終了日より先に「新規ユーザー利用不可」で
     #    404 になる前例あり（同世代の gemini-2.5-flash-lite が実際にこれで死亡・実測確認済み）。
     #    公式ページはこの事象を載せないので、ページだけを監視源にしないこと。
-    # 緊急時: env に LLM_AUDIO_MODEL=gemini-3.6-flash を置いて再起動すれば載せ替わる（再デプロイ不要）。
+    # 緊急時: docker/.env に LLM_AUDIO_MODEL=gemini-3.6-flash を置いて再起動すれば載せ替わる
+    #    （再デプロイ不要。compose 側の受け渡しは docker-compose.prod.yml に定義済み）。
     #    Gemini 3 系は thinking を切れないため、下の 2 設定がコード側で自動的に安全値へ寄る。
     llm_audio_model: str = "gemini-2.5-flash"
     # 音声入力時の thinking 予算。0＝無効（2.5 系のみ可）。Gemini 3 系に載せ替えると
@@ -123,6 +133,21 @@ class Settings(BaseSettings):
     # 上限に達したら通知するWebhook URL（任意）。LINE/Slack/Discord等の受け口を指定。
     # 未設定でもログには必ず出る。通知は当月1回だけ（毎回は鳴らさない）。
     llm_budget_notify_webhook: str | None = None
+
+    # docker-compose は `${LLM_MODEL:-}` の形で環境変数を常にセットするため、未設定でも
+    # 空文字が入る。そのままだと文字列項目はコード既定を空文字で潰し、数値項目は
+    # 起動時に ValidationError でコンテナが上がらない。空文字は「未設定」として扱い、
+    # 既定値の正本をこのファイル1箇所に保つ（compose 側に既定を書くとドリフトする）。docs/92。
+    @field_validator(
+        "llm_model", "llm_chat_model", "llm_audio_model", "llm_analysis_model",
+        "llm_audio_thinking_budget", "llm_audio_max_tokens",
+        mode="before",
+    )
+    @classmethod
+    def _blank_env_means_default(cls, v, info):
+        if isinstance(v, str) and not v.strip():
+            return cls.model_fields[info.field_name].default
+        return v
 
     @property
     def llm_enabled(self) -> bool:

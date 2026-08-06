@@ -50,6 +50,41 @@ class TestSafeMaxTokens:
         assert llm._safe_max_tokens("gemini-3.6-flash", 128, 2048) == 2048
 
 
+class TestBlankEnvFallsBackToDefault:
+    """docker-compose の `${VAR:-}` は未設定でも空文字を渡してくる（docs/92 §0）。
+
+    空文字がそのまま入ると、文字列項目はコード既定を潰し、数値項目は
+    ValidationError で起動そのものが失敗する。空文字＝未設定として扱うこと。
+    """
+
+    def test_blank_model_id_uses_code_default(self, monkeypatch):
+        from app.core.config import Settings
+        for var in ("LLM_MODEL", "LLM_CHAT_MODEL", "LLM_AUDIO_MODEL", "LLM_ANALYSIS_MODEL"):
+            monkeypatch.setenv(var, "")
+        s = Settings(_env_file=None)
+        assert s.llm_model == "gemini-3.5-flash-lite"
+        assert s.llm_chat_model == "gemini-3.5-flash-lite"
+        assert s.llm_audio_model == "gemini-2.5-flash"
+        assert s.llm_analysis_model == "gemini-2.5-flash"
+
+    def test_blank_numeric_does_not_crash_startup(self, monkeypatch):
+        from app.core.config import Settings
+        monkeypatch.setenv("LLM_AUDIO_THINKING_BUDGET", "")
+        monkeypatch.setenv("LLM_AUDIO_MAX_TOKENS", "")
+        s = Settings(_env_file=None)
+        assert s.llm_audio_thinking_budget == 0
+        assert s.llm_audio_max_tokens == 1024
+
+    def test_real_value_still_wins(self, monkeypatch):
+        """緊急時の env 差し替えが効くこと（これが効かないと載せ替え経路が死ぬ）。"""
+        from app.core.config import Settings
+        monkeypatch.setenv("LLM_AUDIO_MODEL", "gemini-3.6-flash")
+        monkeypatch.setenv("LLM_AUDIO_THINKING_BUDGET", "128")
+        s = Settings(_env_file=None)
+        assert s.llm_audio_model == "gemini-3.6-flash"
+        assert s.llm_audio_thinking_budget == 128
+
+
 @pytest.fixture
 def captured_config(monkeypatch):
     """genai.Client をモックし、generate_content に渡された config を捕まえる。"""
