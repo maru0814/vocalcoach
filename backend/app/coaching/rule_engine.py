@@ -738,10 +738,12 @@ _PRACTICE_INSTR = (
 _ENCOURAGE_INSTR = (
     "ソラ先生として、同じ課題に取り組み続けているユーザーを励ます。話し言葉で2〜4文・120字程度。"
     "点数・◎○△×・指標の数値羅列・箇条書き・見出しは使わない。"
-    "事実に「前回→今回で良くなった点」があれば、必ずその中から1つを具体的に挙げて"
+    "事実に「前回→今回で良くなった点」があれば、必ずその中から1つを根拠に"
     "「少しずつ良くなっていますよ！」「その感覚です！」のように、方向性が合っていることを伝えて褒める。"
+    "その際、数値や単位（cents・dB・%・Hz）をそのまま口に出さない。事実の（体感:〜）の言い方に"
+    "翻訳して伝える（例:「声の揺れが落ち着いてきましたね」）。秒数と半音だけは言ってよい（docs/42 §6）。"
     "良くなった点が事実に無い場合は、できていない事の羅列（ダメ出し）をせず、取り組み自体を認めて"
-    "「フォームを変えている途中は数値が動きにくい時期もある」と前向きに支える。"
+    "「フォームを変えている途中は声が変わりにくい時期もある」と前向きに支える。"
     "課題と練習はいま続けているものから変えず、次の一歩（意識するポイントを1つだけ）を添えて"
     "続けるようやさしくうながす。事実に無い数値・秒数・改善は作らない。"
 )
@@ -751,6 +753,8 @@ _CLEAR_INSTR = (
     "ソラ先生として、取り組んできた課題がクリアできたことを一緒に大きく喜ぶ。"
     "話し言葉で2〜4文・120字程度。点数・◎○△×・箇条書き・見出しは使わない。"
     "事実にある「良くなった点」を根拠に、何がどう良くなったかを具体的に伝える。"
+    "その際、数値や単位（cents・dB・%・Hz）をそのまま口に出さず、事実の（体感:〜）の"
+    "言い方に翻訳して伝える。秒数と半音だけは言ってよい（docs/42 §6）。"
     "このメッセージでは新しい練習はまだ出さない。事実に無い数値・秒数は作らない。"
 )
 
@@ -937,7 +941,11 @@ def _audio_recheck(
         return _audio_diagnose(state, analysis, compare_data, history, user_comment)
 
     micro = feedback_builder.build_micro_progress(baseline, analysis)
-    gains_txt = "\n".join("  ・" + g for g in micro["gains"])
+    # 数値は根拠（LLMが嘘をつかないための実測）、（体感:）は口に出す言い方（docs/42 §6）
+    gains_txt = "\n".join(
+        f"  ・{g}（体感: {s}）"
+        for g, s in zip(micro["gains"], micro["spoken"])
+    )
     brief = _voice_brief(analysis)
     comment_prefix = f"ユーザーのコメント・質問: 「{user_comment}」→ この悩みに自然に答えること。\n" if user_comment else ""
     cmp_brief = _compare_brief(compare_data)
@@ -960,7 +968,7 @@ def _audio_recheck(
         )
         fallback = (
             f"「{task['label']}」、クリアです！🎉 "
-            + (f"{micro['gains'][0]}。" if micro["any_gain"] else "")
+            + (f"{micro['spoken'][0]}。" if micro["any_gain"] else "")
             + "積み重ねがちゃんと声に出ていますよ✨"
         )
         out.append(coach_msg("text", _llm_or(fallback, facts, _CLEAR_INSTR, history)))
@@ -997,7 +1005,7 @@ def _audio_recheck(
             + f"今回の声の状態: {brief}"
         )
         fallback = (
-            f"少しずつ良くなっていますよ！{micro['gains'][0]}。その感覚です😊 "
+            f"少しずつ良くなっていますよ！{micro['spoken'][0]}。その感覚です😊 "
             f"引き続き『{prac.get('name', '')}』で「{task['label']}」を一緒に磨いていきましょう💪"
         )
     else:

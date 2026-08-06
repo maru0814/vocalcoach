@@ -526,16 +526,27 @@ def build_judge_payload(task: dict, a: dict) -> dict:
 # direction: +1=増加が良い / -1=減少が良い / 0=目標帯へ近づくのが良い(H1-H2)。
 # floor: これ未満の変化は測定ゆらぎとして拾わない（嘘の励ましをしない）。
 # nd: 表示の小数桁数。
-_MICRO_METRICS: list[tuple[str, str, str, int, float, int]] = [
-    ("f0_jitter_cents", "音程の細かな揺れ", "cents", -1, 1.0, 0),
-    ("long_tone_stability", "伸ばした音の安定度", "cents", -1, 2.0, 0),
-    ("cpp_db", "声の芯（CPP）", "dB", +1, 0.3, 1),
-    ("hnr_db", "声のクリアさ（HNR）", "dB", +1, 0.5, 1),
-    ("h1h2_db", "声帯の閉じ（H1-H2）", "dB", 0, 0.5, 1),
-    ("singers_formant_ratio", "響き（シンガーズフォルマント比）", "", +1, 0.0005, 4),
-    ("shimmer_pct", "声量の細かな揺れ（Shimmer）", "%", -1, 0.3, 1),
-    ("jitter_pct", "声の周期の揺れ（Jitter）", "%", -1, 0.05, 2),
-    ("rms_db_range", "強弱の幅（ダイナミクス）", "dB", +1, 1.0, 0),
+# spoken: ユーザーに口に出す体感語（docs/42 §6: 生の数値・単位は文面に出さない。
+#         「40→34cents」は生徒に何も伝わらないため、数値は内部根拠にとどめ体感に翻訳する）。
+_MICRO_METRICS: list[tuple[str, str, str, int, float, int, str]] = [
+    ("f0_jitter_cents", "音程の細かな揺れ", "cents", -1, 1.0, 0,
+     "声の揺れが落ち着いて、ピッチがまっすぐ保てるようになってきました"),
+    ("long_tone_stability", "伸ばした音の安定度", "cents", -1, 2.0, 0,
+     "伸ばした音が最後までまっすぐ安定するようになってきました"),
+    ("cpp_db", "声の芯（CPP）", "dB", +1, 0.3, 1,
+     "声に芯が出て、張りのある響きになってきました"),
+    ("hnr_db", "声のクリアさ（HNR）", "dB", +1, 0.5, 1,
+     "声の雑味が減って、クリアに通るようになってきました"),
+    ("h1h2_db", "声帯の閉じ（H1-H2）", "dB", 0, 0.5, 1,
+     "息と声のバランスがちょうど良い閉じ具合に近づいています"),
+    ("singers_formant_ratio", "響き（シンガーズフォルマント比）", "", +1, 0.0005, 4,
+     "声の響きが前に飛ぶようになってきました"),
+    ("shimmer_pct", "声量の細かな揺れ（Shimmer）", "%", -1, 0.3, 1,
+     "声量のムラが減って、音がなめらかにつながるようになってきました"),
+    ("jitter_pct", "声の周期の揺れ（Jitter）", "%", -1, 0.05, 2,
+     "声のざらつきにつながる細かな揺れが減ってきました"),
+    ("rms_db_range", "強弱の幅（ダイナミクス）", "dB", +1, 1.0, 0,
+     "強弱の表現の幅が広がってきました"),
 ]
 
 # flow phonation（息漏れ⇔締めすぎの中庸）の目安。H1-H2 はこの値へ近づけば「方向性が合っている」
@@ -549,10 +560,15 @@ def build_micro_progress(baseline: dict, current: dict) -> dict:
     具体的な数値つきで検知し、励まし（「少しずつ良くなっていますよ」）の根拠にする。
     改善が無ければ無いと正直に返す（捏造の励ましをしない＝docs/42 §5。gains が空なら
     呼び出し側は取り組み自体を認める文面に切り替える）。
-    戻り: {"gains": [人間向け1行, ...最大3件], "any_gain": bool}
+    戻り: {"gains": [数値つき内部根拠1行, ...最大3件],
+          "spoken": [gains と同順の体感語（ユーザーに口に出す文）],
+          "any_gain": bool}
+    gains は判定根拠・LLMへの事実供給用で、そのままユーザーに見せない（docs/42 §6:
+    生の数値比較は生徒に伝わらないため、口に出すのは spoken の体感語）。
     """
     gains: list[str] = []
-    for key, label, unit, direction, floor, nd in _MICRO_METRICS:
+    spoken: list[str] = []
+    for key, label, unit, direction, floor, nd, speak in _MICRO_METRICS:
         b, cur = (baseline or {}).get(key), (current or {}).get(key)
         if b is None or cur is None:
             continue
@@ -567,7 +583,8 @@ def build_micro_progress(baseline: dict, current: dict) -> dict:
             continue
         fmt = f"{{:.{nd}f}}"
         gains.append(f"{label}: 前回{fmt.format(b)}{unit}→今回{fmt.format(cur)}{unit}（{note}）")
-    return {"gains": gains[:3], "any_gain": bool(gains)}
+        spoken.append(speak)
+    return {"gains": gains[:3], "spoken": spoken[:3], "any_gain": bool(gains)}
 
 
 def build_progress_payload(baseline: dict, current: dict, task: Optional[dict]) -> dict:
