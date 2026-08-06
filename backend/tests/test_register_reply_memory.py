@@ -171,3 +171,47 @@ class TestPrevVerdictMemory:
     def test_empty_prev_text_is_ignored(self, captured):
         llm.classify_register_audio(b"RIFFfake", prev_verdict={"text": "", "same_recording": True})
         assert "前回" not in captured["prompt"]
+
+
+class TestPassaggioFact:
+    """段差検出（DSP）の結果を事実として渡す（docs/92 §5.9）。"""
+
+    def test_step_detected_becomes_actionable_fact(self):
+        f = llm.build_passaggio_fact({"passaggio": {
+            "has_step": True, "step_note": "C#4", "step_hz": 277.2, "step_sec": 3.49,
+            "delta_db_oct": -10.3, "direction": "to_head"}})
+        assert "段差を検出" in f
+        assert "C#4" in f and "3.49秒" in f
+        assert "軽く（裏声寄りに）なる" in f   # 向き＝処方の分岐に使う
+
+    def test_no_step_is_stated_positively(self):
+        f = llm.build_passaggio_fact({"passaggio": {"has_step": False}})
+        assert "検出されなかった" in f
+
+    def test_none_when_undetectable(self):
+        """音域が狭い等で判定できない時は None＝つながりに言及させない。"""
+        assert llm.build_passaggio_fact({"passaggio": None}) is None
+        assert llm.build_passaggio_fact({}) is None
+        assert llm.build_passaggio_fact(None) is None
+
+
+class TestPassaggioWiring:
+    """事実がある時だけ断定＋処方を許可する（docs/92 §5.8 の暫定停止を解除）。"""
+
+    def test_fact_enables_verdict_and_prescription(self, captured):
+        llm.classify_register_audio(
+            b"RIFFfake", range_hint={"moves": True, "text": "2.4オクターブ"},
+            passaggio_fact="換声点の段差を検出: C#4付近")
+        p = captured["prompt"]
+        assert "この判定に従って答えてください" in p
+        assert "換声点の段差を検出: C#4付近" in p
+        assert "実測の向き（軽くなる/厚くなる）に合う方を選び" in p
+        assert "断定しないでください" not in p
+
+    def test_without_fact_stays_conservative(self, captured):
+        """DSPが判定できなかった時は、従来どおり断定させない。"""
+        llm.classify_register_audio(
+            b"RIFFfake", range_hint={"moves": True, "text": "2.4オクターブ"})
+        p = captured["prompt"]
+        assert "断定しないでください" in p
+        assert "この段差の判断を根拠にしては出さないでください" in p

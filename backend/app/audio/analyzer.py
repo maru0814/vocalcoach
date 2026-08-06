@@ -577,6 +577,94 @@ def compare_voice(user: dict, ref: dict, alignment: dict | None = None) -> dict:
     return out
 
 
+# --- 換声点(passaggio)の段差検出（docs/92 §5.9）--------------------------------------
+# 段差は「時間」ではなく「音高」の現象。同じ人が同じ音高を通る時に音色が急変するなら、
+# それが換声点の段差。よって音色指標を f0（半音）の関数として並べ、半音あたりの
+# 変化率の不連続を見る。上昇・下降で同じ音高を複数回通るぶんは中央値で集約する。
+#
+# 主指標はスペクトル傾斜のみ（地声=浅い／裏声=急）。H1-H2 も声区で動くが、実測では
+# 母音・マイクの影響で半音ごとに±10〜29dB振れ、段差の検出には使えなかった（docs/92 §5.9）。
+_PASSAGGIO_WIN_SEC = 0.093      # 音色を測る窓
+_PASSAGGIO_MIN_BINS = 10        # これ未満の連続音域では判定しない
+_PASSAGGIO_MIN_HZ = 150.0       # これ未満の音高に換声点は無い（立ち上がりの乱れを拾わない）
+_PASSAGGIO_Z = 4.0              # ロバストz（その録音の通常の揺らぎに対する外れ度）
+_PASSAGGIO_ABS_DB = 5.0         # 物理的な大きさ(dB/oct)。zだけだと静かな録音で誤検出する
+
+
+def _passaggio_profile(y, sr, f0_hz, voiced_flag, hop_sec, min_n=3):
+    """半音ビンごとのスペクトル傾斜（中央値）。連続している最長区間だけを返す。"""
+    win = int(_PASSAGGIO_WIN_SEC * sr)
+    prof: dict[int, dict] = {}
+    for i, (f0, v) in enumerate(zip(f0_hz, voiced_flag)):
+        if not v or f0 is None or np.isnan(f0) or f0 <= 0:
+            continue
+        c = int(i * hop_sec * sr)
+        s, e = c - win // 2, c + win // 2
+        if s < 0 or e > len(y):
+            continue
+        tilt = _spectral_tilt(y[s:e], sr)
+        if tilt is None:
+            continue
+        st = int(round(12 * np.log2(float(f0) / 55.0)))
+        b = prof.setdefault(st, {"tilt": [], "t": []})
+        b["tilt"].append(tilt)
+        b["t"].append(i * hop_sec)
+    rows = [{"st": st, "hz": 55.0 * 2 ** (st / 12.0),
+             "tilt": float(np.median(d["tilt"])), "t": float(np.median(d["t"]))}
+            for st, d in sorted(prof.items()) if len(d["tilt"]) >= min_n]
+    if not rows:
+        return []
+    # 欠損を跨いだ差分は「段差」ではないので、半音が連続している最長区間だけ使う
+    best, cur = [], [rows[0]]
+    for a, b in zip(rows, rows[1:]):
+        if b["st"] - a["st"] == 1:
+            cur.append(b)
+        else:
+            best, cur = (cur if len(cur) > len(best) else best), [b]
+    return cur if len(cur) > len(best) else best
+
+
+def detect_passaggio_step(y, sr, f0_hz, voiced_flag, hop_sec) -> dict | None:
+    """換声点の段差を検出する。判定できない時は None（＝断定しない）。
+
+    戻り: {"has_step": bool, "step_hz", "step_note", "step_sec", "z", "delta_db_oct",
+           "direction": "to_head"|"to_chest"} / None
+    """
+    rows = _passaggio_profile(y, sr, f0_hz, voiced_flag, hop_sec)
+    if len(rows) < _PASSAGGIO_MIN_BINS:
+        return None                      # 音域が狭い＝つながりを判定できる材料が無い
+    v = np.array([r["tilt"] for r in rows], dtype=float)
+    d = np.diff(v)
+    n = len(rows)
+    cand = [i for i in range(n - 1) if 1 <= i <= n - 3 and rows[i + 1]["hz"] >= _PASSAGGIO_MIN_HZ]
+    if not cand:
+        return None
+    med = float(np.median(d))
+    mad = float(np.median(np.abs(d - med))) or 1e-9
+    z = np.abs(d - med) / (1.4826 * mad)
+    k = max(cand, key=lambda i: z[i])
+    # z（相対）と dB/oct（絶対）の両方を満たした時だけ段差と呼ぶ。
+    # z だけだと揺らぎの小さい録音で微差を段差と誤判定する。
+    has = bool(z[k] >= _PASSAGGIO_Z and abs(d[k]) >= _PASSAGGIO_ABS_DB)
+    return {
+        "has_step": has,
+        "step_hz": round(float(rows[k + 1]["hz"]), 1),
+        "step_note": _note_name_hz(float(rows[k + 1]["hz"])),
+        "step_sec": round(float(rows[k + 1]["t"]), 2),
+        "z": round(float(z[k]), 2),
+        "delta_db_oct": round(float(d[k]), 1),
+        # 傾斜が急になる=倍音が減る=裏声方向。緩やかになる=地声方向。
+        "direction": "to_head" if d[k] < 0 else "to_chest",
+        "bins": n,
+    }
+
+
+def _note_name_hz(hz: float) -> str:
+    names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    n = int(round(12 * np.log2(hz / 440.0))) + 57
+    return f"{names[n % 12]}{n // 12}"
+
+
 def extract_timeline(y, sr, f0_hz, voiced_flag, hop_sec, window_sec=1.0, sustain_min_sec=0.6) -> dict:
     rms = librosa.feature.rms(y=y, frame_length=FRAME_LENGTH, hop_length=HOP_LENGTH)[0]
     centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=HOP_LENGTH)[0]
@@ -774,6 +862,7 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
                      "kobushi": [], "kobushi_count": 0}
         timeline = {"per_window": [], "sustained_segments": []}
         formant_f1 = formant_f2 = spectral_tilt = singers_formant = None
+        passaggio = None
     else:
         harm = harmonic_ratio(y, sr, f0_hz, voiced_flag)
         ornaments = detect_ornaments(f0_hz, voiced_flag, hop_sec)
@@ -791,6 +880,8 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         h1h2_clip = _clip_h1h2(y, sr, f0_hz, voiced_flag)
         from app.audio import voice_lab as _vlab
         vlab = _vlab.analyze_voice_lab(y, sr, f0_hz, voiced_flag)   # CPP/Jitter/Shimmer/HNR/フォルマント（資料2章）
+        # 換声点の段差（docs/92 §5.9）。音域が狭い等で判定できなければ None
+        passaggio = detect_passaggio_step(y, sr, f0_hz, voiced_flag, hop_sec)
 
     result = {
         "duration_sec": round(duration, 2),
@@ -799,6 +890,8 @@ def analyze_file(path: str | Path, start_sec: float | None = None, end_sec: floa
         # 音域の下端/上端（docs/92 §5.7: 換声点のつながり判定の材料）
         "f0_low_hz": round(f0_p5, 1) if f0_p5 else None,
         "f0_high_hz": round(f0_p95, 1) if f0_p95 else None,
+        # 換声点の段差（docs/92 §5.9）。判定できない場合は None（＝断定しない）
+        "passaggio": passaggio,
         "f0_jitter_cents": round(f0_jitter, 1) if f0_jitter else None,
         "estimated_key": f"{key} {mode}",
         "estimated_mode": mode,
