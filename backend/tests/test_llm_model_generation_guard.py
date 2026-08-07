@@ -63,8 +63,8 @@ class TestBlankEnvFallsBackToDefault:
             monkeypatch.setenv(var, "")
         s = Settings(_env_file=None)
         assert s.llm_model == "gemini-3.5-flash-lite"
-        assert s.llm_chat_model == "gemini-3.5-flash-lite"
-        assert s.llm_audio_model == "gemini-2.5-flash"
+        assert s.llm_chat_model == "gemini-3.5-flash"   # docs/93 で格上げ
+        assert s.llm_audio_model == "gemini-2.5-flash"  # docs/92 §5.10 で差し戻し
         assert s.llm_analysis_model == "gemini-2.5-flash"
 
     def test_blank_numeric_does_not_crash_startup(self, monkeypatch):
@@ -134,3 +134,30 @@ class TestAudioCallSitesRespectGuard:
 
         assert getattr(llm, fn_name)(b"RIFFfake") is not None
         assert captured_config["config"].thinking_config.thinking_budget == 0
+
+
+class TestChatThinkingOff:
+    """会話パスの thinking 無効化（docs/93）。
+
+    音声パスの _safe_thinking_budget（2.5 系のみ・docs/92 §5.6 の実測構成を維持）とは
+    独立に、会話パスは tb=0 の受理を実測確認済みの固定IDだけ思考を切る（docs/92 §2-2）。
+    """
+
+    def test_chat_model_gemini35flash_disables_thinking(self):
+        cfg = llm._thinking_off("gemini-3.5-flash")
+        assert cfg is not None and cfg.thinking_budget == 0
+
+    def test_gemini25_still_disables_thinking(self):
+        cfg = llm._thinking_off("gemini-2.5-flash")
+        assert cfg is not None and cfg.thinking_budget == 0
+
+    @pytest.mark.parametrize("model", [
+        "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "", None,
+    ])
+    def test_unverified_models_leave_thinking_default(self, model):
+        """tb=0 未実測のモデルには thinking_config を送らない（400 INVALID_ARGUMENT 回避）。"""
+        assert llm._thinking_off(model) is None
+
+    def test_audio_guard_unchanged_for_gemini35flash(self):
+        """音声パスの実測済み構成（3.5-flash＋最小思考予算）を docs/93 が変えていないこと。"""
+        assert llm._safe_thinking_budget("gemini-3.5-flash", 0) == llm._MIN_THINKING_BUDGET

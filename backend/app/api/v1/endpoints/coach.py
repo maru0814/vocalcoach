@@ -537,37 +537,59 @@ def send_message(
     # カルテ要約を会話文脈に載せる（FR-02。以降の handle_text / LLM が参照）
     _load_karte_context(db, s)
 
-    # 「今の録音で、原曲の◯秒から重ねて再度診断して」→ 直前録音を指定区間で再解析（特別経路）
-    if rule_engine.is_rediagnose_request(body.text):
-        if not check_rate_limit(f"audio:{user.id}", settings.rate_limit_max_audio, settings.rate_limit_window_sec):
-            raise HTTPException(status_code=429, detail={"code": "RATE_LIMITED", "message": "少し間隔をあけてからお願いします🙏"})
-        db.flush()
-        msgs = _rediagnose_reply(db, s, body.text, history)
-        rows = _persist_coach_messages(db, s.id, msgs)
-        db.commit()
-        for r in rows:
-            db.refresh(r)
-        return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+    # 声区の聞き分け・発音講評・再診断の正規表現ルーティングは docs/94 で撤去した。
+    # 「母音って何？」が発音分析に飛ぶ等の誤爆が実証されたため。呼ぶかどうかは
+    # モデルが文脈で判断する（下の tool_ctx ＝セッション文脈ツール）。
+    ctx_notes: dict = {}
 
-    # 「ここは地声？裏声？」「裏声なのに地声と判断されてる」→ 録音をGeminiに聴かせて音色で聞き分ける
-    if rule_engine.is_register_question(body.text):
+    def _ctx_listen_register(args: dict) -> dict:
         db.flush()
-        reg = _register_reply(db, s)
-        rows = _persist_coach_messages(db, s.id, [reg])
-        db.commit()
-        for r in rows:
-            db.refresh(r)
-        return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+        r = _register_reply(db, s)
+        if r.get("payload"):
+            ctx_notes["payload"] = r["payload"]  # 前回判定メモ（docs/92 §5.5）を最終メッセージに引き継ぐ
+        return {"ok": True, "question": (args or {}).get("question") or "",
+                "verdict": r.get("text") or ""}
 
-    # 発音アドバイスの依頼は、最新の録音音声を Gemini に聴かせて講評する（特別経路）
-    if rule_engine.is_pronunciation_request(body.text):
+    def _ctx_listen_pronunciation(args: dict) -> dict:
         db.flush()
-        pron = _pronunciation_reply(db, s)
-        rows = _persist_coach_messages(db, s.id, [pron])
-        db.commit()
-        for r in rows:
-            db.refresh(r)
-        return ChatResponse(phase=s.phase, current_task=s.current_task, messages=[_msg_out(r) for r in rows])
+        r = _pronunciation_reply(db, s)
+        return {"ok": True, "question": (args or {}).get("question") or "",
+                "verdict": r.get("text") or ""}
+
+    def _ctx_rediagnose(args: dict) -> dict:
+        if not check_rate_limit(f"audio:{user.id}", settings.rate_limit_max_audio,
+                                settings.rate_limit_window_sec):
+            return {"ok": False,
+                    "error": "解析の回数制限中。少し間隔をあけてから、と正直に伝える"}
+        db.flush()
+        a = args or {}
+        spec = ""
+        if a.get("ref_start_sec") is not None:
+            if a.get("ref_end_sec") is not None:
+                spec = f"{float(a['ref_start_sec']):.0f}〜{float(a['ref_end_sec']):.0f}秒から"
+            else:
+                spec = f"{float(a['ref_start_sec']):.0f}秒から"
+        msgs = _rediagnose_reply(db, s, spec, history)
+        report = "\n".join(m.get("text") or "" for m in msgs)
+        return {"ok": True, "report": report}
+
+    def _ctx_set_focus(args: dict) -> dict:
+        topic = ((args or {}).get("topic") or "").strip()
+        task_id = rule_engine.detect_topic_task(topic, history=None, fallback=None)
+        task = rule_engine.get_task(task_id) if task_id else None
+        if not task:
+            return {"ok": False,
+                    "error": "対応する課題が見つからなかった。記録なしで普通に会話を続ける"}
+        s.focus_task = task_id
+        return {"ok": True, "task_label": task["label"],
+                "note": "主訴として記録した。次の録音診断で最優先される"}
+
+    tool_ctx = {
+        "listen_register": _ctx_listen_register,
+        "listen_pronunciation": _ctx_listen_pronunciation,
+        "rediagnose_with_reference": _ctx_rediagnose,
+        "set_lesson_focus": _ctx_set_focus,
+    }
 
     # 「動画ある？／見本が欲しい」等は、話題に合う実際の練習カード（動画つき）を確定的に返す。
     # LLM任せだと「動画カードを用意しました」と言うだけでカードが出ない事故が起きるため。
@@ -583,8 +605,12 @@ def send_message(
 
     prev_url = s.song_ref_url
     prev_ref_path = s.song_ref_path
-    msgs, updates = rule_engine.handle_text(_session_state(s), body.text, history=history)
+    msgs, updates = rule_engine.handle_text(
+        _session_state(s), body.text, history=history, tool_ctx=tool_ctx)
     _apply_updates(s, updates)
+    # 文脈ツールが残したメモ（声区判定メモ等）を最終メッセージに引き継ぐ
+    if ctx_notes.get("payload") and msgs:
+        msgs[0]["payload"] = ctx_notes["payload"]
 
     # 原曲URLが変わったら、前にYouTubeから取得した原曲キャッシュ(session_*)は無効化する。
     # （古い曲のwavと比較してしまう事故を防ぐ。アップロードされたお手本(ref_*)は保持する）

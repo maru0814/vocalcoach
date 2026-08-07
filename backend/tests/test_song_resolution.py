@@ -99,17 +99,28 @@ def test_confirmed_song_url_requires_anchor_and_single_url():
 
 
 def test_handle_text_confirmation_sets_song_ref_url():
+    # docs/94: 確定（state更新）は決定論のまま。返答は定型でなくLLM生成
+    # （hermetic環境ではLLM不可→正直フォールバック文になる。定型「原曲を受け取りました」には戻さない）。
     state = {"phase": rule_engine.LESSON, "song_ref_url": None}
     msgs, updates = rule_engine.handle_text(state, "はい", history=_hist(CONFIRM_MSG))
     assert updates.get("song_ref_url") == CAND_URL
-    assert any("原曲を受け取りました" in (m.get("text") or "") for m in msgs)
+    assert len(msgs) == 1 and msgs[0]["type"] == "text"
 
 
 def test_handle_text_confirmation_phase_a():
     state = {"phase": rule_engine.PHASE_A, "song_ref_url": None}
     msgs, updates = rule_engine.handle_text(state, "はい", history=_hist(CONFIRM_MSG))
     assert updates.get("song_ref_url") == CAND_URL
-    assert any("原曲" in (m.get("text") or "") for m in msgs)
+    assert len(msgs) == 1 and msgs[0]["type"] == "text"
+
+
+def test_url_received_fact_injected_not_canned():
+    """原曲URLターンは定型即リターンでなく、事実注入つきでLLM会話に流れる（docs/94）。"""
+    state = {"phase": rule_engine.PHASE_A, "song_ref_url": None}
+    merged = {**state, "song_ref_url": CAND_URL, "_song_ref_just_received": True}
+    _, system_text = llm._build_contents(merged, f"{CAND_URL} この曲のサビが苦しくて", [])
+    assert "原曲（お手本）のURLを受け取り" in system_text
+    assert "質問・相談が添えられていれば" in system_text
 
 
 # ---------- URLスクラブの許可リスト（FR-02の候補URLを消さない） ----------
@@ -185,6 +196,8 @@ def test_names_song_title_guards():
     assert llm._names_song_title("原曲がないと比較できないの？", None) is None
     assert llm._names_song_title("原曲がないんだよね", None) is None
     assert llm._names_song_title("原曲のURLってどこで見つけるの", None) is None
+    # 「原曲の◯秒から…」は再診断の依頼であって曲名提示ではない（docs/94 スモークで誤爆実測）
+    assert llm._names_song_title("原曲の45秒あたりから重ねてもう一度診断して", None) is None
     assert llm._names_song_title(f"原曲 {CAND_URL}", None) is None  # URLは既存経路が拾う
     # 長文はただの会話
     assert llm._names_song_title(

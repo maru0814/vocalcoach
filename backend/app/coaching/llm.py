@@ -23,6 +23,7 @@ FB品質の正本: docs/42_FB品質基準_単一ソース.md（SSOT）。
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -647,106 +648,43 @@ def proposed_practices_from_history(history: Optional[list[dict]]) -> list[str]:
 
 
 def _proposed_practices_line(history: Optional[list[dict]]) -> str:
+    # 「言及」と「提案」は決定論では区別できない（docs/94）。過剰主張を避けるため
+    # 「名前を出した練習」という事実として注入し、提案したかどうかは履歴で確認させる。
     props = proposed_practices_from_history(history)
     if props:
         return (
-            f"- この会話でこれまでにあなた（コーチ）が提案した練習: {'、'.join(props)}"
-            "（これが全て。これ以外の練習を「以前すすめた」ことにしない。"
-            "ユーザーが別の練習に言及したら「その練習はこの会話ではまだ提案していない」と正直に伝える）"
+            f"- この会話でこれまでにあなた（コーチ）が名前を出した練習（提案・言及の両方を含む）: "
+            f"{'、'.join(props)}"
+            "（これ以外の練習を「以前すすめた」ことにしない。実際に提案したかどうかは"
+            "会話履歴の自分の発言で確かめてから言う）"
         )
     return (
-        "- この会話ではまだ練習を提案していない"
+        "- この会話ではまだ練習の名前を出していない"
         "（「さっき別の練習をすすめられた」と言われても、この会話の記録には無い）"
     )
 
 
-# 「参考動画を出しましょうか？」等の動画オファーの検出（同一会話での連発防止・docs/65）。
-_VIDEO_OFFER_RE = re.compile(
-    r"(実演)?動画[^。！？\n]{0,12}(出しましょうか|お出ししましょうか|見て(み)?ますか|ご覧に|お見せしましょうか)"
-)
+# 動画オファー済みの正規表現検出（旧docs/65）は docs/94 で撤去した。
+# モデルの言い回しが自由になった今、定型文マッチは構造的にすり抜ける（言い換えで検出漏れ）。
+# オファーの繰り返し抑制は、会話履歴そのもの＋SYSTEM_PROMPT の作法（§動画オファー）に任せる。
 
 
-def _already_offered_video(history: Optional[list[dict]]) -> bool:
-    """この会話で既にコーチが動画オファーをしたか（決定論・履歴のコーチ発言から）。"""
-    for h in history or []:
-        if h.get("role") == "assistant" and _VIDEO_OFFER_RE.search(h.get("content") or ""):
-            return True
-    return False
-
-
-def _video_offer_line(history: Optional[list[dict]]) -> Optional[str]:
-    if _already_offered_video(history):
-        return (
-            "- この会話ですでに『参考動画を出しましょうか？』と提案済み。"
-            "同じ動画オファーを繰り返さない（ユーザーが「見たい/欲しい」と言った時だけ実際に出す）。"
-        )
-    return None
-
-
-# --- 会話モード検出（docs/66）。短い相槌・雑談・感情の吐露を、講義でなく自然に受けるための注入 ---
-# 相槌・軽い一言（これ自体が「答えを求めていない」サイン）
-_AIZUCHI = {
-    "うん", "ううん", "うんうん", "へー", "へえ", "ほー", "ほお", "ふーん", "ふうん",
-    "なるほど", "なるほどね", "そう", "そうなんだ", "そっか", "そうか", "まじ", "まじで",
-    "やった", "おお", "おー", "わかった", "了解", "りょうかい", "おつ", "おつかれ",
-    "うんうん", "たしかに", "だよね", "ですね", "そうですね",
-}
-# 明示的なコーチング/練習依頼・評価質問（短くても会話モードにしない＝ちゃんと答える）
-_EXPLICIT_REQUEST_RE = re.compile(
-    r"練習|どうすれ|どうやっ|どうしたら|教えて|直し|直る|直せ|コツ|やり方|メニュー|"
-    r"アドバイス|出したい|出せる|できるように|なりたい|上達|うまく|上手|見て|評価|診断|"
-    # 評価・FBを求める短い質問（「今の歌どうでしたか」「良かった？」等）も本題として扱う
-    r"どうでし|どうだっ|いかが|良かっ|よかっ|どう\?|どう？|何点|どこが|どこを"
-)
-# 感情の吐露（まず共感すべきサイン）
-_EMOTION_RE = re.compile(
-    r"落ち込|へこ|凹|もうやめ|やめようか|やめたい|才能(が)?ない|下手|最悪|自信(が)?ない|"
-    r"緊張|きんちょう|疲れた|つかれた|しんどい|つらい|辛い|泣|ダメだ|だめだ|無理かも|くやしい|悔し"
-)
-
-
-def _detect_conversation_mode(user_text: str) -> Optional[str]:
-    """短い相槌・雑談・感情の吐露なら会話モードの種別を返す（"emotion"|"casual"|None）。
-
-    明示的なコーチング依頼（「練習教えて」等）は短くても対象外＝ちゃんと答える。
-    """
-    t = (user_text or "").strip()
-    if not t:
-        return None
-    # 感情の吐露は最優先（「上達しなくて落ち込む」等、依頼語を含んでも気持ちを先に受ける）
-    if _EMOTION_RE.search(t):
-        return "emotion"
-    if _EXPLICIT_REQUEST_RE.search(t):
-        return None
-    core = re.sub(r"[\s、。！？!?…〜～ー]+", "", t)
-    core_plain = re.sub(r"[!-/:-@\[-`{-~！-／：-＠]", "", core)
-    if core in _AIZUCHI or core_plain in _AIZUCHI:
-        return "casual"
-    if len(core_plain) < 12:  # 短い一言・挨拶・雑談
-        return "casual"
-    return None
-
-
-def _conversation_mode_line(user_text: str) -> Optional[str]:
-    mode = _detect_conversation_mode(user_text)
-    if mode is None:
-        return None
-    base = (
-        "# 会話モード（重要）: 今回のユーザー発言は短い相槌・雑談・挨拶・感情の吐露です。"
-        "コーチングに変換せず、1〜2文で自然に短く受けてください。"
-        "解析数値の講義・練習の提案・録音のお願いを付けない（相手が求めていない）。"
-        "相手のテンポに合わせ、『もしよろしければ』『一緒に〜しましょうか』のような定型で締めない。"
-    )
-    if mode == "emotion":
-        base += "とくに今回は気持ちの吐露なので、解決策やデータを出す前に、まず気持ちに共感して受け止めてください。"
-    return base
+# 会話モードの正規表現検出（旧docs/66）は docs/93 で撤去した。
+# 「12文字未満は相槌」等の決定論ゲートが、短い承諾（「よろ」）や訂正（「リップロールやん」）を
+# 雑談と誤断定してモデルの言語理解を上書きし、会話が噛み合わなくなる主因だったため。
+# トーン・テンポの作法は SYSTEM_PROMPT「# 会話モード」節が規定し、判別はモデルが行う。
 
 
 def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
-    """会話履歴 + 今回の発言（状況コンテキスト付き）を Gemini の contents 形式に組み立てる。
+    """素の会話履歴＋今回の発言を contents に、レッスン状況（事実）を system 側テキストにする。
+
+    docs/93: ユーザー発言を「# このターンについて…」の指示書で包まない。会話の連続性を
+    モデルに渡し、意図理解（承諾/訂正/雑談/依頼）はモデルの仕事にする。ここが行うのは
+    照合可能な事実の注入（docs/65）と、決定論で安全に検出できるヒント（docs/72）だけ。
 
     history: [{"role": "user"|"assistant", "content": str}, ...]（古い→新しい）
     Gemini のロールは "user" / "model"。先頭は user である必要がある。
+    返り値: (contents, system_text)
     """
     from google.genai import types
 
@@ -763,30 +701,21 @@ def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
     while contents and contents[0].role == "model":
         contents.pop(0)
 
-    # 提案済み練習・動画オファー状況を事実として注入（docs/65。会話返答のみ）
+    # 名前を出した練習を事実として注入（docs/65 → docs/94 で文言調整。会話返答のみ）
     context = build_session_context(state) + "\n" + _proposed_practices_line(history)
-    video_line = _video_offer_line(history)
-    if video_line:
-        context += "\n" + video_line
-    # 動画オファーへの承諾ターンは会話モード（短い一言＝雑談扱い）より優先し、
-    # 実URLを渡す行動を明示する（docs/71。ツール化ON時のみ＝ツールが実在する時のみ）
-    if settings.coach_tools_enabled and _accepts_video_offer(user_text, history):
-        # オファー文に含まれる練習名（例: リップロール）を topic として名指しする。
-        # LLM任せだと課題名（喉の力み等）を渡して別練習の動画が返ることがあるため。
-        offered = extract_practices(_last_assistant_text(history))
-        topic_hint = (
-            f"topic には「{offered[0]}」を渡してください。" if offered
-            else "topic には直前にあなたが提案した練習名・話題をそのまま渡してください。"
-        )
+    context += (
+        "\n- このターンは録音なしのテキスト会話。上の解析事実は過去に送られた録音の再掲であり、"
+        "いま新しく録音を解析したかのような書き出し（「録音ありがとう」「解析結果を見ると…」）をしない"
+    )
+    if state.get("_song_ref_just_received"):
+        # 原曲URLの取り込みは決定論（形式が一意）。返答は定型でなくモデルが文脈込みで行う（docs/94）
         context += (
-            "\n- ユーザーは直前のあなたの動画オファーを承諾しました。"
-            f"find_reference_video を必ず呼んでください。{topic_hint}"
-            "返ってきた実URLを本文の最後に1行で必ず載せてください。"
-            "URLを書かずに「お出ししますね」とだけ言って終えるのは禁止です。"
+            "\n- このターンでユーザーから原曲（お手本）のURLを受け取り、システムに取り込み済み。"
+            "受け取ったことを一言伝える。次の録音から原曲と照らし合わせられる。"
+            "URLに質問・相談が添えられていれば、そちらにもきちんと答える"
         )
-    elif settings.coach_tools_enabled and _names_song_title(user_text, history):
-        # 原曲の曲名提示は会話モード（短い一言＝雑談扱い）より優先する（docs/72）。
-        # 裸の曲名（「ツキミソウ」だけ等）が雑談扱いされて検索されない事故を防ぐ。
+    if settings.coach_tools_enabled and _names_song_title(user_text, history):
+        # 原曲の曲名提示（「原曲 ◯◯」等の精密パターンのみ）は決定論ヒントを注入する（docs/72）。
         _q = _names_song_title(user_text, history)
         context += (
             f"\n- ユーザーは原曲の曲名を伝えています。search_original_song を query=「{_q}」で"
@@ -794,25 +723,13 @@ def _build_contents(state: dict, user_text: str, history: Optional[list[dict]]):
             "確認して終えてください。候補が見つからなければ、でっち上げずに"
             "YouTubeのリンクを貼ってもらうよう案内してください。"
         )
-    else:
-        # 会話モード（短い相槌・雑談・感情）なら、講義に変換せず自然に受ける指示を注入（docs/66）
-        convo_line = _conversation_mode_line(user_text)
-        if convo_line:
-            context += "\n" + convo_line
-    final_text = (
-        "# このターンについて\n"
-        "これは会話の続きで、ユーザーがテキストで話しかけてきた場面です。"
-        "今回あらたに録音は送られていません。下の『現在のレッスン状況』は、"
-        "前に送られた録音の解析を背景情報として再掲したものです（新しく届いた録音ではない）。\n"
-        "会話履歴といま聞かれた発言をふまえ、続きの会話として自然に・簡潔に答えてください。"
-        "録音を受け取った時のあいさつや講評の書き出し（「録音を送ってくれてありがとう」"
-        "「解析結果を見ると…」のような、いま新しく録音を解析したかのような言い回し）で"
-        "始めないこと。すでに伝えた内容は繰り返さず、聞かれたことに答える。\n\n"
-        f"# 現在のレッスン状況（背景情報。新しく届いた録音ではない）\n{context}\n\n"
-        f"# ユーザーの発言\n{user_text}"
+    system_text = (
+        SYSTEM_PROMPT
+        + "\n\n# 現在のレッスン状況（事実。ここに無い数値・秒数・URLを作らない）\n"
+        + context
     )
-    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=final_text)]))
-    return contents
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_text)]))
+    return contents, system_text
 
 
 _RANGE_SEC_RE = re.compile(r"(\d+)\s*[〜～\-–]\s*(\d+)\s*秒")
@@ -860,20 +777,31 @@ def _scrub_invented_seconds(reply: str, allowed: set[int]) -> str:
 
 
 def _supports_thinking_budget(model: Optional[str]) -> bool:
-    """thinking_budget の明示指定を受け付けるモデルか（Gemini 2.5 系のみ）。"""
+    """thinking_budget の明示指定を受け付けるモデルか（Gemini 2.5 系のみ）。
+
+    音声パス（_safe_thinking_budget / _safe_max_tokens）の判定に使う。docs/92 §5.6 の
+    精度実測は現行の組み合わせ（3.5-flash＋最小思考予算）で行ったため、ここは広げない。
+    会話パスの thinking 無効化は _thinking_off 側で別途拡張する（docs/93）。
+    """
     return "2.5" in (model or "")
+
+
+# 会話パスで thinking_budget=0 を受理することを実APIで確認済みの固定ID（docs/92 §2-2）。
+# gemini-3.5-flash-lite は tb=0 未実測のため入れない（thinking 既定でも思考0トークン＝実害なし）。
+_CHAT_THINKING_ZERO_OK = {"gemini-3.5-flash"}
 
 
 def _thinking_off(model: Optional[str]):
     """thinking(思考)を無効化する ThinkingConfig を返す（対応モデルのみ）。
 
     Gemini 2.5 系は thinking_budget=0 で思考を切れる（思考トークンが出力枠を
-    食い潰して本文が途切れるのを防ぐ）。Gemini 3 系以降は thinking_budget=0 を
+    食い潰して本文が途切れるのを防ぐ）。Gemini 3 系以降は原則 thinking_budget=0 を
     受け付けず INVALID_ARGUMENT になり、テキスト返答そのものが失敗する
-    （会話が全滅した障害の原因＝docs/91）。2.5 系以外には thinking_config を
-    渡さず、モデル既定に任せる。
+    （会話が全滅した障害の原因＝docs/91）。例外は実測で受理を確認した固定ID
+    （docs/92 §2-2: gemini-3.5-flash）。それ以外には thinking_config を
+    渡さず、モデル既定に任せる（その場合の本文切れは _safe_max_tokens が防ぐ）。
     """
-    if not _supports_thinking_budget(model):
+    if not (_supports_thinking_budget(model) or (model or "") in _CHAT_THINKING_ZERO_OK):
         return None
     from google.genai import types
     return types.ThinkingConfig(thinking_budget=0)
@@ -881,11 +809,14 @@ def _thinking_off(model: Optional[str]):
 
 def _complete(contents, timeout_sec: Optional[float] = None,
               max_tokens: Optional[int] = None,
-              model: Optional[str] = None) -> Optional[str]:
+              model: Optional[str] = None,
+              system_text: Optional[str] = None) -> Optional[str]:
     """Gemini を1往復呼び出してテキストを返す。
 
     timeout_sec: 応答待ちの上限秒（既定 settings.llm_timeout_sec）。超過時は None。
     model: 使うモデル（既定 settings.llm_model）。対話は llm_chat_model を渡して格上げする。
+    system_text: system_instruction（既定 SYSTEM_PROMPT）。会話パスは
+                 「人格＋レッスン状況（事実）」を組み立てて渡す（docs/93 §4.1）。
     APIキー未設定・SDK未導入・API エラー時は None（呼び出し側でフォールバック）。
     """
     if not settings.llm_enabled:
@@ -902,16 +833,23 @@ def _complete(contents, timeout_sec: Optional[float] = None,
             api_key=settings.gemini_api_key,
             http_options=types.HttpOptions(timeout=int(to * 1000)),
         )
+        mdl = model or settings.llm_model
+        thinking = _thinking_off(mdl)
+        want = max_tokens or settings.llm_max_tokens
+        if thinking is None:
+            # thinking を切れないモデルへ env 載せ替えた時、思考トークンが出力枠を食って
+            # 本文が切れる（docs/92 §2-3）。チャット経路にも同じ下限保険を張る（docs/93）。
+            want = max(want, _MIN_MAX_TOKENS_WITH_THINKING)
         resp = client.models.generate_content(
-            model=model or settings.llm_model,
+            model=mdl,
             contents=contents,
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=(max_tokens or settings.llm_max_tokens),
+                system_instruction=system_text or SYSTEM_PROMPT,
+                max_output_tokens=want,
                 # 低めの温度で、事実から逸脱した創作（歌詞・母音の捏造）を抑える
                 temperature=0.3,
-                # 思考を無効化＝コスト/レイテンシ削減（2.5系のみ。3系以降はモデル既定に任せる）
-                thinking_config=_thinking_off(model or settings.llm_model),
+                # 思考を無効化＝コスト/レイテンシ削減（tb=0 を受理するモデルのみ）
+                thinking_config=thinking,
             ),
         )
         text = (resp.text or "").strip()
@@ -921,13 +859,12 @@ def _complete(contents, timeout_sec: Optional[float] = None,
         return None
 
 
-# 「お手本／見本／動画／参考／実演／良い例」など"参考例が欲しい"の広めの検出。
-# ここに引っかかったら find_reference_video を強制呼び出しさせる（flash-lite は
-# 自発的なツール呼び出しが弱く「動画を探しますね」と言うだけで終わる事故があるため）。
+# 動画・お手本を明示的に指す語だけで強制（ANY）する（docs/94 で絞り込み）。
+# 旧リストの「参考」「聞きたい」等は誤爆した（「参考までに腹式呼吸って必要？」
+# 「ちょっと聞きたいんだけど」で動画ツールが強制発動）。曖昧な言い回しは
+# モデルの AUTO 判断＋約束不履行の事後検知（_needs_video_delivery_retry）に任せる。
 _REFERENCE_HINTS = [
-    "動画", "ビデオ", "見本", "手本", "お手本", "実演", "やり方の映像",
-    "参考", "良い例", "いい例", "例ある", "例はある", "例が欲", "例が知",
-    "聴きたい", "聴かせ", "聞きたい", "聞かせ", "どんな声", "どんな感じの声",
+    "動画", "ビデオ", "見本", "手本", "実演", "やり方の映像",
 ]
 
 
@@ -943,25 +880,23 @@ def _wants_reference(text: str) -> bool:
 
 
 # 「動画をお出ししますね」「こちらが〜動画です」等、コーチが動画を"出す"と言った約束の検出。
-# オファー（_VIDEO_OFFER_RE）に加えてこれも承諾対象にすることで、URL無しの約束だけが
-# 出てしまった壊れた会話（「こちらです。」→「どれ？」）からも次ターンで復帰できる（docs/71）。
+# docs/93: 承諾側の正規表現（旧 _VIDEO_ACCEPT_RE / _VIDEO_DECLINE_RE）は撤去した。
+# 承諾かどうかの判別はモデルの仕事。この約束検出は「約束したのにURLが無い」返答を
+# 事後に検知して1回だけツール強制で再生成する、URL到達保証にのみ使う（docs/93 §4.3）。
 _VIDEO_PROMISE_RE = re.compile(
     r"動画[^。！？\n]{0,12}(お出しします|出します|お渡しします)"
     r"|こちらが[^。！？\n]{0,15}動画"
 )
-# 短い承諾・催促（オファー/約束の直後という文脈ガード付きで使う）
-_VIDEO_ACCEPT_RE = re.compile(
-    r"お願い|おねがい|はい|うん|ぜひ|是非|見たい|みたい|欲しい|ほしい|"
-    r"ください|下さい|出して|だして|どれ|どこ|リンク|ない|見えな|来てな|届いてな|いいよ|いいです"
-)
-_VIDEO_DECLINE_RE = re.compile(r"いらな|いらん|大丈夫|結構|けっこう|不要|やめ|あとで|後で|今度")
 
 # 原曲候補の確認質問アンカー（docs/72 FR-02/03）。
 # この定型句＋URL1件を含むコーチ発言への肯定返答だけが、原曲確定の決定論トリガーになる。
 SONG_CONFIRM_ANCHOR = "この曲で合っていますか"
 
 # 「原曲 ◯◯」「曲名 ◯◯」形式の決定論検出（docs/72 FR-01 の後押し）。
-_SONG_PREFIX_RE = re.compile(r"^(?:原曲|曲名)[はがのを]?[\s　:：、]*(.+)$")
+# 「原曲」と曲名の間に助詞（は/が/を）か区切り（空白/コロン/読点）を必須にする。
+# 助詞「の」・区切りなしを許すと「原曲の45秒あたりから重ねて診断して」の残り全体を
+# 曲名として検索する誤爆が起きる（docs/94 スモークで実測。無関係動画を原曲候補として提示した）。
+_SONG_PREFIX_RE = re.compile(r"^(?:原曲|曲名)(?:[はがを]|[\s　:：、])[\s　:：、]*(.+)$")
 # コーチが原曲/曲名を尋ねた発言の検出（この直後の短い返答は曲名とみなす）。
 _SONG_ASK_RE = re.compile(
     r"(?:原曲|曲名|何の曲|どの曲|なんの曲)[^。！？\n]{0,15}"
@@ -999,6 +934,9 @@ def _names_song_title(user_text: str, history: Optional[list[dict]]) -> Optional
             return None
         if "URL" in q or "url" in q or "リンク" in q:
             return None
+        # 再診断・区間指定の言い回しは曲名ではない（「原曲 45秒あたりから重ねて…」等）
+        if re.search(r"\d+\s*秒|診断|採点|重ね|比べ", q):
+            return None
         return q
 
     m = _SONG_PREFIX_RE.match(t)
@@ -1016,36 +954,37 @@ def _last_assistant_text(history: Optional[list[dict]]) -> str:
     return ""
 
 
-def _accepts_video_offer(user_text: str, history: Optional[list[dict]]) -> bool:
-    """直前のコーチ発言が動画オファー/約束で、ユーザーが短く承諾・催促したか（docs/71）。
+def _needs_video_delivery_retry(reply: str, tool_urls: set[str]) -> bool:
+    """返答が動画を"出す"と約束しているのに、実URLが本文にもツール結果にも無いか（docs/93 §4.3）。
 
-    _wants_reference は今回の発言のキーワード（動画・お手本…）しか見ないため、
-    「お願いします」「はい」「どれ？」のような承諾だけの返事ではツールが強制されず、
-    flash-lite が「お出ししますね」と言うだけでURLが出ない事故が起きる。その穴を塞ぐ。
+    旧 _accepts_video_offer（承諾の正規表現判定）の置換。承諾かどうかの理解はモデルに任せ、
+    ここは「約束不履行」という結果だけを決定論で検知して、1回だけツール強制で再生成させる。
     """
-    t = (user_text or "").strip()
-    if not t or "http://" in t or "https://" in t:
+    if not reply or tool_urls:
         return False
-    last = _last_assistant_text(history)
-    if "http" in last:  # 直前ターンで実URLは渡せている（このターンの話題は別）
+    if not _VIDEO_PROMISE_RE.search(reply):
         return False
-    if not (_VIDEO_OFFER_RE.search(last) or _VIDEO_PROMISE_RE.search(last)):
-        return False
-    if _VIDEO_DECLINE_RE.search(t):
-        return False
-    core = re.sub(r"[\s、。！？!?…〜～ー]+", "", t)
-    return len(core) <= 12 and bool(_VIDEO_ACCEPT_RE.search(t))
+    return not _URL_RE.search(reply)
 
 
 def _complete_with_tools(contents, force_tool: Optional[str] = None,
-                         model: Optional[str] = None) -> tuple[Optional[str], set[str]]:
+                         model: Optional[str] = None,
+                         system_text: Optional[str] = None,
+                         tool_ctx: Optional[dict] = None,
+                         facts_sink: Optional[list] = None) -> tuple[Optional[str], set[str]]:
     """ツール（function calling）を許可して Gemini を呼び、最終テキストを返す（docs/44）。
 
     force_tool にツール名（"find_reference_video" / "search_original_song"）を渡すと、
-    初回は mode=ANY でそのツールを必ず呼ばせる（flash-lite の自発呼び出しの弱さ対策）。
+    初回は mode=ANY でそのツールを必ず呼ばせる（明示的な依頼語彙と事後検知リトライのみ。docs/93）。
     モデルがツールを要求したら実行して結果を返し、テキストが得られるまで最大
     settings.coach_tool_loop_max 回まわす。失敗・SDK未導入・キー未設定時は (None, set())。
     model: 使うモデル（既定 settings.llm_model）。対話は llm_chat_model を渡して格上げする。
+    system_text: system_instruction（既定 SYSTEM_PROMPT）。会話パスは状況込みで渡す。
+    tool_ctx: セッション文脈ツール（docs/94）。{ツール名: callable(args: dict) -> dict}。
+              endpoint がクロージャ（録音・DBアクセス込み）を提供し、宣言は
+              coach_tools.CONTEXT_TOOL_DECLS から対応するものだけ載せる。
+    facts_sink: ツールが返した結果テキストを積むリスト（呼び出し側が秒数の
+              許可リスト作りに使う。所見の秒数がスクラブで消えないように）。
     返り値: (最終テキスト, このターンにツールが返した実在URLの集合)。
     後者は _scrub_foreign_urls の許可リストに使う（カタログ外だが実在するURLを守る）。
     """
@@ -1063,10 +1002,22 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
             api_key=settings.gemini_api_key,
             http_options=types.HttpOptions(timeout=int(settings.llm_timeout_sec * 1000)),
         )
-        tool = types.Tool(function_declarations=[
+        decls = [
             types.FunctionDeclaration(**coach_tools.FIND_REFERENCE_VIDEO_DECL),
             types.FunctionDeclaration(**coach_tools.SEARCH_ORIGINAL_SONG_DECL),
-        ])
+            types.FunctionDeclaration(**coach_tools.SEARCH_PRACTICE_VIDEO_DECL),
+        ]
+        for name in (tool_ctx or {}):
+            decl = coach_tools.CONTEXT_TOOL_DECLS.get(name)
+            if decl:
+                decls.append(types.FunctionDeclaration(**decl))
+        tool = types.Tool(function_declarations=decls)
+        mdl = model or settings.llm_model
+        thinking = _thinking_off(mdl)
+        want = settings.llm_max_tokens
+        if thinking is None:
+            # thinking を切れないモデルでは本文が切れないよう出力枠に下限（docs/92 §2-3・docs/93）
+            want = max(want, _MIN_MAX_TOKENS_WITH_THINKING)
 
         def _config(mode: Optional[str]):
             tool_config = None
@@ -1078,15 +1029,13 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
                     )
                 )
             return types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=settings.llm_max_tokens,
+                system_instruction=system_text or SYSTEM_PROMPT,
+                max_output_tokens=want,
                 temperature=0.3,
                 tools=[tool],
                 tool_config=tool_config,
-                # 思考を無効化。2.5-flash は思考が ON だと出力枠(max_output_tokens)を食い潰して
-                # 本文が途中で切れる（_complete と揃える。docs/66 で対話を 2.5-flash に格上げした際に露呈）。
-                # 3系以降は thinking_budget=0 を受け付けないため指定しない（docs/91）。
-                thinking_config=_thinking_off(model or settings.llm_model),
+                # 思考を無効化＝tb=0 を受理するモデルのみ（_complete と同じ方針。docs/91/92/93）。
+                thinking_config=thinking,
             )
 
         convo = list(contents)
@@ -1097,7 +1046,7 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
             # 初回だけ指定ツールを強制（ANY）。以降は AUTO に戻して自然文を生成させる。
             cfg = _config("ANY") if (force_tool and _i == 0) else _config(None)
             resp = client.models.generate_content(
-                model=model or settings.llm_model, contents=convo, config=cfg,
+                model=mdl, contents=convo, config=cfg,
             )
             calls = list(getattr(resp, "function_calls", None) or [])
             last_text = (resp.text or "").strip() or last_text
@@ -1108,10 +1057,34 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
             convo.append(cand)
             parts = []
             for fc in calls:
-                result = coach_tools.dispatch(fc.name, dict(fc.args or {}))
+                _args = dict(fc.args or {})
+                if tool_ctx and fc.name in tool_ctx:
+                    # セッション文脈ツール（録音を聴く・測り直す・主訴を覚える。docs/94）
+                    try:
+                        result = tool_ctx[fc.name](_args) or {}
+                    except Exception as _e:
+                        logger.warning("文脈ツール %s の実行に失敗: %s", fc.name, _e)
+                        result = {"ok": False, "error": "ツールの実行に失敗した。正直にそう伝える"}
+                else:
+                    result = coach_tools.dispatch(fc.name, _args)
+                if facts_sink is not None:
+                    # ツール所見の秒数・数値を「実測事実」として許可リストに載せられるように積む
+                    try:
+                        facts_sink.append(json.dumps(result, ensure_ascii=False))
+                    except Exception:
+                        pass
                 if result.get("found") and result.get("video_url"):
                     found_video_url = result["video_url"]
                     tool_urls.add(result["video_url"])
+                # 代替練習の実在URL（found=false + alternative・docs/93 §4.4）は
+                # 決定論付与はしないが、モデルが本文で提案した時に消えないよう許可する
+                _alt = result.get("alternative") or {}
+                if isinstance(_alt, dict) and _alt.get("video_url"):
+                    tool_urls.add(_alt["video_url"])
+                # YouTube実検索の結果（search_practice_video・docs/93 §4.6）。実在保証つき
+                for v in result.get("videos") or []:
+                    if v.get("url"):
+                        tool_urls.add(v["url"])
                 for c in result.get("candidates") or []:
                     if c.get("url"):
                         tool_urls.add(c["url"])
@@ -1211,32 +1184,64 @@ def scrub_markdown(text: Optional[str]) -> Optional[str]:
 
 
 def generate_reply(
-    state: dict, user_text: str, history: Optional[list[dict]] = None
+    state: dict, user_text: str, history: Optional[list[dict]] = None,
+    tool_ctx: Optional[dict] = None,
 ) -> Optional[str]:
-    """ユーザーのテキストに対するソラ先生の自然言語返答を生成する。"""
+    """ユーザーのテキストに対するソラ先生の自然言語返答を生成する。
+
+    docs/93/94: 意図理解（承諾/訂正/雑談/依頼）はモデルに任せ、ツールは原則 AUTO。
+    ANY 強制は「明示的な動画依頼の語彙」「原曲曲名の精密パターン」「約束不履行の事後検知」だけ。
+    tool_ctx: セッション文脈ツール（録音を聴く・測り直す・主訴を覚える）のクロージャ群。
+    """
     context = build_session_context(state)
-    contents = _build_contents(state, user_text, history)
-    chat_model = settings.llm_chat_model  # 対話は一段上のモデルに格上げ（docs/66）
+    contents, system_text = _build_contents(state, user_text, history)
+    if tool_ctx:
+        # 文脈ツールが使えるターンは、その使いどころを明示する（docs/94）。
+        # モデルは放っておくと保守側に倒れ、聴けるのに聴かずにヘッジして答える（実測）。
+        system_text += (
+            "\n\n# 耳・計測ツール（このターンで実際に使える）\n"
+            "- ユーザーが『自分の録音』の声区（地声/裏声/ミックス）や裏返り・換声点について"
+            "尋ねたり、判定に異議を述べたら、想像や解析値の推測で答えず、"
+            "まず listen_register で実際に録音を聴いてから答える。\n"
+            "- 『自分の録音』の発音・滑舌の講評を求められたら listen_pronunciation で聴く。"
+            "用語の意味の質問（「母音って何？」）や雑談の自己開示では聴かない。\n"
+            "- 原曲の指定区間と重ね直して再診断してほしいという明確な依頼には"
+            " rediagnose_with_reference を使う。\n"
+            "- ユーザー本人が『ここを直したい』という主訴をはっきり表明したら"
+            " set_lesson_focus で記録してから答える（雑談の話題言及では記録しない）。\n"
+            "録音の中身は、聴かずに断定しない。"
+        )
+    chat_model = settings.llm_chat_model  # 対話は一段上のモデル（docs/93 で 3.5-flash に格上げ）
     tool_urls: set[str] = set()
+    tool_facts: list[str] = []  # ツール所見（秒数の許可リストに使う実測事実）
     # ツール化ON時は function calling 経由（動画等の"事実"は実データをツールで供給）。
     if settings.llm_enabled and settings.coach_tools_enabled:
-        # キーワード（動画・お手本…）だけでなく、直前オファーへの承諾（お願いします/はい/
-        # どれ？）でもツールを強制する（承諾なのにURLが出ない事故の修正。docs/71）。
-        # 原曲の曲名提示（「原曲 ◯◯」や、原曲を尋ねた直後の短い返答）は検索を強制する（docs/72）。
         force: Optional[str] = None
-        if _wants_reference(user_text) or _accepts_video_offer(user_text, history):
+        if _wants_reference(user_text):
             force = "find_reference_video"
         elif _names_song_title(user_text, history):
             force = "search_original_song"
-        reply, tool_urls = _complete_with_tools(contents, force_tool=force, model=chat_model)
+        reply, tool_urls = _complete_with_tools(
+            contents, force_tool=force, model=chat_model, system_text=system_text,
+            tool_ctx=tool_ctx, facts_sink=tool_facts)
+        # URL到達保証（docs/93 §4.3）: 「お出しします」と約束したのにURLが無く、
+        # ツールも動画を返していない時だけ、1回だけツール強制で再生成する。
+        if force is None and reply and _needs_video_delivery_retry(reply, tool_urls):
+            retry, retry_urls = _complete_with_tools(
+                contents, force_tool="find_reference_video",
+                model=chat_model, system_text=system_text,
+                tool_ctx=tool_ctx, facts_sink=tool_facts)
+            if retry:
+                reply, tool_urls = retry, retry_urls
     else:
-        reply = _complete(contents, model=chat_model)
+        reply = _complete(contents, model=chat_model, system_text=system_text)
     if not reply and settings.llm_enabled:
         # 一過性の失敗（タイムアウト/過負荷）で定型に落ちないよう、1回だけ再試行する（ツール無し）。
-        reply = _complete(contents, model=chat_model)
+        reply = _complete(contents, model=chat_model, system_text=system_text)
     if reply:
-        # facts / 状況 / ユーザー発言 に無い秒数は伏せる（捏造防止の最終ガード）
-        reply = _scrub_invented_seconds(reply, _allowed_seconds(context, user_text))
+        # facts / 状況 / ユーザー発言 / ツール所見 に無い秒数は伏せる（捏造防止の最終ガード）
+        reply = _scrub_invented_seconds(
+            reply, _allowed_seconds(context, user_text, *tool_facts))
         # チャット返信はカードを伴わないので、カードを出す約束文を消す
         reply = scrub_card_promise(reply)
         # 素テキスト描画なので Markdown 記法を落とす（docs/42 §2）
