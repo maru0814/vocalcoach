@@ -146,6 +146,16 @@ class Settings(BaseSettings):
     # 分析ターン1回の概算コスト(JPY)。flash 実測 ≒¥0.5/回（音声込み総~3.3kトークン）に対し
     # 安全側に ¥1.5 を既定とする。pro に上げる時はこの値も上げること（env）。
     llm_analysis_est_jpy_per_call: float = 1.5
+    # --- 聴いてから答えるフロー: ブラインド聴取（第1段・docs/95 FR-01, docs/97）---
+    # 講評の前に、会話文脈を渡さず録音だけで「何をしている録音か」を判定する。
+    # アンカリング（宿題をやった前提の作話）対策。OFFで従来の1段フローに戻る。
+    enable_blind_listen: bool = True
+    # 判定は4行の定型出力のみなので出力枠は小さくてよい。
+    blind_listen_max_tokens: int = 256
+    # 第1段は軽量（thinking無し）。失敗時は待たずに講評へ進むため短め。
+    blind_listen_timeout_sec: float = 30.0
+    # ブラインド1回の概算コスト(JPY)。入力は講評と同じ音声だが出力・thinkingが小さい。
+    blind_listen_est_jpy_per_call: float = 0.5
     # 月次コスト台帳の保存先（コンテナの永続volume配下を想定）。
     llm_cost_ledger_path: str = "uploads/llm_cost_ledger.json"
     # 上限に達したら通知するWebhook URL（任意）。LINE/Slack/Discord等の受け口を指定。
