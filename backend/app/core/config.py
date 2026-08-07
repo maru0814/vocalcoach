@@ -59,12 +59,20 @@ class Settings(BaseSettings):
     # ⚠️ 本番では LLM_MODEL だけが env 上書きされていたため、この項目（上書き無し＝コード既定）が
     #    死んだモデルを指し、generate_reply / generate_coach_comment が 404 で落ちていた。docs/92 §0。
     llm_chat_model: str = "gemini-3.5-flash-lite"
-    # 発音の聞き取り（音声入力）用。
-    # 既定 gemini-3.5-flash: 正解付き録音（運用者本人が地声のみ/裏声のみ/ミックスのつもりで
-    #   歌い分けた3本・各6回）での実測で、地声5/6・裏声5/6と唯一まともに聞き分けた
-    #   （gemini-2.5-flash は地声を6回全部「裏声」と誤答＝総合2/18。docs/92 §5.6）。
-    #   トレードオフ: 応答が約3秒→7〜12秒（「考えています」ドット表示あり・運用者了承済み）。
-    #   ミックスの検出は全モデル苦手（0/6）。3.5-flash は両方の特徴を正直に描写する。
+    # 音声入力（声区の説明・発音の聞き取り）用。
+    # 既定 gemini-2.5-flash（2026-08-08 に 3.5-flash から差し戻し。docs/92 §5.10）:
+    #   §5.6 では「単一ラベルで声区を当てられるか」で 3.5-flash を選んだが、その問い自体が
+    #   機構的に無効だった（§5.7: ミックスは筋活動の協調で、1つの音からは判定できない）。
+    #   段差判定を DSP に移した（§5.9）ことでモデルの仕事は
+    #   「実測の判定に従って音色を描写し、向きに合う練習を1つ添える」に変わり、
+    #   もはや声区を聞き分ける能力を要求しない。実測（正解付きサイレン2本・各13回）:
+    #     gemini-2.5-flash      25/26  応答 3.1s（最大 4.8s）  ← 採用
+    #     gemini-3.1-flash-lite 25/26  応答 2.6s（最大 3.9s）  ← 速いが lite で発音FBの品質が未検証
+    #     gemini-3.5-flash      10/10  応答 2.1s だが**最大 21〜49s**（尾が重く体感を壊す）
+    #     gemini-3.6-flash      10/10  応答 7.5s
+    #   2.5-flash は応答が安定して速く（尾が 4.8s）、発音FB（analyze_pronunciation）でも
+    #   長年の本番実績がある既知の品質。速度を最優先するなら 3.1-flash-lite が候補だが、
+    #   発音の聞き取り品質は未計測なので既定にはしない。
     # ⚠️ モデルIDは意図的に「バージョン固定」。`gemini-flash-latest` 等のエイリアスは使わない。
     #    理由: エイリアスは予告なく指す実体が変わり、その時に呼び出しパラメータの互換性まで壊れる。
     #    実測 2026-08-05: `gemini-flash-lite-latest` / `gemini-flash-latest` は既に Gemini 3 系を
@@ -77,7 +85,7 @@ class Settings(BaseSettings):
     # 緊急時: docker/.env に LLM_AUDIO_MODEL=<生きているID> を置いて再起動すれば載せ替わる
     #    （再デプロイ不要。compose 側の受け渡しは docker-compose.prod.yml に定義済み）。
     #    Gemini 3 系は thinking を切れないため、下の 2 設定がコード側で自動的に安全値へ寄る。
-    llm_audio_model: str = "gemini-3.5-flash"
+    llm_audio_model: str = "gemini-2.5-flash"
     # 音声入力時の thinking 予算。0＝無効（2.5 系のみ可）。Gemini 3 系に載せ替えると
     # コード側（llm._safe_thinking_budget）が自動で最小値まで引き上げる。
     llm_audio_thinking_budget: int = 0
