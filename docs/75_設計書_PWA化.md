@@ -155,7 +155,13 @@ sequenceDiagram
 - オフライン: 解析APIはキャッシュせず、SCR-04でネット必須を明示（AC-04）。
 
 ## 8. 性能・可用性考慮
-- SWのアプリシェルキャッシュで初回以降の表示高速化。runtime cacheは静的アセット=CacheFirst、ナビゲーション=NetworkFirst（フォールバックでシェル）。
+- SWのアプリシェルキャッシュで初回以降の表示高速化。runtime cacheは不変アセット=CacheFirst、ナビゲーション=NetworkFirst（フォールバックでシェル）。
+- **キャッシュ戦略の改訂（2026-08-08、キャッシュ名 `sora-shell-v2`）**: 初版（v1）は同一オリジンGET全部をCacheFirstにしており、(a) App RouterのRSCペイロード（`?_rsc=`）が固定されデプロイ後もアプリ内遷移で旧UIが出続ける、(b) devの安定名チャンクが固定され開発中の変更が反映されない欠陥があった。改訂後:
+  - RSCフェッチ（`_rsc` クエリ or `RSC: 1` ヘッダ）はSWが関与せず素通し（常にネットワーク）。
+  - CacheFirstは「URLが変われば中身も変わる」不変パス（`/_next/static/`・`/icons/`）に限定。
+  - navigateのキャッシュ保存は `res.ok` のみ（エラーページをシェルとして残さない）。
+  - SW登録は本番ビルドのみ。devでは既存登録を解除し `sora-shell*` キャッシュを削除（自己修復）。
+  - 更新検知: タブ復帰時に `registration.update()`、新SW有効化時は `controllerchange` で1回だけ自動リロード（初回インストールの `clients.claim()` では発火させない）。
 - 配信は1日1バッチ・低volume。購読数が数百規模まではVPSで無問題。増えたら送信をチャンク＋並列度制御。
 - 常駐プロセス増設なし＝可用性面の運用負荷を増やさない。
 

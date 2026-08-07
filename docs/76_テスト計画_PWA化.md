@@ -52,6 +52,11 @@ FR-01 manifest / FR-02 インストール導線 / FR-03 Service Worker / FR-04 W
 | TC-18 | 冪等 | 同一endpoint | `/push/subscribe` を2回 | 行が増えず1行のまま（endpoint一意でupsert）。※test_push_reminders で自動確認済 | FR-04 |
 | TC-19 | デグレなし | Push非対応ブラウザ | 全機能を操作 | 録音・解析・FB・課金など既存機能が従来どおり動く。通知トグルは非表示 | AC-08 |
 | TC-20 | 回帰 | 既存Web版 | 録音→FB表示、声診断、課金導線 | PWA導入で既存FB品質・スコアに変化なし（docs/42不変） | 回帰 |
+| TC-21 | 更新配信(RSC) | SW有効・訪問済み | アプリ内リンクでページ遷移（フルリロードなし）→ DevTools > Application > Cache Storage を確認 | `sora-shell-v2` に `_rsc` クエリ付きエントリが存在しない（RSCペイロードは常にネットワーク） | docs/75§8, Bug-2026-08-08 |
+| TC-22 | 更新配信(デプロイ) | 旧バージョン閲覧中のタブ | 新バージョンをデプロイ → タブを再表示 or リロード | SW更新→`controllerchange`で1回だけ自動リロードされ新UIが表示される。リロードループしない | docs/75§8 |
+| TC-23 | キャッシュ掃除 | 旧 `sora-shell-v1` が残存 | 新SW有効化後に Cache Storage を確認 | `sora-shell-v2` のみ残り、v1 は削除されている | docs/75§8 |
+| TC-24 | dev無効化 | `next dev` でSW登録済みの開発環境 | ページを開く | SW登録が解除され `sora-shell*` キャッシュが削除される。コード変更が即時反映される | Bug-2026-08-08 |
+| TC-25 | 異常系 | サーバーが500/404を返すページ | 該当ページへ遷移後、Cache Storage を確認 | エラーページはキャッシュされない（`res.ok` のみ保存） | docs/75§8 |
 
 ## 7. 合格基準
 - AC-01〜AC-08 に対応する TC が全て Pass。
