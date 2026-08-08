@@ -52,13 +52,17 @@ class Settings(BaseSettings):
     #    本番キーで実測（2026-08-06・履歴4ターン・N=5）: 3.5-flash-lite 1.1s / STOP 5-5。
     #    従来の実効値 gemini-flash-lite-latest（1.0s）との差は +0.1秒。
     llm_model: str = "gemini-3.5-flash-lite"
-    # 対話ターン（会話返答・コーチコメント）専用モデル（docs/66）。
-    # 既定は llm_model（flash-lite）と同じ。格上げ（gemini-2.5-flash）は before/after 測定の結果、
-    # カジュアル/感情は改善したが「多ターンの噛み合い」が悪化＋コスト3倍のため既定では採らない
-    # （丸山CEO判断 2026-07-12: 会話モードのプロンプト側だけ採用）。必要なら env で 2.5-flash に格上げ可。
+    # 対話ターン（会話返答・コーチコメント）専用モデル（docs/66 → docs/93 で格上げ）。
+    # 既定 gemini-3.5-flash（バージョン固定）: 会話レイヤー刷新（docs/93・2026-08-07 運用者決定
+    # 「予算より会話品質」）に伴い flash-lite から格上げ。docs/66 の「2.5-flash 格上げは多ターン悪化」
+    # 測定は正規表現ゲート併存時のもので、ゲート撤去（docs/93）とセットで初めて意味を持つ。
+    # thinking_budget=0 を受理することは実測済み（docs/92 §2-2）＝出力枠と応答速度を守れる。
+    # 旧既定へ戻す時は env LLM_CHAT_MODEL=gemini-3.5-flash-lite（再デプロイ不要）。
     # ⚠️ 本番では LLM_MODEL だけが env 上書きされていたため、この項目（上書き無し＝コード既定）が
     #    死んだモデルを指し、generate_reply / generate_coach_comment が 404 で落ちていた。docs/92 §0。
-    llm_chat_model: str = "gemini-3.5-flash-lite"
+    # 注意: 音声入力での 3.5-flash は応答の尾が重い実測あり（下記 §5.10 表・最大21〜49s）。
+    # テキスト会話は実測 1.6〜5.3s（docs/93 スモーク）だが、本番投入後に尾の監視を続けること。
+    llm_chat_model: str = "gemini-3.5-flash"
     # 音声入力（声区の説明・発音の聞き取り）用。
     # 既定 gemini-2.5-flash（2026-08-08 に 3.5-flash から差し戻し。docs/92 §5.10）:
     #   §5.6 では「単一ラベルで声区を当てられるか」で 3.5-flash を選んだが、その問い自体が
@@ -114,8 +118,9 @@ class Settings(BaseSettings):
     # --- ソラ先生ツール化（docs/44）。ONでチャット返答を function calling 経由にし、
     # 動画リンク等の"事実"はカタログの実データだけをツールで供給する（捏造防止＋自然会話）。
     coach_tools_enabled: bool = True
-    # ツール往復の最大回数（暴走・レイテンシ防止）
-    coach_tool_loop_max: int = 2
+    # ツール往復の最大回数（暴走・レイテンシ防止）。AUTO化（docs/93）で
+    # 「呼ぶ→結果を見て言い直す」が1往復増えるケースに備え 2→3。
+    coach_tool_loop_max: int = 3
 
     # --- ゼロベース個人最適FB（docs/43, docs/52）。CEO決定によりON（既定有効）。 ---
     # 録音FBを「カタログ選択」から「証拠＋生音声を聴いて推論生成」へ切替える経路の有効化。

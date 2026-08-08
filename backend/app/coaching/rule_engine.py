@@ -35,16 +35,17 @@ PHASE_A, PHASE_B, PHASE_C, PHASE_D, PHASE_E, DONE = "A", "B", "C", "D", "E", "do
 LESSON = "practice"
 
 YOUTUBE_RE = re.compile(r"https?://[^\s]*(?:youtube\.com|youtu\.be)[^\s]*")
-RANGE_RE = re.compile(r"(\d{1,2}:\d{2}|\d+(?:\.\d+)?)\s*[-–~〜]\s*(\d{1,2}:\d{2}|\d+(?:\.\d+)?)")
-FOCUS_KEYWORDS = {
-    "throat_tension": ["力み", "詰ま", "喉", "こもる"],
-    "long_tone_decay": ["ロングトーン", "伸ば", "息", "支え", "ブレス"],
-    "mixed_voice": ["ミックス", "換声", "裏返", "高音"],
-    "pitch_wobble": ["音程", "ピッチ", "音痴"],
-    "no_vibrato": ["ビブラート", "ゆらし"],
-    "rhythm_lag": ["リズム", "走り", "もたり", "拍"],
-    "expression_flat": ["表現", "強弱", "抑揚", "平ら", "平坦"],
-}
+# 区間として拾うのは「誤読しようがない形式」だけ（docs/94）:
+#   時刻形式 1:05〜1:20 ／ 秒明示 30〜45秒。
+# 裸の数字レンジ（90〜95）は拾わない。「昨日カラオケで90〜95点出た！」が
+# 原曲の比較区間として黙って取り込まれ、以降のFBが的外れになる事故が実証されたため。
+RANGE_RE = re.compile(
+    r"(\d{1,2}:\d{2})\s*[-–~〜]\s*(\d{1,2}:\d{2})"
+    r"|(\d+(?:\.\d+)?)\s*[-–~〜]\s*(\d+(?:\.\d+)?)\s*秒"
+)
+# 主訴（focus_task）のキーワード抽出（旧 FOCUS_KEYWORDS）は docs/94 で撤去した。
+# 否定・得意分野の言及・ただの質問（「息継ぎのコツは？」）まで主訴として記録し、
+# 以降の診断を歪めていた。主訴の記録はモデルの文脈判断（set_lesson_focus ツール）が行う。
 
 # 「次にやること」チップ（ユーザー主導フロー）
 ACTION_DEFS = {
@@ -120,12 +121,16 @@ def initial_messages(opener: Optional[dict] = None) -> list[dict]:
 
 
 def parse_phase_a(text: str, state: dict) -> dict:
-    """Phase A のテキストから url / range / focus を抽出して state に反映。"""
+    """テキストから url / range を抽出して state に反映する（誤読しようがない形式のみ）。
+
+    docs/94: ここで拾うのは決定論で安全な「形式」だけ（URL・時刻形式の区間・秒明示の区間）。
+    主訴（focus_task）のような「意図」の抽出はモデル（set_lesson_focus ツール）の仕事。
+    """
     updates = {}
     m = YOUTUBE_RE.search(text)
     if m:
         updates["song_ref_url"] = m.group(0)
-    all_ranges = [m.group(0).replace(" ", "") for m in RANGE_RE.finditer(text)]
+    all_ranges = [m.group(0).replace(" ", "").removesuffix("秒") for m in RANGE_RE.finditer(text)]
     if len(all_ranges) >= 2:
         # 2つ指定: 1つ目=自分の録音区間、2つ目=原曲区間
         updates["user_range"] = all_ranges[0]
@@ -134,10 +139,6 @@ def parse_phase_a(text: str, state: dict) -> dict:
         # 1つだけ=原曲のどこを歌ったか。自分の録音は全体を解析する。
         updates["ref_range"] = all_ranges[0]
         updates["user_range"] = None
-    for task_id, kws in FOCUS_KEYWORDS.items():
-        if any(k in text for k in kws):
-            updates["focus_task"] = task_id
-            break
     return updates
 
 
@@ -179,31 +180,39 @@ def confirmed_song_url(text: str, history: Optional[list[dict]]) -> Optional[str
     return next(iter(urls))
 
 
-def _chat_reply(state: dict, text: str, history: Optional[list[dict]]) -> str:
+def _chat_reply(state: dict, text: str, history: Optional[list[dict]],
+                tool_ctx: Optional[dict] = None) -> str:
     """自由テキストへの返答は、必ず LLM（ソラ先生）の自然言語で生成する。
 
     ルールベースの定型Q&A・はぐらかし定型は使わない。LLMが使えない/失敗したときは、
     それっぽい偽の回答で取り繕わず、正直に短く返す（録音を促す的外れ定型にも落とさない）。
+    tool_ctx: セッション文脈ツール（録音を聴く・測り直す・主訴を覚える。docs/94）。
     """
-    reply = llm.generate_reply(state, text, history)
+    reply = llm.generate_reply(state, text, history, tool_ctx=tool_ctx)
     if reply:
         return reply
     return "ごめんなさい、いまうまく言葉が出せませんでした🙏 もう一度、聞きたいことを送ってもらえますか？"
 
 
 def handle_text(
-    state: dict, text: str, history: Optional[list[dict]] = None
+    state: dict, text: str, history: Optional[list[dict]] = None,
+    tool_ctx: Optional[dict] = None,
 ) -> tuple[list[dict], dict]:
     """テキストメッセージ受信時の応答。state更新を返す。
 
     history: 直近の会話履歴 [{"role": "user"|"assistant", "content": str}]（古い→新しい）。
              LLM に文脈として渡す。None でもルールベースで動作する。
+    tool_ctx: セッション文脈ツール（docs/94）。endpoint が提供するクロージャ群。
+
+    docs/94: URL・区間の「取り込み」（形式が一意＝決定論で安全）は行うが、
+    返答そのものは常にモデルが会話として生成する。旧仕様の
+    「原曲を確認しました😊…」定型即リターンは、URLに添えられた質問を
+    無視して毎回同じ文を返すため廃止した。
     """
-    phase = state.get("phase", PHASE_A)
     out: list[dict] = []
     updates: dict = {}
 
-    # どのフェーズでも、URL/区間/着目点が含まれていれば取り込む
+    # どのフェーズでも、URL/区間が含まれていれば取り込む（誤読しようがない形式のみ）
     u = parse_phase_a(text, state)
     # 原曲候補の確認質問への「はい」なら、候補URLを原曲として確定する（docs/72 FR-03）
     if not u.get("song_ref_url"):
@@ -212,32 +221,11 @@ def handle_text(
             u["song_ref_url"] = conf_url
     updates.update(u)
     merged = {**state, **u}
-
-    if phase == PHASE_A:
-        shown_range = merged.get("ref_range") or merged.get("user_range")
-        if merged.get("song_ref_url"):
-            if shown_range:
-                out.append(coach_msg(
-                    "text",
-                    f"原曲と区間（{shown_range}）を確認しました😊 "
-                    f"では、同じところを歌った録音を送ってくださいね🎤（🎙録音 または 📎アップロード）",
-                ))
-            else:
-                out.append(coach_msg(
-                    "text",
-                    "原曲を確認しました😊 録音を送ってもらえたら、原曲と照らし合わせてアドバイスしますね🎤",
-                ))
-        else:
-            # 質問・つぶやきには、LLM(ソラ先生)が文脈をふまえて自然言語で答える（定型ではぐらかさない）。
-            out.append(coach_msg("text", _chat_reply(merged, text, history)))
-        return out, updates
-
-    # Phase B 以降：原曲が新たに付いたら知らせる。質問には答える。
     if u.get("song_ref_url"):
-        out.append(coach_msg("text", "原曲を受け取りました😊 次の録音から、照らし合わせてアドバイスしますね🎤"))
-        return out, updates
+        # モデルに「受け取った事実」を注入して自然に応答させる（取り込みは完了済み）
+        merged["_song_ref_just_received"] = True
 
-    out.append(coach_msg("text", _chat_reply(merged, text, history)))
+    out.append(coach_msg("text", _chat_reply(merged, text, history, tool_ctx)))
     return out, updates
 
 
@@ -277,50 +265,10 @@ def _append_video_link(text: str, prac: dict) -> str:
     return (text or "").rstrip() + f"\n（参考にこの動画がわかりやすいです → {url}）"
 
 
-PRONUNCIATION_KW = [
-    "発音", "はつおん", "滑舌", "かつぜつ", "母音", "子音", "ディクション",
-    "歌詞の言い", "歌詞の発音", "口の開き", "言葉がはっき", "言葉の明瞭",
-]
-
-
-def is_pronunciation_request(text: str) -> bool:
-    """「発音を見て／原曲と発音を比べて」等の依頼かどうか。"""
-    return any(k in text for k in PRONUNCIATION_KW)
-
-
-_REGISTER_TERMS = ["地声", "じごえ", "裏声", "うらごえ", "ミックス", "声区", "チェスト",
-                   "ファルセット", "ヘッドボイス", "ヘッド", "ミドル", "ミックスボイス"]
-_REGISTER_Q = ["どっち", "どちら", "判断", "聞き分け", "聴き分け", "なのに", "違う", "ちがう",
-               "じゃない", "ですか", "ますか", "？", "?", "出してる", "出した", "合ってる", "正しい"]
-
-
-_REGISTER_DEFN = ["とは", "なんですか", "なんでしょう", "何ですか", "ってなに", "って何",
-                  "教えて", "違いは", "どう違う", "意味", "やり方", "出し方", "コツ", "練習",
-                  # 「〜を強くするには」「鍛えたい」等の技術・上達系も一般会話で答える（録音判定に飛ばさない）
-                  "強く", "鍛え", "習得", "上達", "どうすれ", "どうやって", "するには",
-                  "出すには", "できるよう", "伸ばすには"]
-
-
-def _register_both_terms(t: str) -> bool:
-    """地声と裏声を並べて『どっち?』と聞いている（この録音の声区判定の強い信号）。"""
-    chest = ("地声" in t or "チェスト" in t)
-    head = ("裏声" in t or "ファルセット" in t or "ヘッドボイス" in t)
-    return chest and head
-
-
-def is_register_question(text: str) -> bool:
-    """「ここは地声？裏声？」「裏声なのに地声と判断されてる」等、自分の録音の声区の聞き分け依頼/異議か。
-
-    「ミックスボイスとは？」「裏声の出し方は？」のような一般的な質問は除外する（通常チャットへ）。
-    """
-    t = text or ""
-    if any(k in t for k in _REGISTER_DEFN):   # 一般的な定義/方法/上達の質問は対象外（通常チャットへ）
-        return False
-    if _register_both_terms(t):               # 地声と裏声を並べて「どっち?」＝この録音の声区判定
-        return True
-    if not any(k in t for k in _REGISTER_TERMS):
-        return False
-    return any(k in t for k in _REGISTER_Q)
+# 声区・発音の依頼をキーワードで検出する関数（旧 is_register_question /
+# is_pronunciation_request）は docs/94 で撤去した。「母音って何？」が発音分析へ、
+# 「裏声好きなんですけど変ですか？」が声区判定へ飛ぶ誤爆が実証されたため。
+# 録音を聴くかどうかはモデルの文脈判断（listen_register / listen_pronunciation ツール）。
 
 
 # 「直前の録音を、原曲と（指定区間で）重ねて もう一度 診断/採点して」という再診断の依頼。
@@ -361,8 +309,11 @@ TOPIC_KEYWORDS: list[tuple[str, str]] = [
     ("ロングトーン", "long_tone_decay"), ("伸ば", "long_tone_decay"), ("息の支え", "long_tone_decay"),
     ("喉", "throat_tension"), ("力み", "throat_tension"), ("詰ま", "throat_tension"), ("張り", "throat_tension"),
     ("強弱", "expression_flat"), ("ダイナミ", "expression_flat"), ("表現", "expression_flat"),
-    # 練習名そのもの（コーチが名指しで提案した練習の動画を求められた時の写像。docs/71）。
-    # いずれも写像先の★練習（practices[0]）にその練習の実在動画がある課題を選ぶこと。
+    # 練習名そのもの→課題の写像。ツール経路（tools.find_reference_video・docs/93）は
+    # taxonomy の practice aliases で「練習単位」に直接マッチするため、この表は
+    # tools-off フォールバック（handle_video_request）と課題検出にのみ効く。
+    # 注意: エッジボイス等「対応する実演動画が無い話題」もここにあるが、ツール経路では
+    # found=false + alternative（別練習と明示）で正直に返る（docs/93 §4.4）。
     ("リップロール", "pitch_wobble"), ("ストロー", "breathy_closure"),
     ("あくび", "throat_tension"), ("ハミング", "weak_resonance"),
 ]

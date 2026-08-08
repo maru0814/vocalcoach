@@ -40,109 +40,92 @@ def test_proposed_practices_from_history_assistant_only():
     assert llm.proposed_practices_from_history(history) == ["ストロー発声", "ネイネイ"]
 
 
-def test_injection_line_present_in_contents():
-    """_build_contents の最終ユーザーメッセージに、提案済み練習の事実行が入る。"""
+def test_injection_line_present_in_system_text():
+    """提案済み練習の事実行は system 側テキストに入り、ユーザー発言は素のまま渡る（docs/93）。"""
     state = {"phase": "practice", "last_analysis": {}}
     history = [{"role": "assistant", "content": "ストロー発声をやってみましょう"}]
-    contents = llm._build_contents(state, "さっき別の練習勧めましたよね？", history)
-    final = contents[-1].parts[0].text
-    assert "提案した練習: ストロー発声" in final
-    assert "これ以外の練習を「以前すすめた」ことにしない" in final
+    contents, system_text = llm._build_contents(state, "さっき別の練習勧めましたよね？", history)
+    # docs/94: 「言及」と「提案」を決定論で区別できないため「名前を出した練習」として注入
+    assert "名前を出した練習" in system_text and "ストロー発声" in system_text
+    assert "これ以外の練習を「以前すすめた」ことにしない" in system_text
+    # ユーザー発言は指示書で包まない（会話の連続性をモデルに渡す）
+    assert contents[-1].parts[0].text == "さっき別の練習勧めましたよね？"
 
 
 def test_injection_line_when_no_practice_proposed():
     state = {"phase": "practice", "last_analysis": {}}
-    contents = llm._build_contents(state, "さっきの練習なんでしたっけ？", [])
-    final = contents[-1].parts[0].text
-    assert "まだ練習を提案していない" in final
+    _, system_text = llm._build_contents(state, "さっきの練習なんでしたっけ？", [])
+    assert "まだ練習の名前を出していない" in system_text
 
 
-def test_already_offered_video_detection():
-    assert llm._already_offered_video(
-        [{"role": "assistant", "content": "やってみて。参考になる実演動画を出しましょうか？"}]
-    )
-    # ユーザー発言は数えない
-    assert not llm._already_offered_video(
-        [{"role": "user", "content": "動画出してよ"}]
-    )
-    assert not llm._already_offered_video(
-        [{"role": "assistant", "content": "リップロールをやってみましょう"}]
-    )
-    assert not llm._already_offered_video(None)
+def test_video_offer_regex_detection_is_removed():
+    """オファー済みの正規表現検出（旧docs/65）は docs/94 で撤去済み（復活防止ガード）。
+
+    モデルの言い回しが自由になった今、定型文マッチは言い換えですり抜ける
+    （「お手本の動画もあるので、見たかったら言ってくださいね」を検出できない実証あり）。
+    繰り返し抑制は会話履歴＋SYSTEM_PROMPT の作法に任せる。
+    """
+    for name in ("_already_offered_video", "_video_offer_line", "_VIDEO_OFFER_RE"):
+        assert not hasattr(llm, name), f"{name} は docs/94 で撤去済み。復活させない"
 
 
-def test_video_offer_line_injected_after_prior_offer():
-    state = {"phase": "practice", "last_analysis": {}}
-    history = [
-        {"role": "assistant", "content": "ストロー発声をやってみましょう。参考になる実演動画を出しましょうか？"},
-        {"role": "user", "content": "うーん、で、どれくらいで上達する？"},
-    ]
-    final = llm._build_contents(state, "結局何すればいい？", history)[-1].parts[0].text
-    assert "動画オファーを繰り返さない" in final
+# === 会話レイヤー刷新（docs/93）: 意図理解はモデルへ・状況は system 側へ ===
+
+def test_conversation_mode_gates_are_removed():
+    """正規表現の会話モードゲート（旧docs/66）が撤去されている（docs/93 §2）。
+
+    「12文字未満は相槌」等の決定論が「よろ」「リップロールやん」を雑談と誤断定し、
+    会話が噛み合わなくなった（2026-08-07 スクショ）。復活させないための回帰ガード。
+    """
+    for name in ("_detect_conversation_mode", "_conversation_mode_line",
+                 "_AIZUCHI", "_EMOTION_RE", "_EXPLICIT_REQUEST_RE",
+                 "_VIDEO_ACCEPT_RE", "_VIDEO_DECLINE_RE", "_accepts_video_offer"):
+        assert not hasattr(llm, name), f"{name} は docs/93 で撤去済み。復活させない"
 
 
-def test_no_video_offer_line_when_not_offered():
-    state = {"phase": "practice", "last_analysis": {}}
-    final = llm._build_contents(state, "高い声出したい", [])[-1].parts[0].text
-    assert "動画オファーを繰り返さない" not in final
-
-
-# === 会話モード検出＋対話モデル格上げ（docs/66） ===
-
-def test_conversation_mode_aizuchi():
-    for w in ["うん", "へー", "なるほどね", "そうなんだ", "やった", "ふーん"]:
-        assert llm._detect_conversation_mode(w) == "casual", w
-
-
-def test_conversation_mode_emotion():
-    for w in ["全然上達しなくて落ち込む…もうやめようかな", "本番で緊張して最悪だった", "才能ないですよね"]:
-        assert llm._detect_conversation_mode(w) == "emotion", w
-
-
-def test_conversation_mode_short_smalltalk():
-    assert llm._detect_conversation_mode("こんにちは！") == "casual"
-    assert llm._detect_conversation_mode("いい天気ですね") == "casual"
-
-
-def test_conversation_mode_excludes_explicit_requests():
-    # 短くても明示的なコーチング依頼は会話モードにしない（ちゃんと答える）
-    for w in ["練習教えて", "どうすれば直る？", "高い声出したい", "今の見て"]:
-        assert llm._detect_conversation_mode(w) is None, w
-
-
-def test_conversation_mode_none_for_long_question():
-    assert llm._detect_conversation_mode("改善点を秒数つきで具体的に教えてください") is None
-
-
-def test_conversation_mode_line_injected():
+def test_user_text_is_not_wrapped():
+    """ユーザー発言は指示書ラッパーで包まず素のまま渡す（docs/93 §4.1）。"""
     state = {"phase": "feedback", "last_analysis": {"duration_sec": 25.0}}
-    final = llm._build_contents(state, "うん", [])[-1].parts[0].text
-    assert "会話モード" in final and "1〜2文で自然に短く" in final
-    # 感情はさらに共感の指示
-    final_e = llm._build_contents(state, "もうやめようかな…落ち込む", [])[-1].parts[0].text
-    assert "まず気持ちに共感" in final_e
+    for text in ["うん", "よろ", "リップロールやん", "改善点を秒数つきで教えて"]:
+        contents, system_text = llm._build_contents(state, text, [])
+        assert contents[-1].parts[0].text == text
+        assert "# ユーザーの発言" not in system_text
 
 
-def test_conversation_mode_line_absent_for_request():
+def test_system_text_contains_persona_and_context():
+    """system 側に人格（SYSTEM_PROMPT）とレッスン状況（事実）が両方入る。"""
     state = {"phase": "feedback", "last_analysis": {"duration_sec": 25.0}}
-    final = llm._build_contents(state, "改善点を秒数つきで教えて", [])[-1].parts[0].text
-    assert "会話モード" not in final
+    _, system_text = llm._build_contents(state, "高い声出したい", [])
+    assert "ソラ先生" in system_text
+    assert "# 現在のレッスン状況" in system_text
+    assert "録音なしのテキスト会話" in system_text
 
 
-def test_chat_model_configurable():
+def test_chat_model_is_pinned_upgrade():
     from app.core.config import settings
-    # 対話モデルは設定として存在し env で差し替え可能（既定は flash-lite。2.5-flash 格上げは
-    # 多ターン悪化＋コスト増のため既定では採らない・docs/66）。
-    assert settings.llm_chat_model
+    # docs/93: 会話は gemini-3.5-flash（バージョン固定・エイリアス禁止）。
+    assert settings.llm_chat_model == "gemini-3.5-flash"
+    assert "latest" not in settings.llm_chat_model
 
 
-def test_complete_accepts_model_param():
+def test_complete_accepts_model_and_system_params():
     import inspect
-    assert "model" in inspect.signature(llm._complete).parameters
-    assert "model" in inspect.signature(llm._complete_with_tools).parameters
+    for fn in (llm._complete, llm._complete_with_tools):
+        params = inspect.signature(fn).parameters
+        assert "model" in params
+        assert "system_text" in params
 
 
-def test_conversation_mode_excludes_feedback_questions():
-    # 「今の歌どうでしたか」等の評価質問は会話モードにせず、ちゃんとFBする
-    for w in ["今の歌、どうでしたか？", "今の、良かった？", "どこが良かった？", "何点だった？"]:
-        assert llm._detect_conversation_mode(w) is None, w
+def test_video_delivery_retry_detection():
+    """「お出しします」と約束したのにURLが無い返答だけがリトライ対象（docs/93 §4.3）。"""
+    promise_no_url = "いいですよ！リップロールの動画をお出ししますね。"
+    assert llm._needs_video_delivery_retry(promise_no_url, set())
+    # URLが本文にあれば不要
+    with_url = "こちらが動画です → https://www.youtube.com/watch?v=TakKKIdIGgQ"
+    assert not llm._needs_video_delivery_retry(with_url, set())
+    # ツールが実URLを返していれば不要（本文には決定論で付与される）
+    assert not llm._needs_video_delivery_retry(
+        promise_no_url, {"https://www.youtube.com/watch?v=TakKKIdIGgQ"})
+    # 約束していない普通の返答は対象外
+    assert not llm._needs_video_delivery_retry("いいね、その調子！", set())
+    assert not llm._needs_video_delivery_retry("", set())

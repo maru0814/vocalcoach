@@ -163,22 +163,18 @@ class TextReplyPromptFraming(unittest.TestCase):
     LLM自体は叩かず、Gemini へ渡す contents の組み立てだけを検証する（hermetic）。
     """
 
-    def _last_text(self, contents):
-        return contents[-1].parts[0].text
-
     def test_followup_turn_marked_not_new_recording(self):
         # 録音解析済み(last_analysis あり)の状態でテキスト質問が来た場面。
+        # docs/93: 「新しい録音ではない」の明示は system 側テキストに移った。
         st = _state(phase="practice", current_task="pitch_wobble",
                     last_analysis=ANALYSIS_ISSUE, baseline_analysis=ANALYSIS_ISSUE)
-        contents = llm._build_contents(st, "具体的にどう練習すればいいの？", [])
-        last = self._last_text(contents)
-        # 今回は新しい録音が来ていない、と明示している
-        self.assertIn("新しく届いた録音ではない", last)
+        contents, system_text = llm._build_contents(st, "具体的にどう練習すればいいの？", [])
+        self.assertIn("録音なしのテキスト会話", system_text)
+        self.assertIn("過去に送られた録音の再掲", system_text)
         # 講評の書き出しで始めない、という指示が入っている
-        self.assertIn("録音を送ってくれてありがとう", last)
-        self.assertIn("始めないこと", last)
-        # ユーザーの発言はちゃんと載っている
-        self.assertIn("具体的にどう練習すればいいの？", last)
+        self.assertIn("解析したかのような書き出し", system_text)
+        # ユーザーの発言は素のまま最終ターンに載っている（ラッパーで包まない）
+        self.assertEqual(contents[-1].parts[0].text, "具体的にどう練習すればいいの？")
 
     def test_history_preserved_before_question(self):
         st = _state(phase="practice", current_task="pitch_wobble",
@@ -187,7 +183,7 @@ class TextReplyPromptFraming(unittest.TestCase):
             {"role": "user", "content": "ボーカルフライって何ですか？"},
             {"role": "assistant", "content": "ガラガラ声を作る練習です。"},
         ]
-        contents = llm._build_contents(st, "次はどうする？", history)
+        contents, _ = llm._build_contents(st, "次はどうする？", history)
         # 履歴が会話ターンとして渡る（user 始まりが保証される）
         joined = "\n".join(c.parts[0].text for c in contents)
         self.assertIn("ボーカルフライって何ですか？", joined)
@@ -227,18 +223,40 @@ class VideoTopicRouting(unittest.TestCase):
 class CoachToolsAndScrub(unittest.TestCase):
     """ソラ先生ツール化（docs/44）の決定論部分の契約（LLM非依存）。"""
 
-    def test_find_reference_video_maps_edge_to_closure(self):
+    def test_find_reference_video_edge_voice_is_honest(self):
+        """エッジボイスの実演動画はカタログに無い → found=false ＋ 代替を別練習と明示（docs/93 §4.4）。
+
+        旧実装は found=true で別練習（ストロー/リップロール）の動画を返し、
+        「エッジボイスの実演」としてリップロール動画が提示される事故を起こした
+        （2026-08-07 スクショ「リップロールやん」）。
+        """
         from app.coaching import tools
         for topic in ["エッジボイス", "ボーカルフライ", "声帯の閉じ"]:
             r = tools.find_reference_video(topic)
-            self.assertTrue(r["found"], topic)
-            self.assertIn("声帯の閉じ", r["task_label"])
-            self.assertTrue(r["video_url"].startswith("http"))
-            self.assertIn(r["video_url"], tools.CATALOG_VIDEO_URLS)
+            self.assertFalse(r["found"], topic)
+            alt = r.get("alternative")
+            self.assertIsNotNone(alt, topic)
+            self.assertIn("声帯の閉じ", alt["task_label"])
+            self.assertTrue(alt["video_url"].startswith("http"))
+            self.assertIn(alt["video_url"], tools.CATALOG_VIDEO_URLS)
+            # 代替はエッジボイスと偽らない（練習名が返り、noteで「無い」と明示）
+            self.assertNotIn("エッジ", alt["practice_name"])
+            self.assertIn("実演動画はカタログに無い", r.get("note", ""))
+
+    def test_find_reference_video_practice_match_is_exact(self):
+        """練習単位マッチ（found=true）は、その練習そのものの動画が返る。"""
+        from app.coaching import tools
+        r = tools.find_reference_video("リップロール")
+        self.assertTrue(r["found"])
+        self.assertEqual(r.get("match"), "practice")
+        self.assertIn("リップロール", r["practice_name"])
+        self.assertIn("リップロール", r["video_title"])
 
     def test_find_reference_video_unmapped_is_found_false(self):
         from app.coaching import tools
-        self.assertEqual(tools.find_reference_video("宇宙人の言語xyz"), {"found": False})
+        r = tools.find_reference_video("宇宙人の言語xyz")
+        self.assertFalse(r["found"])
+        self.assertIsNone(r.get("alternative"))
 
     def test_scrub_foreign_urls_keeps_catalog_removes_fake(self):
         from app.coaching import tools
@@ -249,58 +267,48 @@ class CoachToolsAndScrub(unittest.TestCase):
         self.assertNotIn("FAKE99999", out)
 
     def test_wants_reference_detection(self):
-        # 参考例を求める言い回しは True
-        for t in ["良いお手本ない？", "良い例ある？", "参考になる動画は？", "見本が欲しい"]:
+        # 動画・お手本を明示的に指す語だけ強制（docs/94 で絞り込み）
+        for t in ["良いお手本ない？", "参考になる動画は？", "見本が欲しい", "実演見せて"]:
             self.assertTrue(llm._wants_reference(t), t)
-        # 普通の質問・原曲URLは False
-        for t in ["具体的にどう練習すればいいの？", "https://youtu.be/abc これが原曲です"]:
+        # 普通の質問・原曲URL・曖昧語（参考/聞きたい/良い例）は強制しない
+        # （モデルの AUTO 判断＋約束不履行の事後検知に任せる）
+        for t in ["具体的にどう練習すればいいの？", "https://youtu.be/abc これが原曲です",
+                  "参考までに、腹式呼吸って必要？", "ちょっと聞きたいんだけど毎日何分練習すべき？",
+                  "良い例ある？"]:
             self.assertFalse(llm._wants_reference(t), t)
 
 
-class VideoOfferAcceptance(unittest.TestCase):
-    """動画オファーを承諾したのにURLが一度も出ない事故（docs/71）の回帰ガード。
+class VideoDeliveryGuarantee(unittest.TestCase):
+    """動画URLの到達保証（docs/93 §4.3。旧docs/71 の承諾正規表現を置換）。
 
-    「実演動画を出しましょうか？」→「お願いします」がキーワード判定
-    （_wants_reference）に引っかからず、ツールが強制されなかった。
+    承諾かどうかの理解はモデルの仕事。コードは「約束したのにURLが無い」という
+    結果だけを事後検知し、generate_reply が1回だけツール強制で再生成する。
     """
 
-    OFFER = [
-        {"role": "user", "content": "喉の力みを直したい"},
-        {"role": "assistant",
-         "content": "リップロールから始めましょう。参考になる実演動画を出しましょうか？"},
-    ]
-    BROKEN_PROMISE = [
-        {"role": "user", "content": "お願いします"},
-        {"role": "assistant",
-         "content": "それでは、こちらが参考になるリップロールの練習動画です。"},
-    ]
+    def test_promise_without_url_triggers_retry(self):
+        for reply in ["いいですよ、リップロールの動画をお出ししますね。",
+                      "それでは、こちらが参考になるリップロールの動画です。"]:
+            self.assertTrue(llm._needs_video_delivery_retry(reply, set()), reply)
 
-    def test_accept_after_offer_forces_tool(self):
-        for t in ["お願いします", "はい", "ぜひ！", "見たいです"]:
-            self.assertTrue(llm._accepts_video_offer(t, self.OFFER), t)
-
-    def test_prompt_after_broken_promise_recovers(self):
-        # URL無しの「こちらが〜動画です」の後の催促でも復帰できる
-        for t in ["どれ？", "リンクないよ", "見えないです"]:
-            self.assertTrue(llm._accepts_video_offer(t, self.BROKEN_PROMISE), t)
-
-    def test_no_offer_decline_or_delivered_do_not_force(self):
-        # オファーが無い会話では強制しない
-        self.assertFalse(llm._accepts_video_offer("お願いします", []))
-        # 辞退は強制しない
-        for t in ["今は大丈夫です", "いらないです", "また今度で"]:
-            self.assertFalse(llm._accepts_video_offer(t, self.OFFER), t)
-        # 直前ターンで実URLを渡せているなら対象外（「どれ？」は別の話題）
-        delivered = [{"role": "assistant",
-                      "content": "こちらです。\n（参考動画 → https://www.youtube.com/watch?v=TakKKIdIGgQ）"}]
-        self.assertFalse(llm._accepts_video_offer("どれ？", delivered))
+    def test_delivered_or_plain_reply_does_not_trigger(self):
+        # 本文に実URLがあれば約束は果たされている
+        delivered = "こちらです。\n（参考動画 → https://www.youtube.com/watch?v=TakKKIdIGgQ）"
+        self.assertFalse(llm._needs_video_delivery_retry(delivered, set()))
+        # ツールがURLを返していれば決定論付与が効くので不要
+        self.assertTrue(llm._needs_video_delivery_retry("動画をお出ししますね。", set()))
+        self.assertFalse(llm._needs_video_delivery_retry(
+            "動画をお出ししますね。", {"https://www.youtube.com/watch?v=TakKKIdIGgQ"}))
+        # 約束の無い普通の会話・オファー（〜出しましょうか？）は対象外
+        for reply in ["いいね、その調子です！", "参考になる実演動画を出しましょうか？", ""]:
+            self.assertFalse(llm._needs_video_delivery_retry(reply, set()), reply)
 
     def test_practice_name_topics_map_to_real_videos(self):
-        # 練習名そのもの（コーチが名指しで提案する語彙）で実在動画が引ける
+        # 練習名そのもの（コーチが名指しで提案する語彙）で実在動画が練習単位で引ける
         from app.coaching import tools
         for topic in ["リップロール", "ストロー", "あくび", "ハミング"]:
             r = tools.find_reference_video(topic)
             self.assertTrue(r.get("found"), topic)
+            self.assertEqual(r.get("match"), "practice", topic)
             self.assertIn(r["video_url"], tools.CATALOG_VIDEO_URLS)
         # 事故になった実会話の話題: リップロールにはリップロールの実演動画が返る
         r = tools.find_reference_video("リップロール")
@@ -366,3 +374,42 @@ class RecordingIntentRouting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class PracticeVideoSearch(unittest.TestCase):
+    """カタログ外はYouTube実検索で探しに行く（docs/93 §4.6）。「無い」で会話を止めない。"""
+
+    def test_search_returns_real_results_under_videos_key(self):
+        from unittest.mock import patch
+        from app.coaching import tools
+        fake = [{"title": "エッジボイスのやり方", "url": "https://www.youtube.com/watch?v=abc123xyz",
+                 "channel": "ボイトレch", "duration_sec": 300}]
+        with patch("app.audio.reference.search_youtube", return_value=fake):
+            r = tools.search_practice_video("エッジボイス やり方")
+        self.assertTrue(r["found"])
+        # 原曲確認アンカーの決定論（candidates キー）と衝突しない
+        self.assertIn("videos", r)
+        self.assertNotIn("candidates", r)
+        self.assertEqual(r["videos"][0]["url"], "https://www.youtube.com/watch?v=abc123xyz")
+
+    def test_search_failure_is_honest_empty(self):
+        from unittest.mock import patch
+        from app.coaching import tools
+        with patch("app.audio.reference.search_youtube", side_effect=RuntimeError):
+            r = tools.search_practice_video("エッジボイス")
+        self.assertEqual(r, {"found": False, "videos": []})
+        self.assertEqual(tools.search_practice_video(""), {"found": False, "videos": []})
+
+    def test_dispatch_routes_search_practice_video(self):
+        from unittest.mock import patch
+        from app.coaching import tools
+        with patch("app.audio.reference.search_youtube", return_value=[]) as m:
+            tools.dispatch("search_practice_video", {"query": "リップロール やり方"})
+        m.assert_called_once()
+
+    def test_declaration_is_wired_and_honest(self):
+        from app.coaching import tools
+        d = tools.SEARCH_PRACTICE_VIDEO_DECL
+        self.assertEqual(d["name"], "search_practice_video")
+        self.assertIn("質は保証できない", d["description"])
+        self.assertIn("でっち上げず", d["description"])
