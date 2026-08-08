@@ -991,11 +991,15 @@ def send_audio(
     if settings.enable_zero_base_fb and settings.llm_enabled:
         from app.core import llm_budget
         from app.services import billing_service
-        _est = settings.llm_analysis_est_jpy_per_call
+        # ブラインド聴取（docs/95 FR-01, docs/97）の分も含めて予算判定・原価記録する。
+        _blind_planned = settings.enable_blind_listen
+        _est = settings.llm_analysis_est_jpy_per_call + (
+            settings.blind_listen_est_jpy_per_call if _blind_planned else 0.0
+        )
         # 有料ユーザーは上限の対象外（無料枠が予算を食っても課金者を格下げしない）。docs/52 FR-02
         _premium = settings.billing_enabled and billing_service.is_premium(db, user.id)
         if llm_budget.zero_base_allowed(_premium, _est):
-            # 意図文脈（docs/52 FR-04）: モデル自身が「曲か・勧めた基礎練の実演か」を聴いて判定する。
+            # 意図文脈（docs/52 FR-04）: モデル自身が「曲か・発声練習の実演か」を聴いて判定する。
             _ictx: dict = {"kind_hint": kind}
             _task = rule_engine.get_task(s.current_task) if s.current_task else None
             if _task:
@@ -1004,6 +1008,15 @@ def send_audio(
             try:
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
+                # 第1段: 会話文脈なしで録音だけを聴く（失敗は None＝従来フローに退化。AC-04）
+                if _blind_planned:
+                    try:
+                        _blind = llm.listen_blind(_uw)
+                    except Exception:
+                        _blind = None
+                    if _blind:
+                        _ictx["blind"] = _blind
+                # 第2段: ブラインド判定・申告を聴取事実として注入した上で講評
                 zero_base_reply = llm.generate_feedback(
                     _session_state(s), user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx,
                     user_comment=user_comment,

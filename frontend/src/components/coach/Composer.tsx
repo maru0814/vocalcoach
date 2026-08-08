@@ -170,7 +170,7 @@ export function Composer({ disabled, onSendText, onSendAudio }: Props) {
             }
           }}
           rows={1}
-          placeholder={`質問や一言を書いてから録音・アップロードするとコメント付きで送れます（${isMac ? "⌘+Enter" : "Shift+Enter"}で文章のみ送信）`}
+          placeholder={`質問や「サイレンやってみた」のような一言を添えて録音・アップロードすると、そこから聴きます（${isMac ? "⌘+Enter" : "Shift+Enter"}で文章のみ送信）`}
           disabled={disabled}
           className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:shadow-glow disabled:opacity-40"
         />

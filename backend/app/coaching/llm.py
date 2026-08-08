@@ -269,6 +269,79 @@ def _split_intent_tag(text: str) -> tuple[Optional[str], str]:
     return m.group(1).lower(), (text or "")[m.end():]
 
 
+_BLIND_KIND_RE = re.compile(r"KIND:\s*(song|practice)", re.IGNORECASE)
+_BLIND_PRACTICE_RE = re.compile(r"PRACTICE:\s*(.+)")
+_BLIND_CONF_RE = re.compile(r"CONFIDENCE:\s*(high|mid|low)", re.IGNORECASE)
+_BLIND_DESC_RE = re.compile(r"DESC:\s*(.+)")
+
+
+def listen_blind(user_wav: bytes) -> Optional[dict]:
+    """録音だけを先入観なしに聴いて「何をしている録音か」を判定する（docs/95 FR-01, docs/97）。
+
+    アンカリング排除の核: 会話文脈（宿題名・課題・履歴・コメント）を一切受け取らない。
+    引数が録音バイト列のみであること自体が AC-01 の構造的担保。
+    戻り: {"kind": "song"|"practice", "practice": str|None, "confidence": str|None,
+    "desc": str|None} / 失敗・パース不能・無効化時は None（講評はブラインド無しで続行＝AC-04）。
+    """
+    if not settings.llm_enabled or not settings.enable_blind_listen:
+        return None
+    if not user_wav or not settings.gemini_api_key:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception:  # pragma: no cover - SDK 未導入
+        return None
+    menu = "、".join(PRACTICE_KEYWORDS + ("ロングトーン", "スケール", "ボーカルフライ"))
+    prompt = (
+        "この音声はボイストレーニングアプリに送られた録音です。先入観なしに聴いて、"
+        "何をしている録音かだけを判定してください。\n"
+        f"発声練習だった場合のメニュー例: {menu}（どれにも当てはまらなければ「不明」）\n"
+        "出力は次の4行だけ（説明・挨拶なし）:\n"
+        "KIND: song または practice（歌の録音なら song、発声練習なら practice）\n"
+        "PRACTICE: <一番近い練習名を1語。歌・不明なら 不明>\n"
+        "CONFIDENCE: high または mid または low\n"
+        "DESC: <聴こえた特徴を1文（音の動き・声の出し方など、聴こえた事実だけ）>"
+    )
+    try:
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.blind_listen_timeout_sec * 1000)),
+        )
+        resp = client.models.generate_content(
+            model=settings.llm_analysis_model,
+            contents=[types.Content(role="user", parts=[
+                types.Part.from_bytes(data=user_wav, mime_type="audio/wav"),
+                types.Part.from_text(text=prompt),
+            ])],
+            config=types.GenerateContentConfig(
+                max_output_tokens=settings.blind_listen_max_tokens,
+                temperature=0.1,
+                # thinking_budget の明示指定は 2.5 系のみ（docs/91）。ブラインド段は思考不要
+                thinking_config=(
+                    types.ThinkingConfig(thinking_budget=0)
+                    if _supports_thinking_budget(settings.llm_analysis_model) else None
+                ),
+            ),
+        )
+        text = (resp.text or "").strip()
+    except Exception:
+        return None
+    m = _BLIND_KIND_RE.search(text)
+    if not m:
+        return None
+    prac = _BLIND_PRACTICE_RE.search(text)
+    conf = _BLIND_CONF_RE.search(text)
+    desc = _BLIND_DESC_RE.search(text)
+    practice = (prac.group(1).strip() if prac else "") or "不明"
+    return {
+        "kind": m.group(1).lower(),
+        "practice": None if practice == "不明" else practice,
+        "confidence": conf.group(1).lower() if conf else None,
+        "desc": desc.group(1).strip() if desc else None,
+    }
+
+
 def generate_feedback(
     state: dict, user_wav: Optional[bytes] = None, ref_wav: Optional[bytes] = None,
     intent_ctx: Optional[dict] = None, user_comment: Optional[str] = None,
@@ -279,8 +352,10 @@ def generate_feedback(
     カタログから選ぶのではなく証拠から推論して講評する。enable_zero_base_fb がOFF・
     APIキー無し・SDK無し・失敗時は None（呼び出し側はルールベースFBにフォールバック）。
 
-    intent_ctx（任意）: {"kind_hint": "song"|"practice", "task_label": str, "practice_name": str}。
-    渡すと、モデルは録音を聴いて「曲か・勧めた基礎練の実演か」を最初に自分で判定し
+    intent_ctx（任意）: {"kind_hint": "song"|"practice", "task_label": str, "practice_name": str,
+    "blind": dict（listen_blind の結果・docs/95 FR-02）}。ユーザーの申告は user_comment の
+    自然言語で受ける（docs/95 FR-03・(A)案）。
+    渡すと、モデルは録音を聴いて「曲か・発声練習の実演か」を最初に自分で判定し
     （INTENT タグ）、その意図に合った講評を書く。判定結果は intent_ctx["heard"] に
     書き戻す（呼び出し側が kind のルーティングに使う）。タグは本文から除去される。
     """
@@ -335,9 +410,21 @@ def generate_feedback(
                     "聴こえた練習の名前から入って（判別できない時は決めつけずに一言確認）、その出来を2〜4文で判定する。"
                     "録音に無い動作を描写しない。\n"
                 )
+            # 聴取事実の注入（docs/95 FR-02, docs/97）。優先順位: コメント申告 > ブラインド聴取 > 文脈
+            blind = intent_ctx.get("blind")
+            facts = ""
+            if blind:
+                _bl = blind.get("practice") or ("歌" if blind.get("kind") == "song" else "発声練習（種類不明）")
+                facts = (
+                    f"ブラインド聴取の判定（レッスン文脈を見せずに録音だけを聴いた事前判定）: "
+                    f"{_bl}（確信度 {blind.get('confidence') or '不明'}）"
+                    + (f"— {blind['desc']}" if blind.get("desc") else "")
+                    + "\nこの聴取事実を、宿題・レッスン文脈からの想像より優先する。\n"
+                )
             intent_block = (
                 "# まず意図を判定する（最重要）\n"
                 f"{lesson}\n"
+                f"{facts}"
                 "録音を聴いて、これが (a)曲・歌の録音 か (b)発声練習の実演（ボーカルフライ・"
                 "リップロール・ハミング・サイレン・ロングトーン・スケール等） かを最初に判定してください。"
                 f"（音響特徴からの参考推定: {hint or '不明'}。ただし聴いた判断を優先してよい）\n"
@@ -345,10 +432,15 @@ def generate_feedback(
                 f"{practice_branch}"
                 "- INTENT: song の場合: 通常どおり講評する。\n\n"
             )
-        # 録音に添えられた質問・コメント（docs/42 §8: 質問には講評の最初に答える）
+        # 録音に添えられた質問・コメント（docs/42 §8: 質問には講評の最初に答える）。
+        # コメントで「何の録音か」を申告している場合（例:「サイレンやってみた」）は、
+        # それがユーザー本人の申告＝最優先の事実（docs/95 FR-03: 申告 > ブラインド聴取 > 文脈）。
         comment_block = (
             f"# ユーザーが録音に添えた質問・コメント\n「{user_comment}」\n"
-            "→ 講評の最初に、まずこの質問・悩みに答えること。\n\n"
+            "→ 講評の最初に、まずこの質問・悩みに答えること。\n"
+            "→ コメントで「何の録音か」を伝えている場合（例:「サイレンやってみた」）は、"
+            "それを最優先の事実として講評する（録音が申告と明らかに食い違う時だけ、"
+            "決めつけずに正直に一言確認する）。\n\n"
         ) if user_comment else ""
         prompt = (
             f"{intro}\n\n{intent_block}{comment_block}"
