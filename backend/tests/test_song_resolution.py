@@ -181,12 +181,18 @@ def test_names_song_title_prefix_forms():
     assert llm._names_song_title("曲名 ツキミソウ Novelbright", None) == "ツキミソウ Novelbright"
 
 
-def test_names_song_title_bare_reply_after_ask():
-    # コーチが原曲を尋ねた直後なら、裸の曲名でも検索クエリになる
-    assert llm._names_song_title("ツキミソウ", _ask_hist()) == "ツキミソウ"
-    assert llm._names_song_title("嫌々って言う歌", _ask_hist()) == "嫌々って言う歌"
-    # 尋ねられていない文脈の裸の曲名は LLM 判断に任せる（強制しない）
+def test_names_song_title_bare_reply_after_ask_removed():
+    # 撤去ガード（docs/96 §4.1・docs/94 憲法 1.2）: 「尋ねた直後の短い返答＝曲名」の
+    # 形状ベース推定はベースライン測定で相槌・練習報告を曲名検索する誤爆を多発させたため撤去。
+    # 裸の曲名の理解は LLM の文脈判断（ツール宣言）に任せる。
+    assert llm._names_song_title("ツキミソウ", _ask_hist()) is None
+    assert llm._names_song_title("もっかいやってみる", _ask_hist()) is None
+    assert llm._names_song_title("ひとつずつ確認してるところ", _ask_hist()) is None
+    assert llm._names_song_title("やったー", _ask_hist()) is None
+    # 尋ねられていない文脈の裸の曲名も従来どおり強制しない
     assert llm._names_song_title("ツキミソウ", None) is None
+    # 明示形式は文脈の有無に関わらず生きている
+    assert llm._names_song_title("原曲 ツキミソウ", _ask_hist()) == "ツキミソウ"
 
 
 def test_names_song_title_guards():

@@ -129,3 +129,4 @@ def test_video_delivery_retry_detection():
     # 約束していない普通の返答は対象外
     assert not llm._needs_video_delivery_retry("いいね、その調子！", set())
     assert not llm._needs_video_delivery_retry("", set())
+
