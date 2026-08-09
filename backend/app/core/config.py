@@ -146,7 +146,7 @@ class Settings(BaseSettings):
     # 分析ターン1回の概算コスト(JPY)。flash 実測 ≒¥0.5/回（音声込み総~3.3kトークン）に対し
     # 安全側に ¥1.5 を既定とする。pro に上げる時はこの値も上げること（env）。
     llm_analysis_est_jpy_per_call: float = 1.5
-    # --- 聴いてから答えるフロー: ブラインド聴取（第1段・docs/95 FR-01, docs/97）---
+    # --- 聴いてから答えるフロー: ブラインド聴取（第1段・docs/95 FR-01, docs/99）---
     # 講評の前に、会話文脈を渡さず録音だけで「何をしている録音か」を判定する。
     # アンカリング（宿題をやった前提の作話）対策。OFFで従来の1段フローに戻る。
     enable_blind_listen: bool = True

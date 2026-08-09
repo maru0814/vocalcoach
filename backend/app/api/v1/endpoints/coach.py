@@ -991,7 +991,7 @@ def send_audio(
     if settings.enable_zero_base_fb and settings.llm_enabled:
         from app.core import llm_budget
         from app.services import billing_service
-        # ブラインド聴取（docs/95 FR-01, docs/97）の分も含めて予算判定・原価記録する。
+        # ブラインド聴取（docs/95 FR-01, docs/99）の分も含めて予算判定・原価記録する。
         _blind_planned = settings.enable_blind_listen
         _est = settings.llm_analysis_est_jpy_per_call + (
             settings.blind_listen_est_jpy_per_call if _blind_planned else 0.0
