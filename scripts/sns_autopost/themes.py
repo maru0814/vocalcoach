@@ -251,7 +251,7 @@ PILLARS_2ND = [
     "tip",              # 火夜: 実践Tips
     "self_type",        # 水夜: 自己分類（診断導線）
     "tip",              # 木夜: 実践Tips
-    "voice_type",       # 金夜: 声タイプ図鑑（診断導線）
+    "artist_analysis",  # 金夜: アーティスト発声解説（2026-08-13 voice_typeから転換）
     "artist_analysis",  # 土夜: アーティスト発声解説（docs/84。tipから転換）
     "visual",           # 日夜: ビジュアル診断導線
 ]
@@ -259,13 +259,13 @@ PILLARS_2ND = [
 # 朝枠（slot3。2026-08-01 運用者決定で1日3投稿化）。tip は毎日どちらかの既存枠に
 # 必ず居るため、朝枠は非tipのみで組む（同日重複の禁止を守るとtipは置けない）。
 PILLARS_3RD = [
-    "voice_type",  # 月朝: 声タイプ図鑑（月=tip/contrarian と重複しない）
-    "self_type",   # 火朝: 自己分類（火=voice_type/tip）
-    "contrarian",  # 水朝: 逆張り（水=tip/self_type）
-    "self_type",   # 木朝: 自己分類（木=contrarian/tip）
-    "visual",      # 金朝: ビジュアル診断導線（金=tip/voice_type）
-    "contrarian",  # 土朝: 逆張り（土=self_type/tip）
-    "voice_type",  # 日朝: 声タイプ図鑑（日=tip/visual）
+    "artist_analysis",  # 月朝: アーティスト発声解説（2026-08-13 voice_typeから転換。月=tip/contrarian）
+    "self_type",        # 火朝: 自己分類（火=voice_type/tip）
+    "contrarian",       # 水朝: 逆張り（水=artist_analysis/self_type）
+    "self_type",        # 木朝: 自己分類（木=contrarian/tip）
+    "visual",           # 金朝: ビジュアル診断導線（金=tip/artist_analysis）
+    "contrarian",       # 土朝: 逆張り（土=self_type/artist_analysis）
+    "voice_type",       # 日朝: 声タイプ図鑑（日=tip/visual）
 ]
 
 
