@@ -927,11 +927,6 @@ SONG_CONFIRM_ANCHOR = "この曲で合っていますか"
 # 助詞「の」・区切りなしを許すと「原曲の45秒あたりから重ねて診断して」の残り全体を
 # 曲名として検索する誤爆が起きる（docs/94 スモークで実測。無関係動画を原曲候補として提示した）。
 _SONG_PREFIX_RE = re.compile(r"^(?:原曲|曲名)(?:[はがを]|[\s　:：、])[\s　:：、]*(.+)$")
-# コーチが原曲/曲名を尋ねた発言の検出（この直後の短い返答は曲名とみなす）。
-_SONG_ASK_RE = re.compile(
-    r"(?:原曲|曲名|何の曲|どの曲|なんの曲)[^。！？\n]{0,15}"
-    r"(?:教えて|いただけ|もらえ|ください|ですか|でしょうか)"
-)
 # 曲名として扱わない定型返事（「はい」だけで検索を強制しない）
 _SONG_STOPWORDS = {
     "はい", "うん", "ええ", "いいえ", "いや", "OK", "ok", "オッケー",
@@ -942,11 +937,12 @@ _SONG_STOPWORDS = {
 def _names_song_title(user_text: str, history: Optional[list[dict]]) -> Optional[str]:
     """ユーザー発言が「原曲の曲名の提示」らしければ検索クエリを返す（docs/72 FR-01）。
 
-    flash-lite は自発的なツール呼び出しが弱い（find_reference_video と同じ事情・docs/71）ため、
-    次の2形態は search_original_song を決定論で強制する:
-    1. 「原曲 ◯◯」「曲名 ◯◯」の形式（文脈不要）
-    2. コーチが原曲/曲名を尋ねた直後の、URL無しの短い返答（=曲名とみなす）
-    それ以外（裸の曲名など）は LLM の文脈判断に任せる。
+    決定論で強制するのは「原曲 ◯◯」「曲名 ◯◯」の明示形式のみ（誤読しようがない
+    形式の取り込み＝docs/94 憲法 1.1 の許容範囲）。
+    かつての規則2「コーチが曲名を尋ねた直後の短い返答は曲名とみなす」は、相槌や練習報告
+    （「もっかいやってみる」等）を曲名として検索する誤爆をベースライン測定で多発させたため
+    撤去した（docs/96 §4.1・憲法 1.2「発言の長さ・形で意図を推定しない」）。裸の曲名の
+    理解は LLM の文脈判断に任せる（ツール宣言側に判断基準を明記）。
     """
     t = (user_text or "").strip()
     if not t or "http://" in t or "https://" in t:
@@ -972,8 +968,6 @@ def _names_song_title(user_text: str, history: Optional[list[dict]]) -> Optional
     m = _SONG_PREFIX_RE.match(t)
     if m:
         return _valid(m.group(1))
-    if _SONG_ASK_RE.search(_last_assistant_text(history)) and not _wants_reference(t):
-        return _valid(t)
     return None
 
 
