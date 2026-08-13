@@ -1019,6 +1019,14 @@ def send_audio(
                         _blind = None
                     if _blind:
                         _ictx["blind"] = _blind
+                        # FR-06: 確信度highの「練習」判定は覆させない。歌前提の材料（原曲音声・
+                        # 原曲比較）はアンカーになるため第2段にそもそも渡さない（2026-08-13 の
+                        # 実事故: 原曲付きセッションで「練習」メモが文脈の物量に負けて歌講評化）。
+                        if _blind["kind"] == "practice" and _blind.get("confidence") == "high":
+                            _ictx["forced_intent"] = "practice"
+                            kind = "practice"
+                            _rw = None
+                            logger.info("ブラインド確定(practice/high): 歌講評を禁止し原曲アンカーを除去")
                     else:
                         # 聴けなかったのに当て推量で講評しない（docs/95 FR-05）。
                         # 昔の悪癖（文脈からの決めつけ）が失敗時だけ復活する事故を塞ぐ。
@@ -1037,8 +1045,14 @@ def send_audio(
                         return ChatResponse(phase=s.phase, current_task=s.current_task,
                                             messages=[_msg_out(r) for r in rows])
                 # 第2段: ブラインド判定・申告を聴取事実として注入した上で講評
+                _st = _session_state(s)
+                if _ictx.get("forced_intent") == "practice" and isinstance(_st.get("last_analysis"), dict):
+                    # 原曲比較データ（in-tune/リズム）も歌アンカーなので第2段から落とす（FR-06）
+                    _st["last_analysis"] = {
+                        k: v for k, v in _st["last_analysis"].items() if k != "_compare"
+                    }
                 zero_base_reply = llm.generate_feedback(
-                    _session_state(s), user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx,
+                    _st, user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx,
                     user_comment=user_comment,
                 )
             except Exception:
