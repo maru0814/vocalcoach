@@ -2,7 +2,8 @@
 # 毎朝の定例メトリクスを前日(JST)ぶん集計して運用者にLINEで1通プッシュする。
 #   出す数字:
 #     1. サービスページ訪問者数(非会員含む) … Caddyアクセスログのユニーク訪問IP（＋ページ閲覧数）
-#     2. 新規登録者数                        … 本番SQLite users（@example.com のテストは除外＝実会員）
+#     2. 新規登録者数                        … 本番SQLite users（@example.com のテストと
+#                                              オーナーは除外＝実会員）
 #     3. ログインUU(＝アクティビティUU)       … その日に認証必須の操作(チャット/録音/FB)をした
 #                                              ユニーク実会員。真のログイン記録が無いための代替値。
 #     4. メール経由の訪問/同日ログイン        … メールのリンク(src=mail_* 前方一致)を
@@ -31,6 +32,10 @@ JSONL = "/var/log/daily_metrics.jsonl"
 CADDY = "docker-caddy-1"
 BACKEND = "docker-backend-1"
 SNS = "docker-sns-1"
+
+# オーナーは日次KPIから必ず除外する（kpi_daily_sheet.py の OWNER_EMAIL と同一値）。
+# 訪問者数・メール経由はIPベースでアカウントに紐付かないため除外不能（kpi_daily_sheet と同様）。
+OWNER_EMAIL = "yumaruyama0814@gmail.com"
 
 # access_funnel.py と同じ除外規則（静的アセット/API/sns を除いた「HTMLページ相当のGET」だけ数える）
 ASSET = re.compile(r"\.(css|js|mjs|png|jpe?g|svg|ico|gif|webp|woff2?|ttf|map|txt|xml|webmanifest)(\?|$)", re.I)
@@ -102,17 +107,22 @@ def access_stats(start: datetime, end: datetime) -> dict:
 
 
 # backend コンテナ内で走らせるDB集計。窓の境界は US/UE 環境変数で渡す（文字列クォート事故を避ける）。
-# @example.com のテストアカウントは登録数・UU・メール一覧の全てから除外（access_funnel の実会員定義）。
+# @example.com のテストアカウントと EXCLUDES のメール（オーナー）は
+# 登録数・UU・メール一覧の全てから除外（access_funnel の実会員定義＋オーナー除外）。
 _DB_SCRIPT = r"""
 import sqlite3, json, os
 c = sqlite3.connect('/data/app.db').cursor()
 us, ue = os.environ["US"], os.environ["UE"]
-# 実会員(@example.com のテスト除外)の id->email
-id2email = dict(c.execute("SELECT id, email FROM users WHERE email NOT LIKE '%@example.com'"))
+excludes = {e.strip().lower() for e in os.environ.get("EXCLUDES", "").split(",") if e.strip()}
+# 実会員(@example.com のテストとオーナー除外)の id->email
+id2email = {i: e for i, e in c.execute(
+    "SELECT id, email FROM users WHERE email NOT LIKE '%@example.com'")
+    if (e or "").lower() not in excludes}
 # 新規登録（実会員）の email 一覧（登録順）
 reg_emails = [e for (_i, e) in c.execute(
     "SELECT id, email FROM users WHERE email NOT LIKE '%@example.com' "
-    "AND created_at>=? AND created_at<? ORDER BY created_at", (us, ue))]
+    "AND created_at>=? AND created_at<? ORDER BY created_at", (us, ue))
+    if (e or "").lower() not in excludes]
 # アクティビティUU: その日に作成 or 更新された chat_sessions / recordings ＋ その日のFB
 uu = set()
 for r in c.execute("SELECT DISTINCT user_id FROM chat_sessions "
@@ -138,7 +148,8 @@ def db_counts(start: datetime, end: datetime) -> dict | None:
     us = start.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
     ue = end.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
     out = subprocess.run(
-        ["docker", "exec", "-i", "-e", f"US={us}", "-e", f"UE={ue}", BACKEND, "python3", "-"],
+        ["docker", "exec", "-i", "-e", f"US={us}", "-e", f"UE={ue}",
+         "-e", f"EXCLUDES={OWNER_EMAIL}", BACKEND, "python3", "-"],
         input=_DB_SCRIPT, capture_output=True, text=True,
     ).stdout.strip()
     try:
