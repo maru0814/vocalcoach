@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.billing import Subscription, UsageCounter
+from app.models.user import User
 
 JST = timezone(timedelta(hours=9))
 
@@ -24,7 +25,18 @@ def current_yyyymm(now: datetime | None = None) -> str:
     return now.astimezone(JST).strftime("%Y%m")
 
 
+def _is_comp_premium(db: Session, user_id: int) -> bool:
+    """コンプ枠（docs/101）: allowlist のメールは課金なしで常にプレミアム扱い。"""
+    comp_emails = settings.comp_premium_email_set
+    if not comp_emails:
+        return False
+    email = db.query(User.email).filter(User.id == user_id).scalar()
+    return bool(email) and email.strip().lower() in comp_emails
+
+
 def is_premium(db: Session, user_id: int) -> bool:
+    if _is_comp_premium(db, user_id):
+        return True
     sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
     if sub is None or sub.status not in _ACTIVE_STATUSES:
         return False
