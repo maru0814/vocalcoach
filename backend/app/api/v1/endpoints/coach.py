@@ -997,7 +997,9 @@ def send_audio(
             settings.blind_listen_est_jpy_per_call if _blind_planned else 0.0
         )
         # 有料ユーザーは上限の対象外（無料枠が予算を食っても課金者を格下げしない）。docs/52 FR-02
-        _premium = settings.billing_enabled and billing_service.is_premium(db, user.id)
+        # billing_enabled で前置きしない: コンプ枠（docs/101）は課金OFF運用中でも
+        # 予算超過でルールベースFBへ格下げされないようにする。
+        _premium = billing_service.is_premium(db, user.id)
         if llm_budget.zero_base_allowed(_premium, _est):
             # 意図文脈（docs/52 FR-04）: モデル自身が「曲か・発声練習の実演か」を聴いて判定する。
             _ictx: dict = {"kind_hint": kind}
