@@ -6,8 +6,9 @@
 
   指標: LP遷移UU（リンク別/ページ別）・診断UU・無料会員登録数・ログインUU・
         チャット利用UU・有料会員（新規/在籍）
-  除外: オーナー(yumaruyama0814@gmail.com)と @example.com テスト
-        （KPI_EXCLUDE_EMAILS で上書き可。IPベース指標はアカウント非紐付けのため除外不能）
+  除外: オーナー(yumaruyama0814@gmail.com)は常に除外（設定では解除不可）。
+        @example.com テストも除外。KPI_EXCLUDE_EMAILS は追加の除外メール。
+        （IPベース指標はアカウント非紐付けのため除外不能）
 
 実行（VPS host。sns コンテナからは兄弟コンテナを exec できないため host python3）:
   python3 /opt/vocalcoach/scripts/ops/kpi_daily_sheet.py                 # 前日分
@@ -39,7 +40,9 @@ RELEASE_DAY = date(2026, 6, 6)   # 本番ドメイン切替・診断機能公開
 LOG_START = date(2026, 7, 8)     # Caddyアクセスログ記録開始（docs/60。当日は08:40〜の部分集計）
 OUTAGE = {date(2026, 7, 11) + timedelta(days=i) for i in range(4)}  # VPS電源断 7/11〜7/14
 
-DEFAULT_EXCLUDES = "yumaruyama0814@gmail.com"
+# オーナーは日次KPIから必ず除外する。KPI_EXCLUDE_EMAILS は「追加」の除外先であり、
+# どんな設定値でもオーナー除外は解除されない（設定上書きでの混入を防ぐ）。
+OWNER_EMAIL = "yumaruyama0814@gmail.com"
 
 # KPI_* 設定は環境変数を優先し、無ければ sns の .env（VPS上の運用設定の正）から読む。
 # host cron は .env を読まないため、KPI_SHEET_ID 等と同じ場所に置けるようにする。
@@ -434,7 +437,9 @@ def main() -> int:
         return 1
 
     excludes = [e.strip() for e in
-                kpi_conf("KPI_EXCLUDE_EMAILS", DEFAULT_EXCLUDES).split(",") if e.strip()]
+                kpi_conf("KPI_EXCLUDE_EMAILS").split(",") if e.strip()]
+    if OWNER_EMAIL not in {e.lower() for e in excludes}:
+        excludes.append(OWNER_EMAIL)
     exclude_ips = {i.strip() for i in kpi_conf("KPI_EXCLUDE_IPS").split(",") if i.strip()}
     if exclude_ips:
         print(f"[kpi_daily_sheet] 除外IP {len(exclude_ips)}件を適用")
