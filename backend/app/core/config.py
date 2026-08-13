@@ -190,6 +190,9 @@ class Settings(BaseSettings):
     billing_enabled: bool = False
     free_analysis_limit: int = 10   # 無料プランの解析回数/暦月（JST）
     free_history_limit: int = 10    # 無料プランの履歴表示件数
+    # コンプ枠（docs/101）: このメールのユーザーは課金なしで常にプレミアム扱い。
+    # カンマ区切り・大文字小文字無視。env COMP_PREMIUM_EMAILS で上書き可（空文字で無効）。
+    comp_premium_emails: str = "yumaruyama0814@gmail.com"
     # Stripe（PR-Bで使用。未設定でも起動可）
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
@@ -224,6 +227,11 @@ class Settings(BaseSettings):
     @property
     def mail_enabled(self) -> bool:
         return bool(self.mail_api_key and self.mail_from_address)
+
+    @property
+    def comp_premium_email_set(self) -> set[str]:
+        """コンプ枠メールの集合（小文字化済み）。docs/101。"""
+        return {e.strip().lower() for e in self.comp_premium_emails.split(",") if e.strip()}
 
     @property
     def cors_origin_list(self) -> list[str]:

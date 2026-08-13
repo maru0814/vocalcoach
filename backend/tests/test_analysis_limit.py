@@ -83,6 +83,36 @@ class AnalysisLimitTest(unittest.TestCase):
         self.assertEqual(bs.get_analysis_used(self.db, self.user.id), 0)
         self.assertTrue(bs.analysis_allowed(self.db, self.user.id))
 
+    # docs/101: コンプ枠メールは課金なしでプレミアム扱い（上限・カウント対象外）
+    def test_comp_premium_email_exempt(self):
+        comp = User(email="Comp.User@Example.com", password_hash="x")
+        self.db.add(comp)
+        self.db.commit()
+        orig = settings.comp_premium_emails
+        settings.comp_premium_emails = "comp.user@example.com"
+        try:
+            self.assertTrue(bs.is_premium(self.db, comp.id), "大文字小文字違いでも一致")
+            for _ in range(15):
+                bs.increment_analysis_count(self.db, comp.id)
+            self.assertEqual(bs.get_analysis_used(self.db, comp.id), 0, "カウントされない")
+            self.assertTrue(bs.analysis_allowed(self.db, comp.id), "上限なし")
+            me = bs.billing_me(self.db, comp.id)
+            self.assertEqual(me["plan"], "premium")
+            self.assertIsNone(me["analysis_limit"])
+            # allowlist 外のユーザーは従来どおり（回帰）
+            self.assertFalse(bs.is_premium(self.db, self.user.id))
+        finally:
+            settings.comp_premium_emails = orig
+
+    # docs/101: allowlist が空文字ならコンプ枠は無効
+    def test_comp_premium_disabled_when_empty(self):
+        orig = settings.comp_premium_emails
+        settings.comp_premium_emails = ""
+        try:
+            self.assertFalse(bs.is_premium(self.db, self.user.id))
+        finally:
+            settings.comp_premium_emails = orig
+
     # 緊急停止スイッチ: billing_enabled=False なら無制限
     def test_kill_switch(self):
         settings.billing_enabled = False
