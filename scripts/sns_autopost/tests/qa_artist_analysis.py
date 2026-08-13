@@ -23,9 +23,9 @@ def check(tc, cond, detail=""):
     print(f"[{'PASS' if cond else 'FAIL'}] {tc} {detail}")
 
 
-# ---- TC-AA01: ローテ — 週2枠・同日3スロットに型の重複なし ----
+# ---- TC-AA01: ローテ — 週4枠（docs/84 §9）・同日3スロットに型の重複なし ----
 week_all = [themes.pillar_for(wd, sl) for wd in range(7) for sl in (1, 2, 3)]
-check("TC-AA01 週2枠", week_all.count("artist_analysis") == 2,
+check("TC-AA01 週4枠", week_all.count("artist_analysis") == 4,
       f"=> {week_all.count('artist_analysis')}枠")
 dup_days = [wd for wd in range(7)
             if len({themes.pillar_for(wd, sl) for sl in (1, 2, 3)}) != 3]

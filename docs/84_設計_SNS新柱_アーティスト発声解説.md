@@ -72,3 +72,24 @@ Mrs. GREEN APPLE / 藤原聡(髭男) / 米津玄師 / 藤井風 / LiSA / あい�
 
 - `posts_log.jsonl` の pillar=artist_analysis で型別インプレ/エンゲージを従来どおり計測（fetch_metrics.py は型名に依存しないため変更不要）。
 - 4週間運用後、勝ち型判定（tip/診断導線との平均imp比較）を週次レポートで実施し、枠数の増減を判断する。
+
+## 9. 改定（2026-08-13 運用者指示: 週2→4枠・弾倉10→14本）
+
+- 経緯: 運用者から「投稿がワンパターン化している。アーティスト解説を増やしてほしい」の直接指示。
+  データ起点でなく運用者判断による改定（メトリクスでの勝ち型判定は §8 のまま継続し、次回の週次で配分の妥当性を検証する）。
+- ワンパターン化の構造要因: 週21枠中、診断導線（self_type/voice_type/visual）が10枠を占め、
+  フックがほぼ同型・自己リプは全て同一の8タイプ早見だった。artist_analysis は2枠のみ。
+- ローテ改定（診断導線から2枠転換。tip 5枠・逆張り4枠は据え置き）:
+
+| 曜日 | 昼(slot1) | 夜(slot2) | 朝(slot3) |
+| --- | --- | --- | --- |
+| 月 | tip | contrarian | voice_type → **artist_analysis** |
+| 金 | tip | voice_type → **artist_analysis** | visual |
+
+  改定後の週配分: tip 5 / artist_analysis 4（月朝・水昼・金夜・土夜） / self_type 4 / contrarian 4 / voice_type 2 / visual 2。
+  同日3枠は引き続き必ず別型（TC-AA01 を週4枠に更新）。
+- 弾倉増強（10→14本）: 週4枠×弾倉10本では約2.5週で一周し、増枠がかえって被り感を生むため、
+  正本 `ARTISTS_BY_ID` から4名を追加（**空白だった pop タイプを充足**・タイプ偏りを緩和）:
+  aiko(pop) / 宇多田ヒカル(mysterious) / 平井堅(moody) / Taka(ONE OK ROCK)(crystal)。
+  週4枠×14本 ≒ 3.5週で一周。発声解説の中身は §4 どおり voice-scientist 監修を通した。
+- 安全ガード（§3）・2部構成（§2）・画像/レビュー経路（§6）は変更なし。
