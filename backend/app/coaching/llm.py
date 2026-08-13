@@ -377,17 +377,32 @@ def generate_feedback(
                     + (f"— {blind['desc']}" if blind.get("desc") else "")
                     + "\nこの聴取事実を、宿題・レッスン文脈からの想像より優先する。\n"
                 )
-            intent_block = (
-                "# まず意図を判定する（最重要）\n"
-                f"{lesson}\n"
-                f"{facts}"
-                "録音を聴いて、これが (a)曲・歌の録音 か (b)発声練習の実演（ボーカルフライ・"
-                "リップロール・ハミング・サイレン・ロングトーン・スケール等） かを最初に判定してください。"
-                f"（音響特徴からの参考推定: {hint or '不明'}。ただし聴いた判断を優先してよい）\n"
-                "出力の1行目に必ず `INTENT: song` または `INTENT: practice` とだけ書き、空行を挟んで本文を続ける。\n"
-                f"{practice_branch}"
-                "- INTENT: song の場合: 通常どおり講評する。\n\n"
-            )
+            if intent_ctx.get("forced_intent") == "practice":
+                # FR-06: 種類は確定（歌講評の選択肢を出さない）。練習名だけは推定として扱う
+                intent_block = (
+                    "# この録音は発声練習の実演（確定）\n"
+                    f"{lesson}\n"
+                    f"{facts}"
+                    "ブラインド聴取が高い確信度で「発声練習」と判定済みのため、これは歌ではない。"
+                    "歌としての講評（ビブラート・音程の正確さ・原曲比較・歌い直しの改善など）を一切しない。\n"
+                    "出力の1行目に必ず `INTENT: practice` とだけ書き、空行を挟んで本文を続ける。\n"
+                    "ただし**練習名はあくまで推定**（似た練習と聴き間違うことがある）。録音を自分でも聴いて、"
+                    "名前に確信が持てなければ断定せず「低い音から高い音へなめらかにつなぐ練習ですね」のように"
+                    "聴こえた動きの描写で語るか、一言確認する。\n"
+                    f"{practice_branch}\n"
+                )
+            else:
+                intent_block = (
+                    "# まず意図を判定する（最重要）\n"
+                    f"{lesson}\n"
+                    f"{facts}"
+                    "録音を聴いて、これが (a)曲・歌の録音 か (b)発声練習の実演（ボーカルフライ・"
+                    "リップロール・ハミング・サイレン・ロングトーン・スケール等） かを最初に判定してください。"
+                    f"（音響特徴からの参考推定: {hint or '不明'}。ただし聴いた判断を優先してよい）\n"
+                    "出力の1行目に必ず `INTENT: song` または `INTENT: practice` とだけ書き、空行を挟んで本文を続ける。\n"
+                    f"{practice_branch}"
+                    "- INTENT: song の場合: 通常どおり講評する。\n\n"
+                )
         # 録音に添えられた質問・コメント（docs/42 §8: 質問には講評の最初に答える）。
         # コメントで「何の録音か」を申告している場合（例:「サイレンやってみた」）は、
         # それがユーザー本人の申告＝最優先の事実（docs/95 FR-03: 申告 > ブラインド聴取 > 文脈）。
@@ -423,7 +438,12 @@ def generate_feedback(
             return None
         # 意図タグを分離（ユーザーに見せない）。判定は intent_ctx に書き戻す（docs/52 FR-04）
         heard, reply = _split_intent_tag(reply)
-        if intent_ctx is not None and heard in ("song", "practice"):
+        if intent_ctx is not None and intent_ctx.get("forced_intent") == "practice":
+            # FR-06: 種類は確定済み。モデルがタグを間違えても書き戻しは practice に固定
+            if heard == "song":
+                logger.warning("forced_intent=practice なのにモデルが INTENT: song を返した（無視して固定）")
+            intent_ctx["heard"] = "practice"
+        elif intent_ctx is not None and heard in ("song", "practice"):
             intent_ctx["heard"] = heard
         reply = reply.strip()
         if not reply:

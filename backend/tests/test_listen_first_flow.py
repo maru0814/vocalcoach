@@ -219,6 +219,44 @@ class FactsInjection(unittest.TestCase):
         prompt, _ = self._generate(self._base_ictx())
         self.assertNotIn("最優先の事実として講評する", prompt)
 
+    def test_forced_practice_removes_song_branch(self):
+        """AC-12: forced_intent=practice では歌/練習の二択を出さず、練習名断定禁止の注意が入る。"""
+        prompt, _ = self._generate(self._base_ictx(
+            forced_intent="practice",
+            blind={"kind": "practice", "practice": "リップロール",
+                   "confidence": "high", "desc": "音程が滑らかに上下している。"},
+        ))
+        self.assertIn("発声練習の実演（確定）", prompt)
+        self.assertNotIn("(a)曲・歌の録音", prompt, "歌の選択肢を出さない")
+        self.assertIn("練習名はあくまで推定", prompt)
+        self.assertIn("聴こえた動きの描写で語るか、一言確認する", prompt)
+
+    def test_forced_practice_pins_heard_even_if_model_says_song(self):
+        """AC-13: モデルが INTENT: song を返しても heard は practice に固定される。"""
+        from app.coaching import llm
+        captured: dict = {}
+        state = {"phase": "practice", "current_task": "weak_resonance",
+                 "last_analysis": {"duration_sec": 5.0}, "baseline_analysis": None,
+                 "song_ref_url": None, "song_ref_path": None}
+        ictx = self._base_ictx(
+            forced_intent="practice",
+            blind={"kind": "practice", "practice": "サイレン", "confidence": "high", "desc": None},
+        )
+        orig_flag, orig_key = settings.enable_zero_base_fb, settings.gemini_api_key
+        settings.enable_zero_base_fb, settings.gemini_api_key = True, "TEST_DUMMY"
+        try:
+            with mock.patch(
+                "google.genai.Client",
+                _fake_client(captured, "INTENT: song\n\n歌の講評です。"),
+            ):
+                with self.assertLogs("app.coaching.llm", level="WARNING") as lg:
+                    reply = llm.generate_feedback(state, user_wav=b"RIFFfake", intent_ctx=ictx)
+        finally:
+            settings.enable_zero_base_fb, settings.gemini_api_key = orig_flag, orig_key
+        self.assertIsNotNone(reply)
+        self.assertEqual(ictx.get("heard"), "practice", "songタグは無視してpracticeに固定")
+        self.assertTrue(any("INTENT: song を返した" in m for m in lg.output))
+
     def test_no_facts_keeps_docs52_flow(self):
         """AC-07: 申告・ブラインドが無ければ docs/52 のプロンプトのまま（回帰）。"""
         prompt, _ = self._generate(self._base_ictx())
