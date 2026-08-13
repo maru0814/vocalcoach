@@ -1010,14 +1010,32 @@ def send_audio(
             try:
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
-                # 第1段: 会話文脈なしで録音だけを聴く（失敗は None＝従来フローに退化。AC-04）
+                # 第1段: 会話文脈なしで録音だけを聴く（リトライ1回込み・docs/95 FR-05）
                 if _blind_planned:
                     try:
                         _blind = llm.listen_blind(_uw)
                     except Exception:
+                        logger.warning("listen_blind が例外（想定外）", exc_info=True)
                         _blind = None
                     if _blind:
                         _ictx["blind"] = _blind
+                    else:
+                        # 聴けなかったのに当て推量で講評しない（docs/95 FR-05）。
+                        # 昔の悪癖（文脈からの決めつけ）が失敗時だけ復活する事故を塞ぐ。
+                        # 正直に伝えて再送を促す（録音・状態は保存済みなのでやり直しは軽い）。
+                        logger.warning("ブラインド聴取不能のため講評を保留し再送を依頼（session=%s）", s.id)
+                        msg = {
+                            "role": "coach", "type": "text",
+                            "text": "ごめんなさい、いま録音をうまく聴き取れませんでした🙏 "
+                                    "（通信の一時的な不調のようです）少しだけ時間をおいて、"
+                                    "もう一度同じ録音を送ってもらえますか？",
+                        }
+                        rows = _persist_coach_messages(db, s.id, [msg])
+                        db.commit()
+                        for r in rows:
+                            db.refresh(r)
+                        return ChatResponse(phase=s.phase, current_task=s.current_task,
+                                            messages=[_msg_out(r) for r in rows])
                 # 第2段: ブラインド判定・申告を聴取事実として注入した上で講評
                 zero_base_reply = llm.generate_feedback(
                     _session_state(s), user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx,

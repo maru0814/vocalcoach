@@ -79,20 +79,78 @@ class BlindListen(unittest.TestCase):
         _, result = self._call("よく分かりませんでした。")
         self.assertIsNone(result, "KIND が取れなければ None（従来フローに退化＝AC-04）")
 
-    def test_client_error_returns_none(self):
+    def test_double_failure_returns_none_with_logs(self):
+        """AC-04/10: 2回とも失敗なら None。失敗は無言にせず必ずログに残る。"""
         from app.coaching import llm
+
+        calls = {"n": 0}
 
         class _Boom:
             def __init__(self, **kw):
+                calls["n"] += 1
                 raise RuntimeError("api down")
 
         orig_key = settings.gemini_api_key
         settings.gemini_api_key = "TEST_DUMMY"
         try:
             with mock.patch("google.genai.Client", _Boom):
-                self.assertIsNone(llm.listen_blind(b"RIFFfake"), "例外は None（AC-04）")
+                with self.assertLogs("app.coaching.llm", level="WARNING") as lg:
+                    self.assertIsNone(llm.listen_blind(b"RIFFfake"))
         finally:
             settings.gemini_api_key = orig_key
+        self.assertEqual(calls["n"], 2, "1回リトライして計2試行")
+        self.assertTrue(any("2回とも失敗" in m for m in lg.output))
+
+    def test_retry_succeeds_on_second_attempt(self):
+        """AC-09: 1試行目が一時失敗しても、リトライで成功すれば判定が返る。"""
+        from app.coaching import llm
+
+        calls = {"n": 0}
+
+        class _Models:
+            def generate_content(self, **kw):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("transient 503")
+
+                class _R:
+                    text = "KIND: practice\nPRACTICE: サイレン\nCONFIDENCE: high\nDESC: 滑らかな上下。"
+                return _R()
+
+        class _Client:
+            def __init__(self, **kw):
+                self.models = _Models()
+
+        orig_key = settings.gemini_api_key
+        settings.gemini_api_key = "TEST_DUMMY"
+        try:
+            with mock.patch("google.genai.Client", _Client):
+                with self.assertLogs("app.coaching.llm", level="INFO") as lg:
+                    r = llm.listen_blind(b"RIFFfake")
+        finally:
+            settings.gemini_api_key = orig_key
+        self.assertIsNotNone(r)
+        self.assertEqual(r["practice"], "サイレン")
+        self.assertEqual(calls["n"], 2)
+        self.assertTrue(any("リトライ" in m for m in lg.output), "失敗→リトライがログに残る")
+        self.assertTrue(any("判定=practice" in m for m in lg.output), "成功時の判定内容もログに残る")
+
+    def test_success_logs_result(self):
+        """AC-10: 成功時も判定内容がログに残る（効いた回を後から確認できる）。"""
+        from app.coaching import llm
+        captured: dict = {}
+        orig_key = settings.gemini_api_key
+        settings.gemini_api_key = "TEST_DUMMY"
+        try:
+            with mock.patch(
+                "google.genai.Client",
+                _fake_client(captured, "KIND: song\nPRACTICE: 不明\nCONFIDENCE: mid\nDESC: 歌。"),
+            ):
+                with self.assertLogs("app.coaching.llm", level="INFO") as lg:
+                    llm.listen_blind(b"RIFFfake")
+        finally:
+            settings.gemini_api_key = orig_key
+        self.assertTrue(any("判定=song" in m for m in lg.output))
 
     def test_flag_off_skips_call(self):
         """AC-08: ENABLE_BLIND_LISTEN=false で第1段が完全に無効化される。"""

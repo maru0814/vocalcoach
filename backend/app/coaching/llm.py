@@ -213,18 +213,8 @@ _BLIND_CONF_RE = re.compile(r"CONFIDENCE:\s*(high|mid|low)", re.IGNORECASE)
 _BLIND_DESC_RE = re.compile(r"DESC:\s*(.+)")
 
 
-def listen_blind(user_wav: bytes) -> Optional[dict]:
-    """録音だけを先入観なしに聴いて「何をしている録音か」を判定する（docs/95 FR-01, docs/99）。
-
-    アンカリング排除の核: 会話文脈（宿題名・課題・履歴・コメント）を一切受け取らない。
-    引数が録音バイト列のみであること自体が AC-01 の構造的担保。
-    戻り: {"kind": "song"|"practice", "practice": str|None, "confidence": str|None,
-    "desc": str|None} / 失敗・パース不能・無効化時は None（講評はブラインド無しで続行＝AC-04）。
-    """
-    if not settings.llm_enabled or not settings.enable_blind_listen:
-        return None
-    if not user_wav or not settings.gemini_api_key:
-        return None
+def _listen_blind_once(user_wav: bytes) -> Optional[dict]:
+    """listen_blind の1試行分。API・パース失敗は例外を上げず None（呼び出し側でリトライ判断）。"""
     try:
         from google import genai
         from google.genai import types
@@ -264,9 +254,11 @@ def listen_blind(user_wav: bytes) -> Optional[dict]:
         )
         text = (resp.text or "").strip()
     except Exception:
+        logger.warning("ブラインド聴取のAPI呼び出しに失敗", exc_info=True)
         return None
     m = _BLIND_KIND_RE.search(text)
     if not m:
+        logger.warning("ブラインド聴取の出力をパースできない（KIND欠落）: %r", text[:120])
         return None
     prac = _BLIND_PRACTICE_RE.search(text)
     conf = _BLIND_CONF_RE.search(text)
@@ -278,6 +270,32 @@ def listen_blind(user_wav: bytes) -> Optional[dict]:
         "confidence": conf.group(1).lower() if conf else None,
         "desc": desc.group(1).strip() if desc else None,
     }
+
+
+def listen_blind(user_wav: bytes) -> Optional[dict]:
+    """録音だけを先入観なしに聴いて「何をしている録音か」を判定する（docs/95 FR-01, docs/99）。
+
+    アンカリング排除の核: 会話文脈（宿題名・課題・履歴・コメント）を一切受け取らない。
+    引数が録音バイト列のみであること自体が AC-01 の構造的担保。
+    一時失敗は1回だけリトライし（docs/95 FR-05）、結果・失敗は必ずログに残す（AC-10）。
+    戻り: {"kind": "song"|"practice", "practice": str|None, "confidence": str|None,
+    "desc": str|None} / 2回とも失敗・無効化時は None（呼び出し側は当て推量で講評せず、
+    正直に聴けなかった旨を返す＝docs/95 FR-05）。
+    """
+    if not settings.llm_enabled or not settings.enable_blind_listen:
+        return None
+    if not user_wav or not settings.gemini_api_key:
+        return None
+    for attempt in (1, 2):
+        result = _listen_blind_once(user_wav)
+        if result is not None:
+            logger.info("ブラインド聴取 判定=%s 練習=%s 確信度=%s (試行%d)",
+                        result["kind"], result.get("practice"), result.get("confidence"), attempt)
+            return result
+        if attempt == 1:
+            logger.warning("ブラインド聴取が失敗。1回だけリトライする")
+    logger.warning("ブラインド聴取が2回とも失敗（講評は当て推量に進まない・docs/95 FR-05）")
+    return None
 
 
 def generate_feedback(
