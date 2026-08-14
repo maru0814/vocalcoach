@@ -193,10 +193,11 @@ class BlindListen(unittest.TestCase):
             settings.enable_blind_listen, settings.gemini_api_key = orig_flag, orig_key
 
 
-class FactsInjection(unittest.TestCase):
-    """FR-02/03: 講評段（第2段）への聴取事実の注入。"""
+class IdentityBlock(unittest.TestCase):
+    """docs/105: 識別コントラクトの注入と「再判定させない」プロンプト構造。"""
 
-    def _generate(self, ictx: dict, user_comment=None):
+    def _generate(self, ictx: dict, user_comment=None,
+                  model_reply="サイレン、いい滑らかさです。"):
         from app.coaching import llm
         captured: dict = {}
         state = {"phase": "practice", "current_task": "weak_resonance",
@@ -206,8 +207,7 @@ class FactsInjection(unittest.TestCase):
         settings.enable_zero_base_fb, settings.gemini_api_key = True, "TEST_DUMMY"
         try:
             with mock.patch(
-                "google.genai.Client",
-                _fake_client(captured, "INTENT: practice\n\nサイレン、いい滑らかさです。"),
+                "google.genai.Client", _fake_client(captured, model_reply),
             ):
                 reply = llm.generate_feedback(
                     state, user_wav=b"RIFFfake", intent_ctx=ictx, user_comment=user_comment,
@@ -216,95 +216,78 @@ class FactsInjection(unittest.TestCase):
             settings.enable_zero_base_fb, settings.gemini_api_key = orig_flag, orig_key
         return captured.get("prompt", ""), reply
 
-    def _base_ictx(self, **extra):
-        return {"kind_hint": "song", "task_label": "響きを前に集める（芯・通り）",
-                "practice_name": "ハミング → 母音（マスクに集める）", **extra}
+    def _ictx(self, identity=None):
+        d = {"task_label": "響きを前に集める（芯・通り）",
+             "practice_name": "ハミング → 母音（マスクに集める）"}
+        if identity:
+            d["identity"] = identity
+        return d
 
-    def test_blind_result_injected(self):
-        """AC-02: ブラインド判定が講評プロンプトに注入される。"""
-        prompt, reply = self._generate(self._base_ictx(blind={
-            "kind": "practice", "practice": "サイレン", "confidence": "high",
-            "desc": "低音から高音まで連続的に上下している。",
-        }))
-        self.assertIn("ブラインド聴取の判定", prompt)
-        self.assertIn("サイレン（確信度 high）", prompt)
-        self.assertIn("宿題・レッスン文脈からの想像より優先する", prompt)
+    @staticmethod
+    def _pr(name=None, conf="high", desc="低音から高音まで連続的に上下している。"):
+        return {"kind": "practice", "name": name, "confidence": conf,
+                "description": desc, "source": "blind"}
+
+    def test_named_practice_block(self):
+        """名前確定: 識別ブロックに名前が入り、宿題名での講評を一般則で禁止。
+
+        （旧docs/52 AC-09・旧FR-07 の回帰を単一ルールで担保: 宿題=ハミングでも
+        識別=サイレンなら、サイレンとして講評しハミング名を使わせない）
+        """
+        prompt, reply = self._generate(self._ictx(self._pr(name="サイレン")))
+        self.assertIn("識別済み・ここは再判定しない", prompt)
+        self.assertIn("聴こえた内容: サイレン", prompt)
+        self.assertIn("識別と異なる名前（勧奨中の基礎練名を含む）でこの録音を講評しない", prompt)
+        self.assertIn("歌としての講評", prompt)
+        self.assertNotIn("(a)曲・歌の録音", prompt, "二択の再判定をさせない")
+        self.assertNotIn("INTENT:", prompt, "旧タグプロトコルの指示を出さない")
         self.assertIsNotNone(reply)
 
+    def test_unnamed_practice_block_describes_and_confirms(self):
+        """名前未確定: 描写で講評し、一言確認してよい。宿題名は使わせない。"""
+        prompt, _ = self._generate(self._ictx(self._pr(name=None, conf="mid")))
+        self.assertIn("練習名は特定できていない", prompt)
+        self.assertIn("名前を断定しない", prompt)
+        self.assertIn("の練習で合っていますか？", prompt)
+        self.assertIn("勧奨中の基礎練名をこの録音の名前として使わない", prompt)
+
+    def test_song_block(self):
+        """歌識別: 通常の歌講評。練習系ルールは出ない。"""
+        prompt, _ = self._generate(self._ictx(
+            {"kind": "song", "name": None, "confidence": "mid",
+             "description": None, "source": "blind"}))
+        self.assertIn("種類: 歌", prompt)
+        self.assertIn("通常どおり歌として講評する", prompt)
+        self.assertNotIn("名前を断定しない", prompt)
+        self.assertNotIn("INTENT:", prompt)
+
+    def test_stray_intent_tag_is_stripped_not_used(self):
+        """旧癖で INTENT タグが出ても本文から剥がすだけ（heard 書き戻しは廃止）。"""
+        ictx = self._ictx(self._pr(name="サイレン"))
+        _, reply = self._generate(ictx, model_reply="INTENT: song\n\n本文です。")
+        self.assertEqual(reply, "本文です。")
+        self.assertNotIn("heard", ictx, "書き戻しはもう行わない")
+
     def test_comment_declaration_is_top_fact(self):
-        """AC-03（(A)案）: コメントでの申告を最優先の事実として扱う指示が入る。"""
-        prompt, _ = self._generate(self._base_ictx(), user_comment="サイレンやってみた")
+        """(A)案: コメントでの申告を最優先の事実として扱う指示が入る。"""
+        prompt, _ = self._generate(self._ictx(self._pr(name="サイレン")),
+                                   user_comment="サイレンやってみた")
         self.assertIn("「サイレンやってみた」", prompt)
         self.assertIn("最優先の事実として講評する", prompt)
         self.assertIn("決めつけずに正直に一言確認する", prompt)
 
     def test_no_comment_no_declaration_instruction(self):
         """コメントが無ければ申告優先の指示も出ない（不要な指示を増やさない）。"""
-        prompt, _ = self._generate(self._base_ictx())
+        prompt, _ = self._generate(self._ictx(self._pr(name="サイレン")))
         self.assertNotIn("最優先の事実として講評する", prompt)
 
-    def test_forced_practice_removes_song_branch(self):
-        """AC-12: forced_intent=practice では歌/練習の二択を出さず、練習名断定禁止の注意が入る。"""
-        prompt, _ = self._generate(self._base_ictx(
-            forced_intent="practice",
-            blind={"kind": "practice", "practice": "リップロール",
-                   "confidence": "high", "desc": "音程が滑らかに上下している。"},
-        ))
-        self.assertIn("発声練習の実演（確定）", prompt)
-        self.assertNotIn("(a)曲・歌の録音", prompt, "歌の選択肢を出さない")
-        self.assertIn("練習名はあくまで推定", prompt)
-        self.assertIn("聴こえた動きの描写で語るか、一言確認する", prompt)
-
-    def test_forced_practice_pins_heard_even_if_model_says_song(self):
-        """AC-13: モデルが INTENT: song を返しても heard は practice に固定される。"""
-        from app.coaching import llm
-        captured: dict = {}
-        state = {"phase": "practice", "current_task": "weak_resonance",
-                 "last_analysis": {"duration_sec": 5.0}, "baseline_analysis": None,
-                 "song_ref_url": None, "song_ref_path": None}
-        ictx = self._base_ictx(
-            forced_intent="practice",
-            blind={"kind": "practice", "practice": "サイレン", "confidence": "high", "desc": None},
-        )
-        orig_flag, orig_key = settings.enable_zero_base_fb, settings.gemini_api_key
-        settings.enable_zero_base_fb, settings.gemini_api_key = True, "TEST_DUMMY"
-        try:
-            with mock.patch(
-                "google.genai.Client",
-                _fake_client(captured, "INTENT: song\n\n歌の講評です。"),
-            ):
-                with self.assertLogs("app.coaching.llm", level="WARNING") as lg:
-                    reply = llm.generate_feedback(state, user_wav=b"RIFFfake", intent_ctx=ictx)
-        finally:
-            settings.enable_zero_base_fb, settings.gemini_api_key = orig_flag, orig_key
-        self.assertIsNotNone(reply)
-        self.assertEqual(ictx.get("heard"), "practice", "songタグは無視してpracticeに固定")
-        self.assertTrue(any("INTENT: song を返した" in m for m in lg.output))
-
-    def test_homework_name_banned_when_blind_disagrees(self):
-        """AC-15: ブラインド名(high)が宿題名と食い違えば、宿題名での講評を明示禁止。"""
-        prompt, _ = self._generate(self._base_ictx(
-            forced_intent="practice",
-            blind={"kind": "practice", "practice": "サイレン",
-                   "confidence": "high", "desc": "滑らかな上下。"},
-        ))
-        self.assertIn("をやったことにして講評するのは禁止", prompt)
-        self.assertIn("『サイレン』と判定しており", prompt)
-
-    def test_no_homework_ban_when_blind_matches(self):
-        """AC-15: ブラインド名が宿題名と一致（部分一致含む）なら禁止文は出ない。"""
-        prompt, _ = self._generate(self._base_ictx(
-            forced_intent="practice",
-            blind={"kind": "practice", "practice": "ハミング",
-                   "confidence": "high", "desc": "閉口の響き。"},
-        ))
-        self.assertNotIn("をやったことにして講評するのは禁止", prompt)
-
-    def test_no_facts_keeps_docs52_flow(self):
-        """AC-07: 申告・ブラインドが無ければ docs/52 のプロンプトのまま（回帰）。"""
-        prompt, _ = self._generate(self._base_ictx())
-        self.assertNotIn("ブラインド聴取の判定", prompt)
-        self.assertIn("実演が勧めた基礎練と一致するとは限らない", prompt, "docs/52 AC-09 の第三分岐は維持")
+    def test_heuristic_identity_low_confidence(self):
+        """フラグOFF等のヒューリスティック識別（低確信・名前なし）でも描写・確認の型になる。"""
+        prompt, _ = self._generate(self._ictx(
+            {"kind": "practice", "name": None, "confidence": "low",
+             "description": None, "source": "heuristic"}))
+        self.assertIn("確信度 low", prompt)
+        self.assertIn("名前を断定しない", prompt)
 
 
 if __name__ == "__main__":

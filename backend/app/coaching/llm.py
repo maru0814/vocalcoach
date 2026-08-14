@@ -317,12 +317,13 @@ def generate_feedback(
     カタログから選ぶのではなく証拠から推論して講評する。enable_zero_base_fb がOFF・
     APIキー無し・SDK無し・失敗時は None（呼び出し側はルールベースFBにフォールバック）。
 
-    intent_ctx（任意）: {"kind_hint": "song"|"practice", "task_label": str, "practice_name": str,
-    "blind": dict（listen_blind の結果・docs/95 FR-02）}。ユーザーの申告は user_comment の
-    自然言語で受ける（docs/95 FR-03・(A)案）。
-    渡すと、モデルは録音を聴いて「曲か・発声練習の実演か」を最初に自分で判定し
-    （INTENT タグ）、その意図に合った講評を書く。判定結果は intent_ctx["heard"] に
-    書き戻す（呼び出し側が kind のルーティングに使う）。タグは本文から除去される。
+    intent_ctx（任意・docs/105）: {"task_label": str, "practice_name": str,
+    "identity": {"kind": "song"|"practice", "name": str|None, "confidence": str,
+    "description": str|None, "source": str}}。identity は識別レイヤー（ブラインド聴取＋
+    質感DSP＋ユーザー申告）が確定した所与の事実で、講評段はこれを**再判定しない**。
+    ルーティング（kind）も identity.kind を呼び出し側がコードで採用する
+    （旧 INTENT タグ プロトコル・heard 書き戻しは廃止）。
+    ユーザーの申告は user_comment の自然言語で受ける（docs/95 FR-03・(A)案）。
     """
     if not settings.llm_enabled or not settings.enable_zero_base_fb:
         return None
@@ -348,81 +349,50 @@ def generate_feedback(
             intro = "この音声はユーザーの録音です。"
         else:
             intro = ""
-        # 意図判定の指示（docs/52 FR-04）: 勧めた基礎練の実演を「曲」として講評しない。
+        # 識別ブロック（docs/105）: 「これは何の録音か」は識別レイヤーが確定済み。
+        # 講評段は再判定しない（特例プロンプトの積層を廃止し、この単一ブロックに統合）。
         intent_block = ""
         if intent_ctx:
             prac = intent_ctx.get("practice_name")
             tlabel = intent_ctx.get("task_label")
-            hint = intent_ctx.get("kind_hint")
+            ident = intent_ctx.get("identity")
             lesson = (f"いまのレッスンでは課題「{tlabel}」に対して基礎練『{prac}』を勧めています。"
                       if prac else "いまのレッスンで特定の基礎練はまだ勧めていません。")
-            if prac:
-                practice_branch = (
-                    "- INTENT: practice の場合: これは歌ではないので、歌としての講評（ビブラート・音程の正確さ・"
-                    "歌い直しの改善など）をしない。まず「何の練習に聞こえるか」を録音だけから特定する。"
-                    "**実演が勧めた基礎練と一致するとは限らない**（別の練習を送ってくることもよくある）。\n"
-                    "  - 聴こえた練習が勧めた基礎練と一致する時だけ: その基礎練の出来（狙いどおりの発声ができているか）を"
-                    "2〜4文で判定し、良ければ次の一歩（曲で試す等）、惜しければ直し方を1つだけ伝える。\n"
-                    "  - 一致しない・確信が持てない時: 聴こえた練習を正直に伝える（例:「サイレンの録音ですね」）。"
-                    "勧めた基礎練の名前で講評したり、録音に無い動作（例: 実際はサイレンなのに『ハミングから母音へ移す際に…』）を"
-                    "描写するのは絶対にしない。聴こえた練習としての出来を短く認めた上で、レッスン中の基礎練にやさしく戻す"
-                    "（どの練習か判別できない時は、決めつけずに一言確認する）。\n"
-                )
-            else:
-                practice_branch = (
-                    "- INTENT: practice の場合: これは歌ではないので、歌としての講評（ビブラート・音程の正確さ・"
-                    "歌い直しの改善など）をしない。まず「何の練習に聞こえるか」を録音だけから特定し、"
-                    "聴こえた練習の名前から入って（判別できない時は決めつけずに一言確認）、その出来を2〜4文で判定する。"
-                    "録音に無い動作を描写しない。\n"
-                )
-            # 聴取事実の注入（docs/95 FR-02, docs/99）。優先順位: コメント申告 > ブラインド聴取 > 文脈
-            blind = intent_ctx.get("blind")
-            facts = ""
-            if blind:
-                _bl = blind.get("practice") or ("歌" if blind.get("kind") == "song" else "発声練習（種類不明）")
-                facts = (
-                    f"ブラインド聴取の判定（レッスン文脈を見せずに録音だけを聴いた事前判定）: "
-                    f"{_bl}（確信度 {blind.get('confidence') or '不明'}）"
-                    + (f"— {blind['desc']}" if blind.get("desc") else "")
-                    + "\nこの聴取事実を、宿題・レッスン文脈からの想像より優先する。\n"
-                )
-            if intent_ctx.get("forced_intent") == "practice":
-                # FR-06: 種類は確定（歌講評の選択肢を出さない）。練習名だけは推定として扱う
-                # FR-07: ブラインドの練習名(確信度high)が宿題名と食い違うなら、宿題名での講評を禁止
-                # （実事故 2026-08-14: ブラインド=サイレン(high)なのに宿題のストロー発声をやったことにした）
-                _bname = blind.get("practice") if blind else None
-                homework_guard = ""
-                if (prac and _bname and blind.get("confidence") == "high"
-                        and _bname not in prac and prac not in _bname):
-                    homework_guard = (
-                        f"**重要**: ブラインド聴取は『{_bname}』と判定しており、勧めている基礎練"
-                        f"『{prac}』とは別物の可能性が高い。**『{prac}』をやったことにして講評するのは禁止**。"
-                        "聴こえた実演（またはその描写）から入り、必要ならレッスン中の基礎練へやさしく戻す。\n"
+            if ident and ident.get("kind") == "practice":
+                name = ident.get("name")
+                desc = ident.get("description")
+                if name:
+                    content = f"聴こえた内容: {name}" + (f" — {desc}" if desc else "")
+                    name_rule = (
+                        f"- 練習名は『{name}』として講評する。識別と異なる名前"
+                        "（勧奨中の基礎練名を含む）でこの録音を講評しない\n"
+                    )
+                else:
+                    content = "聴こえた内容: 練習名は特定できていない" + (f" — {desc}" if desc else "")
+                    name_rule = (
+                        "- 名前を断定しない。聴こえた動きの描写（例:「低い音から高い音へなめらかに"
+                        "つなぐ練習」）で講評し、応答の最後の一問で「〜の練習で合っていますか？」と"
+                        "確認してよい\n"
+                        "- 勧奨中の基礎練名をこの録音の名前として使わない\n"
                     )
                 intent_block = (
-                    "# この録音は発声練習の実演（確定）\n"
+                    "# この録音について（識別済み・ここは再判定しない）\n"
+                    f"種類: 発声練習（確信度 {ident.get('confidence') or '不明'}）\n"
+                    f"{content}\n"
                     f"{lesson}\n"
-                    f"{facts}"
-                    f"{homework_guard}"
-                    "ブラインド聴取が高い確信度で「発声練習」と判定済みのため、これは歌ではない。"
-                    "歌としての講評（ビブラート・音程の正確さ・原曲比較・歌い直しの改善など）を一切しない。\n"
-                    "出力の1行目に必ず `INTENT: practice` とだけ書き、空行を挟んで本文を続ける。\n"
-                    "ただし**練習名はあくまで推定**（似た練習と聴き間違うことがある）。録音を自分でも聴いて、"
-                    "名前に確信が持てなければ断定せず「低い音から高い音へなめらかにつなぐ練習ですね」のように"
-                    "聴こえた動きの描写で語るか、一言確認する。\n"
-                    f"{practice_branch}\n"
+                    "ルール:\n"
+                    f"{name_rule}"
+                    "- これは歌ではない。歌としての講評（音程の正確さ・原曲比較・ビブラート評価・"
+                    "歌い直しの改善）をしない\n"
+                    "- 練習としての出来を2〜4文で講評し、良ければ次の一歩、惜しければ直し方を1つだけ。"
+                    "録音に無い動作を描写しない。必要ならレッスン中の基礎練へやさしく戻す\n\n"
                 )
-            else:
+            elif ident:  # song
                 intent_block = (
-                    "# まず意図を判定する（最重要）\n"
+                    "# この録音について（識別済み・ここは再判定しない）\n"
+                    f"種類: 歌（確信度 {ident.get('confidence') or '不明'}）\n"
                     f"{lesson}\n"
-                    f"{facts}"
-                    "録音を聴いて、これが (a)曲・歌の録音 か (b)発声練習の実演（ボーカルフライ・"
-                    "リップロール・ハミング・サイレン・ロングトーン・スケール等） かを最初に判定してください。"
-                    f"（音響特徴からの参考推定: {hint or '不明'}。ただし聴いた判断を優先してよい）\n"
-                    "出力の1行目に必ず `INTENT: song` または `INTENT: practice` とだけ書き、空行を挟んで本文を続ける。\n"
-                    f"{practice_branch}"
-                    "- INTENT: song の場合: 通常どおり講評する。\n\n"
+                    "通常どおり歌として講評する。\n\n"
                 )
         # 録音に添えられた質問・コメント（docs/42 §8: 質問には講評の最初に答える）。
         # コメントで「何の録音か」を申告している場合（例:「サイレンやってみた」）は、
@@ -457,15 +427,9 @@ def generate_feedback(
         reply = (resp.text or "").strip()
         if not reply:
             return None
-        # 意図タグを分離（ユーザーに見せない）。判定は intent_ctx に書き戻す（docs/52 FR-04）
-        heard, reply = _split_intent_tag(reply)
-        if intent_ctx is not None and intent_ctx.get("forced_intent") == "practice":
-            # FR-06: 種類は確定済み。モデルがタグを間違えても書き戻しは practice に固定
-            if heard == "song":
-                logger.warning("forced_intent=practice なのにモデルが INTENT: song を返した（無視して固定）")
-            intent_ctx["heard"] = "practice"
-        elif intent_ctx is not None and heard in ("song", "practice"):
-            intent_ctx["heard"] = heard
+        # INTENT タグ プロトコルは廃止（docs/105: ルーティングは識別レイヤーの専権）。
+        # 旧モデル癖で先頭にタグが出た場合に備え、防御的に剥がすだけ（値は使わない）。
+        _, reply = _split_intent_tag(reply)
         reply = reply.strip()
         if not reply:
             return None
