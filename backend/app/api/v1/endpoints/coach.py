@@ -1,5 +1,4 @@
 import logging
-import math
 import os
 import re
 from datetime import datetime, timezone
@@ -121,23 +120,6 @@ def _history_for_llm(s: ChatSession) -> list[dict]:
         if content:
             hist.append({"role": role, "content": content})
     return hist[-settings.llm_history_turns:]
-
-
-def _pitch_span_fact(a: dict) -> str | None:
-    """録音の音程移動幅を、ブラインド聴取向けの測定事実にする（docs/104 改訂）。
-
-    大きな連続移動（10半音以上）はサイレン等のグリッサンド系を消去法で支持する
-    決定的な物差しになる（震えの有無だけでは似た練習を絞りきれなかった実事故対応）。
-    """
-    pw = (a.get("timeline") or {}).get("per_window") or []
-    f0s = [w.get("f0_mean_hz") for w in pw if w.get("f0_mean_hz")]
-    if len(f0s) < 3 or min(f0s) <= 0:
-        return None
-    semis = 12 * math.log2(max(f0s) / min(f0s))
-    if semis >= 10:
-        return (f"音程は低い音から高い音まで連続的に約{round(semis)}半音"
-                f"（{round(min(f0s))}→{round(max(f0s))}Hz）移動している")
-    return None
 
 
 def _looks_like_singing(a: dict) -> bool:
@@ -1030,14 +1012,11 @@ def send_audio(
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
                 if _blind_planned:
-                    # ブラインド聴取（リトライ1回込み・docs/95 FR-05）＋質感計測（docs/104）
+                    # ブラインド聴取（リトライ1回込み・docs/95 FR-05）＋質感計測（docs/104）。
+                    # 事実の組み立ては eval（scripts/blind_listen_eval.py）と共有の単一ソース
                     try:
-                        from app.audio import texture
-                        _parts = [
-                            texture.describe(texture.modulation_profile(wav_path)),
-                            _pitch_span_fact(user_analysis),
-                        ]
-                        _facts = "。".join(p for p in _parts if p) or None
+                        from app.audio import facts as blind_facts
+                        _facts = blind_facts.assemble(wav_path, user_analysis)
                     except Exception:
                         logger.warning("質感計測に失敗（記述なしで続行）", exc_info=True)
                         _facts = None

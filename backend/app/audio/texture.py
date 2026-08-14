@@ -30,7 +30,10 @@ _MOD_HI_HZ = 45.0
 def modulation_profile(wav_path: str, sr: int = 16000) -> Optional[dict]:
     """エンベロープ（音量の輪郭）の周期的な震えを測る。
 
-    戻り: {"mod_rate_hz": float, "mod_strength": float(0..1), "duration_sec": float}
+    戻り: {"mod_rate_hz": float, "mod_strength": float(0..1), "flutter_ratio": float,
+    "duration_sec": float, "windows": [{"rate_hz", "strength"}, ...]}
+    windows は1秒窓ごとの自己相関ピーク（しきい値でふるう前の生値）。
+    STRENGTH_THRESHOLD の較正は eval がこの生値の分布から行う（docs/104 §4）。
     1秒未満・ほぼ無音・読み込み失敗は None（呼び出し側は記述なしで続行）。
     """
     try:
@@ -57,6 +60,7 @@ def modulation_profile(wav_path: str, sr: int = 16000) -> Optional[dict]:
     # クリップ全体の性質として主張し、ブラインドをミスリードした）。
     win = int(fs_env)  # 1秒
     rates, strengths, fluttered = [], [], 0
+    windows: list[dict] = []
     n_win = 0
     for start in range(0, env.size - win + 1, win):
         e = env[start:start + win].astype(float)
@@ -77,6 +81,7 @@ def modulation_profile(wav_path: str, sr: int = 16000) -> Optional[dict]:
         # 縁に漏れている可能性が高いので「震え」と数えない
         if peak <= lo:
             continue
+        windows.append({"rate_hz": float(fs_env / peak), "strength": strength})
         if strength >= STRENGTH_THRESHOLD:
             fluttered += 1
             rates.append(fs_env / peak)
@@ -88,7 +93,15 @@ def modulation_profile(wav_path: str, sr: int = 16000) -> Optional[dict]:
         "mod_strength": float(np.median(strengths)) if strengths else 0.0,
         "flutter_ratio": fluttered / n_win,
         "duration_sec": float(len(y) / sr),
+        "windows": windows,
     }
+
+
+def has_modulation(profile: Optional[dict]) -> bool:
+    """帯域内（4〜45Hz）の規則的な振幅変調が検出されているか。"""
+    if not profile:
+        return False
+    return profile.get("flutter_ratio", 0.0) > 0.0 and profile["mod_rate_hz"] <= _MOD_HI_HZ
 
 
 def describe(profile: Optional[dict]) -> Optional[str]:
@@ -96,8 +109,10 @@ def describe(profile: Optional[dict]) -> Optional[str]:
 
     45Hz超（フライ/ラフネス帯）の主張はしない: エンベロープ計測では声の基本周波数と
     区別できず、誤った「事実」がブラインド聴取をミスリードするため（実事故 2026-08-14）。
-    震えが録音の一部区間だけの場合はそのまま「一部のみ」と伝える（冒頭がきしむ
-    サイレンを、全体が震えるリップロール等と混同させないため）。
+    震えが一部区間だけの場合は割合をそのまま伝える。⚠️「〜のみ」「残りはなめらか」の
+    矮小化表現は使わない: 実録音のリップロール（震え5割＋19半音グリッサンド）で
+    モデルの正しい聴覚を上書きしサイレンと誤認させた実事故があるため
+    （2026-08-14 較正第1号。条件比較 A/D は docs/106 §4）。
     """
     if not profile:
         return None
@@ -108,11 +123,10 @@ def describe(profile: Optional[dict]) -> Optional[str]:
     n = round(rate)
     if 4 <= rate < 10:
         band = f"毎秒約{n}回のゆったりした音量の揺れ（ビブラートに典型的な帯域）"
-    elif 15 <= rate <= 45:
+    else:
+        # 10〜45Hz。下限は実録音較正で 15→10Hz に拡大: 実物のリップロールの震えが
+        # 13.8Hz で旧注釈帯域のすぐ外に落ち、注釈なしの中立文になった（較正第1号）
         band = f"毎秒約{n}回の振幅の規則的な震え（唇・舌の震えやエッジボイスに典型的な帯域）"
-    else:  # 10〜15Hz の谷間: 珍しいので帯域注釈なしの事実だけ
-        band = f"毎秒約{n}回の振幅の規則的な震え"
     if ratio >= 0.7:
         return f"録音のほぼ全体で{band}を検出"
-    return (f"録音の一部（約{round(ratio * 10)}割）の区間でのみ{band}を検出。"
-            "残りの区間はなめらか")
+    return f"録音の約{round(ratio * 10)}割の区間で{band}を検出"
