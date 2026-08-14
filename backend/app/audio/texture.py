@@ -30,7 +30,10 @@ _MOD_HI_HZ = 45.0
 def modulation_profile(wav_path: str, sr: int = 16000) -> Optional[dict]:
     """エンベロープ（音量の輪郭）の周期的な震えを測る。
 
-    戻り: {"mod_rate_hz": float, "mod_strength": float(0..1), "duration_sec": float}
+    戻り: {"mod_rate_hz": float, "mod_strength": float(0..1), "flutter_ratio": float,
+    "duration_sec": float, "windows": [{"rate_hz", "strength"}, ...]}
+    windows は1秒窓ごとの自己相関ピーク（しきい値でふるう前の生値）。
+    STRENGTH_THRESHOLD の較正は eval がこの生値の分布から行う（docs/104 §4）。
     1秒未満・ほぼ無音・読み込み失敗は None（呼び出し側は記述なしで続行）。
     """
     try:
@@ -57,6 +60,7 @@ def modulation_profile(wav_path: str, sr: int = 16000) -> Optional[dict]:
     # クリップ全体の性質として主張し、ブラインドをミスリードした）。
     win = int(fs_env)  # 1秒
     rates, strengths, fluttered = [], [], 0
+    windows: list[dict] = []
     n_win = 0
     for start in range(0, env.size - win + 1, win):
         e = env[start:start + win].astype(float)
@@ -77,6 +81,7 @@ def modulation_profile(wav_path: str, sr: int = 16000) -> Optional[dict]:
         # 縁に漏れている可能性が高いので「震え」と数えない
         if peak <= lo:
             continue
+        windows.append({"rate_hz": float(fs_env / peak), "strength": strength})
         if strength >= STRENGTH_THRESHOLD:
             fluttered += 1
             rates.append(fs_env / peak)
@@ -88,6 +93,7 @@ def modulation_profile(wav_path: str, sr: int = 16000) -> Optional[dict]:
         "mod_strength": float(np.median(strengths)) if strengths else 0.0,
         "flutter_ratio": fluttered / n_win,
         "duration_sec": float(len(y) / sr),
+        "windows": windows,
     }
 
 

@@ -46,6 +46,11 @@ class TextureProfile(unittest.TestCase):
         self.assertIsNotNone(p)
         self.assertGreaterEqual(p["mod_strength"], texture.STRENGTH_THRESHOLD)
         self.assertTrue(15 <= p["mod_rate_hz"] <= 45, f"rate={p['mod_rate_hz']}")
+        # 較正用の生値（しきい値でふるう前の窓ごとのピーク）が記録される（docs/104 §4）
+        self.assertTrue(p["windows"], "windows が空でない")
+        for w in p["windows"]:
+            self.assertTrue(0.0 <= w["strength"] <= 1.0)
+            self.assertGreater(w["rate_hz"], 0.0)
         self.assertGreaterEqual(p["flutter_ratio"], 0.7, "全体で震えている")
         d = texture.describe(p)
         self.assertIn("ほぼ全体で", d)
