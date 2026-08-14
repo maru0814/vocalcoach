@@ -281,6 +281,25 @@ class FactsInjection(unittest.TestCase):
         self.assertEqual(ictx.get("heard"), "practice", "songタグは無視してpracticeに固定")
         self.assertTrue(any("INTENT: song を返した" in m for m in lg.output))
 
+    def test_homework_name_banned_when_blind_disagrees(self):
+        """AC-15: ブラインド名(high)が宿題名と食い違えば、宿題名での講評を明示禁止。"""
+        prompt, _ = self._generate(self._base_ictx(
+            forced_intent="practice",
+            blind={"kind": "practice", "practice": "サイレン",
+                   "confidence": "high", "desc": "滑らかな上下。"},
+        ))
+        self.assertIn("をやったことにして講評するのは禁止", prompt)
+        self.assertIn("『サイレン』と判定しており", prompt)
+
+    def test_no_homework_ban_when_blind_matches(self):
+        """AC-15: ブラインド名が宿題名と一致（部分一致含む）なら禁止文は出ない。"""
+        prompt, _ = self._generate(self._base_ictx(
+            forced_intent="practice",
+            blind={"kind": "practice", "practice": "ハミング",
+                   "confidence": "high", "desc": "閉口の響き。"},
+        ))
+        self.assertNotIn("をやったことにして講評するのは禁止", prompt)
+
     def test_no_facts_keeps_docs52_flow(self):
         """AC-07: 申告・ブラインドが無ければ docs/52 のプロンプトのまま（回帰）。"""
         prompt, _ = self._generate(self._base_ictx())

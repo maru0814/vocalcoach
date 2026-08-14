@@ -388,10 +388,22 @@ def generate_feedback(
                 )
             if intent_ctx.get("forced_intent") == "practice":
                 # FR-06: 種類は確定（歌講評の選択肢を出さない）。練習名だけは推定として扱う
+                # FR-07: ブラインドの練習名(確信度high)が宿題名と食い違うなら、宿題名での講評を禁止
+                # （実事故 2026-08-14: ブラインド=サイレン(high)なのに宿題のストロー発声をやったことにした）
+                _bname = blind.get("practice") if blind else None
+                homework_guard = ""
+                if (prac and _bname and blind.get("confidence") == "high"
+                        and _bname not in prac and prac not in _bname):
+                    homework_guard = (
+                        f"**重要**: ブラインド聴取は『{_bname}』と判定しており、勧めている基礎練"
+                        f"『{prac}』とは別物の可能性が高い。**『{prac}』をやったことにして講評するのは禁止**。"
+                        "聴こえた実演（またはその描写）から入り、必要ならレッスン中の基礎練へやさしく戻す。\n"
+                    )
                 intent_block = (
                     "# この録音は発声練習の実演（確定）\n"
                     f"{lesson}\n"
                     f"{facts}"
+                    f"{homework_guard}"
                     "ブラインド聴取が高い確信度で「発声練習」と判定済みのため、これは歌ではない。"
                     "歌としての講評（ビブラート・音程の正確さ・原曲比較・歌い直しの改善など）を一切しない。\n"
                     "出力の1行目に必ず `INTENT: practice` とだけ書き、空行を挟んで本文を続ける。\n"
