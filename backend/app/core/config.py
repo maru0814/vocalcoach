@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     # 重い音声解析・採点はルールベースのまま。テキスト質問への返答だけ Gemini に通す。
     # APIキー未設定時は自動でルールベース応答にフォールバックする。
     gemini_api_key: str | None = None
+    # --- 他社チャットバックエンド（docs/103・B案）---
+    # チャット経路だけ OpenAI へ差し替えられる。音声・分析経路は Gemini 固定。
+    # プロバイダは llm_chat_model のIDから決定論で判別する（llm._chat_provider）ので、
+    # provider 用の設定は持たない（provider と model の食い違い事故を防ぐ）。
+    # 使い方: LLM_CHAT_MODEL=gpt-5.6-terra と OPENAI_API_KEY を env に置くだけ。
+    # 未設定なら従来どおり Gemini（既定値は変えていないので実装だけでは挙動不変）。
+    openai_api_key: str | None = None
     # 最安クラス＋無料枠ありの Flash-Lite を既定に。env で上書き可。
     # ⚠️ "-latest" エイリアスは使わない（docs/91 原因1）: Google 側で新世代（Gemini 3 系）に
     #    切り替わった際、thinking_budget=0 が INVALID_ARGUMENT になりテキスト会話が全滅した。

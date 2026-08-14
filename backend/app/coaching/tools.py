@@ -288,6 +288,18 @@ CONTEXT_TOOL_DECLS = {
 }
 
 
+def to_openai_tool(decl: dict) -> dict:
+    """Gemini の FunctionDeclaration 形式を OpenAI の tools 形式へ変換する（docs/103）。
+
+    両社とも中身は同じ JSON Schema で、包み方だけが違う:
+      Gemini: {name, description, parameters}
+      OpenAI: {"type": "function", "function": {name, description, parameters}}
+    宣言そのもの（＝ツールをいつ呼ぶかの判断基準）は1か所で管理し、
+    プロバイダごとに文言が分岐しないようにする。
+    """
+    return {"type": "function", "function": dict(decl)}
+
+
 def dispatch(name: str, args: Optional[dict]) -> dict:
     """ツール名と引数を受けて実行結果（JSON化可能な dict）を返す。"""
     args = args or {}
