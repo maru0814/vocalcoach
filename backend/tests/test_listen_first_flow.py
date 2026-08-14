@@ -70,6 +70,30 @@ class BlindListen(unittest.TestCase):
         self.assertIn("サイレン", prompt, "練習メニュー（語彙）は渡してよい")
         self.assertIn("先入観なし", prompt)
 
+    def test_acoustic_facts_injected_as_ruler(self):
+        """docs/104: 質感計測は「物差し」として注入され、文脈語は依然入らない。"""
+        from app.coaching import llm
+        captured: dict = {}
+        orig_key = settings.gemini_api_key
+        settings.gemini_api_key = "TEST_DUMMY"
+        try:
+            with mock.patch(
+                "google.genai.Client",
+                _fake_client(captured, "KIND: practice\nPRACTICE: サイレン\nCONFIDENCE: high\nDESC: 滑らか。"),
+            ):
+                llm.listen_blind(
+                    b"RIFFfake",
+                    acoustic_facts="規則的な振幅の震えは検出されない（なめらかな発声）",
+                )
+        finally:
+            settings.gemini_api_key = orig_key
+        prompt = captured.get("prompt", "")
+        self.assertIn("この録音自体からの機械計測", prompt)
+        self.assertIn("震えは検出されない", prompt)
+        self.assertIn("名前を断定する材料ではなく", prompt)
+        for banned in ("宿題", "課題", "勧めて", "レッスンでは"):
+            self.assertNotIn(banned, prompt, "計測注入後もAC-01を維持")
+
     def test_song_maps_practice_none(self):
         _, result = self._call("KIND: song\nPRACTICE: 不明\nCONFIDENCE: mid\nDESC: 歌。")
         self.assertEqual(result["kind"], "song")

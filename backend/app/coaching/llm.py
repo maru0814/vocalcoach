@@ -213,7 +213,7 @@ _BLIND_CONF_RE = re.compile(r"CONFIDENCE:\s*(high|mid|low)", re.IGNORECASE)
 _BLIND_DESC_RE = re.compile(r"DESC:\s*(.+)")
 
 
-def _listen_blind_once(user_wav: bytes) -> Optional[dict]:
+def _listen_blind_once(user_wav: bytes, acoustic_facts: Optional[str] = None) -> Optional[dict]:
     """listen_blind の1試行分。API・パース失敗は例外を上げず None（呼び出し側でリトライ判断）。"""
     try:
         from google import genai
@@ -221,10 +221,18 @@ def _listen_blind_once(user_wav: bytes) -> Optional[dict]:
     except Exception:  # pragma: no cover - SDK 未導入
         return None
     menu = "、".join(PRACTICE_KEYWORDS + ("ロングトーン", "スケール", "ボーカルフライ"))
+    # 録音自体からの機械計測（docs/104）。会話文脈ではなく証拠なので注入してよい。
+    # 名前を断定する材料ではなく、候補を絞る物差しとして使わせる。
+    facts_block = (
+        f"# この録音自体からの機械計測（参考）\n{acoustic_facts}\n"
+        "※名前を断定する材料ではなく、候補を絞る物差しとして使う"
+        "（例: 震えが無ければリップロール・巻き舌・フライではない可能性が高い）\n"
+    ) if acoustic_facts else ""
     prompt = (
         "この音声はボイストレーニングアプリに送られた録音です。先入観なしに聴いて、"
         "何をしている録音かだけを判定してください。\n"
         f"発声練習だった場合のメニュー例: {menu}（どれにも当てはまらなければ「不明」）\n"
+        f"{facts_block}"
         "出力は次の4行だけ（説明・挨拶なし）:\n"
         "KIND: song または practice（歌の録音なら song、発声練習なら practice）\n"
         "PRACTICE: <一番近い練習名を1語。歌・不明なら 不明>\n"
@@ -272,11 +280,12 @@ def _listen_blind_once(user_wav: bytes) -> Optional[dict]:
     }
 
 
-def listen_blind(user_wav: bytes) -> Optional[dict]:
+def listen_blind(user_wav: bytes, acoustic_facts: Optional[str] = None) -> Optional[dict]:
     """録音だけを先入観なしに聴いて「何をしている録音か」を判定する（docs/95 FR-01, docs/99）。
 
     アンカリング排除の核: 会話文脈（宿題名・課題・履歴・コメント）を一切受け取らない。
-    引数が録音バイト列のみであること自体が AC-01 の構造的担保。
+    受け取ってよいのは録音バイト列と、**その録音自体から機械計測した事実**
+    （acoustic_facts・texture.describe の記述文＝docs/104）だけ。これは文脈ではなく証拠。
     一時失敗は1回だけリトライし（docs/95 FR-05）、結果・失敗は必ずログに残す（AC-10）。
     戻り: {"kind": "song"|"practice", "practice": str|None, "confidence": str|None,
     "desc": str|None} / 2回とも失敗・無効化時は None（呼び出し側は当て推量で講評せず、
@@ -287,7 +296,7 @@ def listen_blind(user_wav: bytes) -> Optional[dict]:
     if not user_wav or not settings.gemini_api_key:
         return None
     for attempt in (1, 2):
-        result = _listen_blind_once(user_wav)
+        result = _listen_blind_once(user_wav, acoustic_facts)
         if result is not None:
             logger.info("ブラインド聴取 判定=%s 練習=%s 確信度=%s (試行%d)",
                         result["kind"], result.get("practice"), result.get("confidence"), attempt)

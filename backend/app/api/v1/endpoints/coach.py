@@ -1010,10 +1010,19 @@ def send_audio(
             try:
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
-                # 第1段: 会話文脈なしで録音だけを聴く（リトライ1回込み・docs/95 FR-05）
+                # 第1段: 会話文脈なしで録音だけを聴く（リトライ1回込み・docs/95 FR-05）。
+                # 録音自体の質感計測（震えの速さ・規則性）を消去法の物差しとして添える（docs/104）
                 if _blind_planned:
                     try:
-                        _blind = llm.listen_blind(_uw)
+                        from app.audio import texture
+                        _facts = texture.describe(texture.modulation_profile(wav_path))
+                    except Exception:
+                        logger.warning("質感計測に失敗（記述なしで続行）", exc_info=True)
+                        _facts = None
+                    if _facts:
+                        logger.info("質感計測: %s", _facts)
+                    try:
+                        _blind = llm.listen_blind(_uw, acoustic_facts=_facts)
                     except Exception:
                         logger.warning("listen_blind が例外（想定外）", exc_info=True)
                         _blind = None
