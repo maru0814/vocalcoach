@@ -70,14 +70,8 @@ class BlindListen(unittest.TestCase):
         self.assertIn("サイレン", prompt, "練習メニュー（語彙）は渡してよい")
         self.assertIn("先入観なし", prompt)
 
-    def test_facts_injection_default_off(self):
-        """較正第1・2号（docs/106 §4）: 事実注入は既定OFF。素の聴覚が実録音10/10正解なのに
-        事実文がそれを上書きして誤認させたため。再ONは実録音evalでの実証が条件（docs/104 改訂その3）。"""
-        self.assertFalse(settings.blind_listen_inject_facts)
-
     def test_acoustic_facts_injected_as_ruler(self):
-        """docs/104: 質感計測は「物差し」として注入され、文脈語は依然入らない。
-        （注入機構は eval・opt-in 用に維持。既定では coach が facts を渡さない）"""
+        """docs/104: 質感計測は「物差し」として注入され、文脈語は依然入らない。"""
         from app.coaching import llm
         captured: dict = {}
         orig_key = settings.gemini_api_key
@@ -197,6 +191,62 @@ class BlindListen(unittest.TestCase):
                 self.assertIsNone(llm.listen_blind(b"RIFFfake"))
         finally:
             settings.enable_blind_listen, settings.gemini_api_key = orig_flag, orig_key
+
+
+class ReconcileBlind(unittest.TestCase):
+    """合意ゲート（docs/105 改訂・docs/106 §4）: 一致した時だけ名前を断定する。"""
+
+    def _r(self, kind="practice", practice=None, conf="high", desc="d"):
+        return {"kind": kind, "practice": practice, "confidence": conf, "desc": desc}
+
+    def test_agreement_asserts_name(self):
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(practice="リップロール"),
+                                  self._r(practice="リップロール"))
+        self.assertEqual(out["practice"], "リップロール")
+        self.assertEqual(out["confidence"], "high")
+
+    def test_disagreement_keeps_candidates_without_assertion(self):
+        """実録音第2号の型: 耳=リップロール vs 事実=サイレン → 断定せず候補を残す。"""
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(practice="リップロール", desc="唇を震わせている"),
+                                  self._r(practice="サイレン", desc="連続的に移動"))
+        self.assertIsNone(out["practice"])
+        self.assertEqual(out["confidence"], "mid")
+        self.assertIn("リップロール", out["desc"])
+        self.assertIn("サイレン", out["desc"])
+        self.assertIn("候補", out["desc"])
+
+    def test_agreement_with_low_confidence_is_mid(self):
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(practice="ハミング", conf="mid"),
+                                  self._r(practice="ハミング"))
+        self.assertEqual(out["practice"], "ハミング")
+        self.assertEqual(out["confidence"], "mid")
+
+    def test_kind_disagreement_takes_ear_kind_low_confidence(self):
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(kind="song"), self._r(practice="サイレン"))
+        self.assertEqual(out["kind"], "song")
+        self.assertEqual(out["confidence"], "low")
+        self.assertIsNone(out["practice"])
+
+    def test_single_channel_passthrough(self):
+        from app.coaching import llm
+        ear = self._r(practice="サイレン")
+        self.assertEqual(llm.reconcile_blind(ear, None), ear)
+        self.assertEqual(llm.reconcile_blind(None, ear), ear)
+
+    def test_both_none_is_none(self):
+        from app.coaching import llm
+        self.assertIsNone(llm.reconcile_blind(None, None))
+
+    def test_song_agreement(self):
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(kind="song"), self._r(kind="song"))
+        self.assertEqual(out["kind"], "song")
+        self.assertIsNone(out["practice"])
+        self.assertEqual(out["confidence"], "high")
 
 
 class IdentityBlock(unittest.TestCase):

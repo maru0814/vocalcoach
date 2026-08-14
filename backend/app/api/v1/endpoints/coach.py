@@ -1022,11 +1022,27 @@ def send_audio(
                         _facts = None
                     if _facts:
                         logger.info("質感計測: %s", _facts)
-                    # 注入は既定OFF（較正第1・2号: 事実文が素の聴覚を上書きして誤認させた。
-                    # docs/104 改訂その3・docs/106 §4）。計測・ログは観測とevalのため継続
-                    _inject = _facts if settings.blind_listen_inject_facts else None
+                    # 合意ゲート（docs/105 改訂・docs/104 改訂その3）: 素の耳と測定事実つきの
+                    # 2チャンネルを並列で聴かせ、一致した時だけ名前を断定する。
+                    # 実録音5本の実測で両者の誤りは相補的（docs/106 §4）
                     try:
-                        _blind = llm.listen_blind(_uw, acoustic_facts=_inject)
+                        if _facts:
+                            from concurrent.futures import ThreadPoolExecutor
+                            with ThreadPoolExecutor(max_workers=2) as _ex:
+                                _f_ear = _ex.submit(llm.listen_blind, _uw, None)
+                                _f_inf = _ex.submit(llm.listen_blind, _uw, _facts)
+                                _ear, _inf = _f_ear.result(), _f_inf.result()
+                        else:  # 計測が取れない時は耳のみ（従来動作）
+                            _ear, _inf = llm.listen_blind(_uw, None), None
+                        _blind = llm.reconcile_blind(_ear, _inf)
+                        if _ear or _inf:
+                            logger.info(
+                                "ブラインド合意: 耳=%s/%s 事実=%s/%s → %s/%s(conf=%s)",
+                                (_ear or {}).get("kind"), (_ear or {}).get("practice"),
+                                (_inf or {}).get("kind"), (_inf or {}).get("practice"),
+                                (_blind or {}).get("kind"), (_blind or {}).get("practice"),
+                                (_blind or {}).get("confidence"),
+                            )
                     except Exception:
                         logger.warning("listen_blind が例外（想定外）", exc_info=True)
                         _blind = None

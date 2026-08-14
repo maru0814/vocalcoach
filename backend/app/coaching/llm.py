@@ -308,6 +308,43 @@ def listen_blind(user_wav: bytes, acoustic_facts: Optional[str] = None) -> Optio
     return None
 
 
+def reconcile_blind(ear: Optional[dict], informed: Optional[dict]) -> Optional[dict]:
+    """合意ゲート: 2チャンネルのブラインド聴取結果を突き合わせる（docs/105 改訂・docs/106 §4）。
+
+    ear=素の耳（事実注入なし）、informed=測定事実つき。実録音5本の実測で両者の誤りは
+    相補的だった（耳は震えの質感に強くリップロール全勝、事実は震えの不在の証明に強く
+    サイレン全勝）。よって**一致した時だけ名前を断定**し、不一致なら名前を確定せず
+    描写＋一言確認に落とす（「迷ったら当てずに聞く」docs/105 原則3）。
+    片方だけ成功ならその結果をそのまま使う（劣化運転）。両方失敗は None＝FR-05 の正直保留。
+    """
+    if not ear and not informed:
+        return None
+    if not ear or not informed:
+        return dict(ear or informed)
+    if ear["kind"] != informed["kind"]:
+        # 大分類の不一致は稀（実測24/24一致）。音声そのものを聴いた耳側の kind を採り、
+        # 低確信＝描写ベースの講評＋確認に落とす
+        return {"kind": ear["kind"], "practice": None, "confidence": "low",
+                "desc": ear.get("desc") or informed.get("desc")}
+    both_high = (ear.get("confidence") == "high" and informed.get("confidence") == "high")
+    if ear["kind"] == "song":
+        return {"kind": "song", "practice": None,
+                "confidence": "high" if both_high else "mid",
+                "desc": ear.get("desc") or informed.get("desc")}
+    a, b = ear.get("practice"), informed.get("practice")
+    if a and b and a == b:
+        return {"kind": "practice", "practice": a,
+                "confidence": "high" if both_high else "mid",
+                "desc": ear.get("desc") or informed.get("desc")}
+    # 名前の不一致（または片方が不明）→ 断定しない。候補を desc に残し、
+    # 講評段が「〜の練習で合っていますか？」の一言確認に使えるようにする
+    cands = list(dict.fromkeys(n for n in (a, b) if n))
+    desc = ear.get("desc") or informed.get("desc") or ""
+    if cands:
+        desc = f"{desc}（候補: {' または '.join(cands)}）" if desc else f"候補: {' または '.join(cands)}"
+    return {"kind": "practice", "practice": None, "confidence": "mid", "desc": desc or None}
+
+
 def generate_feedback(
     state: dict, user_wav: Optional[bytes] = None, ref_wav: Optional[bytes] = None,
     intent_ctx: Optional[dict] = None, user_comment: Optional[str] = None,
