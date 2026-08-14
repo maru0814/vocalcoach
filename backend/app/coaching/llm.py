@@ -884,11 +884,81 @@ def _thinking_off(model: Optional[str]):
     return types.ThinkingConfig(thinking_budget=0)
 
 
+# --- プロバイダ判別（docs/103 §4）------------------------------------------
+# チャット経路だけは他社モデルへ差し替えられる。音声・分析経路（llm_audio_model /
+# llm_analysis_model）は Gemini 固定（docs/103 §0.5: 判定の主役は既に DSP に移っており
+# モデルを替える品質上の余地が無い）。
+# provider を独立した設定にせず**モデルIDから決定論で判別**するのは、設定を二重に持つと
+# provider と model が食い違う事故が起きるため。誤読しようがない形式の決定論パースは
+# 会話憲法（docs/94 §1.1「形式の取り込み」）の許容範囲。
+_OPENAI_MODEL_RE = re.compile(r"^(?:gpt-|o\d)", re.IGNORECASE)
+
+
+def _chat_provider(model: Optional[str]) -> str:
+    """モデルIDから呼び先プロバイダを返す（"openai" | "gemini"）。"""
+    return "openai" if _OPENAI_MODEL_RE.match((model or "").strip()) else "gemini"
+
+
+def _contents_to_openai(contents, system_text: Optional[str]) -> list[dict]:
+    """Gemini の contents（types.Content の列）を OpenAI の messages 形式へ写す。
+
+    _build_contents は Gemini 型で会話を組み立てるが、中身は素のテキストの往復なので
+    role とテキストだけを写せば等価になる。_build_contents 側は変更しない
+    （会話の組み立て・事実注入のロジックをプロバイダごとに分岐させないため）。
+    """
+    msgs: list[dict] = [{"role": "system", "content": system_text or SYSTEM_PROMPT}]
+    for c in contents or []:
+        role = "assistant" if getattr(c, "role", "user") == "model" else "user"
+        text = "".join((getattr(p, "text", None) or "") for p in (getattr(c, "parts", None) or []))
+        if text.strip():
+            msgs.append({"role": role, "content": text})
+    return msgs
+
+
+def _openai_client(timeout_sec: Optional[float] = None):
+    """OpenAI クライアント。SDK 未導入・キー未設定なら None（呼び出し側でフォールバック）。"""
+    if not settings.openai_api_key:
+        logger.warning("OPENAI_API_KEY が未設定です。Gemini/ルールベースにフォールバックします。")
+        return None
+    try:
+        from openai import OpenAI
+    except Exception:  # pragma: no cover - SDK 未導入環境
+        logger.warning("openai SDK が見つかりません。フォールバックします。")
+        return None
+    to = timeout_sec if timeout_sec is not None else settings.llm_timeout_sec
+    return OpenAI(api_key=settings.openai_api_key, timeout=to)
+
+
+def _complete_openai(contents, timeout_sec: Optional[float] = None,
+                     max_tokens: Optional[int] = None,
+                     model: Optional[str] = None,
+                     system_text: Optional[str] = None) -> Optional[str]:
+    """OpenAI を1往復呼び出してテキストを返す（_complete の OpenAI 版）。
+
+    temperature は送らない。新世代（gpt-5 系）は非既定のサンプリング指定を拒否する場合が
+    あり、Gemini 側の 400 事故（docs/91/92）と同型の失敗を避けるため既定に委ねる。
+    捏造抑制はプロンプト（docs/42 の3原則）と事後スクラブが担当する。
+    """
+    client = _openai_client(timeout_sec)
+    if client is None:
+        return None
+    try:
+        resp = client.chat.completions.create(
+            model=model or settings.llm_chat_model,
+            messages=_contents_to_openai(contents, system_text),
+            max_completion_tokens=max_tokens or settings.llm_max_tokens,
+        )
+        return ((resp.choices[0].message.content or "").strip()) or None
+    except Exception as e:
+        logger.warning("OpenAI 応答生成に失敗（フォールバックします）: %s", e)
+        return None
+
+
 def _complete(contents, timeout_sec: Optional[float] = None,
               max_tokens: Optional[int] = None,
               model: Optional[str] = None,
               system_text: Optional[str] = None) -> Optional[str]:
-    """Gemini を1往復呼び出してテキストを返す。
+    """LLM を1往復呼び出してテキストを返す（プロバイダはモデルIDで自動判別）。
 
     timeout_sec: 応答待ちの上限秒（既定 settings.llm_timeout_sec）。超過時は None。
     model: 使うモデル（既定 settings.llm_model）。対話は llm_chat_model を渡して格上げする。
@@ -898,6 +968,8 @@ def _complete(contents, timeout_sec: Optional[float] = None,
     """
     if not settings.llm_enabled:
         return None
+    if _chat_provider(model or settings.llm_model) == "openai":
+        return _complete_openai(contents, timeout_sec, max_tokens, model, system_text)
     try:
         from google import genai
         from google.genai import types
@@ -1038,6 +1110,140 @@ def _needs_video_delivery_retry(reply: str, tool_urls: set[str]) -> bool:
     return not _URL_RE.search(reply)
 
 
+def _new_tool_acc() -> dict:
+    """ツールループ中に集める副産物の入れ物（プロバイダ非依存）。"""
+    return {"tool_urls": set(), "found_video_url": None, "song_candidate": None}
+
+
+def _exec_tool(name: str, args: dict, tool_ctx: Optional[dict],
+               facts_sink: Optional[list], acc: dict) -> dict:
+    """ツールを1つ実行し、結果から実在URL・原曲候補・事実を回収する（プロバイダ非依存）。
+
+    Gemini / OpenAI どちらのループからも同じものを呼ぶ。ツールの実体と、その結果の
+    扱い（URL許可リスト・原曲候補の保持・facts_sink への積み上げ）を1か所に閉じ込め、
+    プロバイダごとに FB 品質が分岐しないようにする（docs/103 §4）。
+    """
+    from app.coaching import tools as coach_tools
+
+    if tool_ctx and name in tool_ctx:
+        # セッション文脈ツール（録音を聴く・測り直す・主訴を覚える。docs/94）
+        try:
+            result = tool_ctx[name](args) or {}
+        except Exception as _e:
+            logger.warning("文脈ツール %s の実行に失敗: %s", name, _e)
+            result = {"ok": False, "error": "ツールの実行に失敗した。正直にそう伝える"}
+    else:
+        result = coach_tools.dispatch(name, args)
+    if facts_sink is not None:
+        # ツール所見の秒数・数値を「実測事実」として許可リストに載せられるように積む
+        try:
+            facts_sink.append(json.dumps(result, ensure_ascii=False))
+        except Exception:
+            pass
+    if result.get("found") and result.get("video_url"):
+        acc["found_video_url"] = result["video_url"]
+        acc["tool_urls"].add(result["video_url"])
+    # 代替練習の実在URL（found=false + alternative・docs/93 §4.4）は
+    # 決定論付与はしないが、モデルが本文で提案した時に消えないよう許可する
+    _alt = result.get("alternative") or {}
+    if isinstance(_alt, dict) and _alt.get("video_url"):
+        acc["tool_urls"].add(_alt["video_url"])
+    # YouTube実検索の結果（search_practice_video・docs/93 §4.6）。実在保証つき
+    for v in result.get("videos") or []:
+        if v.get("url"):
+            acc["tool_urls"].add(v["url"])
+    for c in result.get("candidates") or []:
+        if c.get("url"):
+            acc["tool_urls"].add(c["url"])
+            acc["song_candidate"] = acc["song_candidate"] or c
+    return result
+
+
+def _finalize_tool_reply(last_text: Optional[str], acc: dict) -> Optional[str]:
+    """ツール結果と本文の齟齬を決定論で埋める（プロバイダ非依存の事後保証）。
+
+    モデルは「動画を用意しました」と言うだけでURLを省く事故があるため、
+    ツールが実URLを返していて本文に無ければ確定的に1行添える（リンク到達を保証）。
+    原曲候補についても、確認アンカー（docs/72 FR-02）とURLを確実に載せる。
+    """
+    found_video_url = acc.get("found_video_url")
+    song_candidate = acc.get("song_candidate")
+    if found_video_url and last_text and found_video_url not in last_text:
+        last_text = last_text.rstrip() + f"\n（参考動画 → {found_video_url}）"
+    if song_candidate and last_text:
+        if SONG_CONFIRM_ANCHOR not in last_text:
+            ch = f"（{song_candidate['channel']}）" if song_candidate.get("channel") else ""
+            last_text = last_text.rstrip() + (
+                f"\n原曲は『{song_candidate['title']}』{ch}でしょうか？"
+                f"この曲で合っていますか？ → {song_candidate['url']}"
+            )
+        elif song_candidate["url"] not in last_text:
+            # アンカーはあるのにURLを省いた（モデルの省略事故）→ 確定的に補う
+            last_text = last_text.rstrip() + f"\n→ {song_candidate['url']}"
+    return last_text or None
+
+
+def _tool_loop_openai(contents, force_tool: Optional[str], model: Optional[str],
+                      system_text: Optional[str], tool_ctx: Optional[dict],
+                      facts_sink: Optional[list], acc: dict) -> Optional[str]:
+    """OpenAI 版のツールループ（_complete_with_tools の OpenAI 経路。docs/103）。
+
+    ツール宣言・実行・事後保証は Gemini 経路と共通のものを使い、
+    ここが吸収するのは呼び出し規約の差（tools の包み方・tool_calls の往復形式）だけ。
+    """
+    from app.coaching import tools as coach_tools
+
+    client = _openai_client()
+    if client is None:
+        return None
+    names = ["find_reference_video", "search_original_song", "search_practice_video"]
+    decls = [coach_tools.FIND_REFERENCE_VIDEO_DECL,
+             coach_tools.SEARCH_ORIGINAL_SONG_DECL,
+             coach_tools.SEARCH_PRACTICE_VIDEO_DECL]
+    for name in (tool_ctx or {}):
+        decl = coach_tools.CONTEXT_TOOL_DECLS.get(name)
+        if decl:
+            decls.append(decl)
+            names.append(name)
+    oai_tools = [coach_tools.to_openai_tool(d) for d in decls]
+
+    msgs = _contents_to_openai(contents, system_text)
+    mdl = model or settings.llm_chat_model
+    last_text = None
+    for _i in range(max(1, settings.coach_tool_loop_max)):
+        # 初回だけ指定ツールを強制。以降は自動に戻して自然文を生成させる（Gemini 経路と同方針）
+        kwargs = {}
+        if force_tool and _i == 0:
+            kwargs["tool_choice"] = {"type": "function", "function": {"name": force_tool}}
+        resp = client.chat.completions.create(
+            model=mdl, messages=msgs, tools=oai_tools,
+            max_completion_tokens=settings.llm_max_tokens, **kwargs,
+        )
+        msg = resp.choices[0].message
+        last_text = (msg.content or "").strip() or last_text
+        calls = list(msg.tool_calls or [])
+        if not calls:
+            break
+        msgs.append({
+            "role": "assistant",
+            "content": msg.content,
+            "tool_calls": [
+                {"id": tc.id, "type": "function",
+                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                for tc in calls
+            ],
+        })
+        for tc in calls:
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except Exception:
+                args = {}
+            result = _exec_tool(tc.function.name, args, tool_ctx, facts_sink, acc)
+            msgs.append({"role": "tool", "tool_call_id": tc.id,
+                         "content": json.dumps(result, ensure_ascii=False)})
+    return last_text
+
+
 def _complete_with_tools(contents, force_tool: Optional[str] = None,
                          model: Optional[str] = None,
                          system_text: Optional[str] = None,
@@ -1061,13 +1267,21 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
     """
     if not settings.llm_enabled:
         return None, set()
+    acc = _new_tool_acc()
+    if _chat_provider(model or settings.llm_model) == "openai":
+        try:
+            text = _tool_loop_openai(
+                contents, force_tool, model, system_text, tool_ctx, facts_sink, acc)
+        except Exception as e:
+            logger.warning("OpenAI ツール付き応答に失敗（ツール無しにフォールバック）: %s", e)
+            return None, acc["tool_urls"]
+        return _finalize_tool_reply(text, acc), acc["tool_urls"]
     try:
         from google import genai
         from google.genai import types
     except Exception:  # pragma: no cover - SDK 未導入環境
         return None, set()
     from app.coaching import tools as coach_tools
-    tool_urls: set[str] = set()
     try:
         client = genai.Client(
             api_key=settings.gemini_api_key,
@@ -1111,8 +1325,6 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
 
         convo = list(contents)
         last_text = None
-        found_video_url = None  # ツールが返した実在動画URL（本文に確実に載せるため保持）
-        song_candidate = None   # search_original_song の先頭候補（確認文を確実に出すため保持）
         for _i in range(max(1, settings.coach_tool_loop_max)):
             # 初回だけ指定ツールを強制（ANY）。以降は AUTO に戻して自然文を生成させる。
             cfg = _config("ANY") if (force_tool and _i == 0) else _config(None)
@@ -1128,60 +1340,13 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
             convo.append(cand)
             parts = []
             for fc in calls:
-                _args = dict(fc.args or {})
-                if tool_ctx and fc.name in tool_ctx:
-                    # セッション文脈ツール（録音を聴く・測り直す・主訴を覚える。docs/94）
-                    try:
-                        result = tool_ctx[fc.name](_args) or {}
-                    except Exception as _e:
-                        logger.warning("文脈ツール %s の実行に失敗: %s", fc.name, _e)
-                        result = {"ok": False, "error": "ツールの実行に失敗した。正直にそう伝える"}
-                else:
-                    result = coach_tools.dispatch(fc.name, _args)
-                if facts_sink is not None:
-                    # ツール所見の秒数・数値を「実測事実」として許可リストに載せられるように積む
-                    try:
-                        facts_sink.append(json.dumps(result, ensure_ascii=False))
-                    except Exception:
-                        pass
-                if result.get("found") and result.get("video_url"):
-                    found_video_url = result["video_url"]
-                    tool_urls.add(result["video_url"])
-                # 代替練習の実在URL（found=false + alternative・docs/93 §4.4）は
-                # 決定論付与はしないが、モデルが本文で提案した時に消えないよう許可する
-                _alt = result.get("alternative") or {}
-                if isinstance(_alt, dict) and _alt.get("video_url"):
-                    tool_urls.add(_alt["video_url"])
-                # YouTube実検索の結果（search_practice_video・docs/93 §4.6）。実在保証つき
-                for v in result.get("videos") or []:
-                    if v.get("url"):
-                        tool_urls.add(v["url"])
-                for c in result.get("candidates") or []:
-                    if c.get("url"):
-                        tool_urls.add(c["url"])
-                        song_candidate = song_candidate or c
+                result = _exec_tool(fc.name, dict(fc.args or {}), tool_ctx, facts_sink, acc)
                 parts.append(types.Part.from_function_response(name=fc.name, response=result))
             convo.append(types.Content(role="user", parts=parts))
-        # モデルは「動画を用意しました」と言うだけでURLを省く事故があるため、
-        # ツールが実URLを返していて本文に無ければ、確定的に1行添える（リンク到達を保証）。
-        if found_video_url and last_text and found_video_url not in last_text:
-            last_text = last_text.rstrip() + f"\n（参考動画 → {found_video_url}）"
-        # 原曲候補が返っているのに確認アンカーが無ければ、確定的に確認文を1行添える
-        # （docs/72 FR-02。承諾検出（rule_engine）はこの定型句＋URL1件をトリガーにする）。
-        if song_candidate and last_text:
-            if SONG_CONFIRM_ANCHOR not in last_text:
-                ch = f"（{song_candidate['channel']}）" if song_candidate.get("channel") else ""
-                last_text = last_text.rstrip() + (
-                    f"\n原曲は『{song_candidate['title']}』{ch}でしょうか？"
-                    f"この曲で合っていますか？ → {song_candidate['url']}"
-                )
-            elif song_candidate["url"] not in last_text:
-                # アンカーはあるのにURLを省いた（モデルの省略事故）→ 確定的に補う
-                last_text = last_text.rstrip() + f"\n→ {song_candidate['url']}"
-        return last_text or None, tool_urls
+        return _finalize_tool_reply(last_text, acc), acc["tool_urls"]
     except Exception as e:  # API エラー・ネットワーク・レート制限など
         logger.warning("ツール付きLLM応答に失敗（ツール無しにフォールバック）: %s", e)
-        return None, tool_urls
+        return None, acc["tool_urls"]
 
 
 _URL_RE = re.compile(r"https?://[^\s　）\)】\]」』]+")
