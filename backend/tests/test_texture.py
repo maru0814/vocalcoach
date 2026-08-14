@@ -46,11 +46,30 @@ class TextureProfile(unittest.TestCase):
         self.assertIsNotNone(p)
         self.assertGreaterEqual(p["mod_strength"], texture.STRENGTH_THRESHOLD)
         self.assertTrue(15 <= p["mod_rate_hz"] <= 45, f"rate={p['mod_rate_hz']}")
+        self.assertGreaterEqual(p["flutter_ratio"], 0.7, "全体で震えている")
         d = texture.describe(p)
-        self.assertIn("震えを毎秒約", d)
+        self.assertIn("ほぼ全体で", d)
         self.assertIn("唇・舌の震えやエッジボイスに典型的な帯域", d)
         for banned in ("リップロール", "巻き舌", "サイレン"):
             self.assertNotIn(banned, d, "記述文に練習名を含めない（docs/104 原則）")
+
+    def test_partial_flutter_reported_as_partial(self):
+        """冒頭だけきしむサイレン相当（先頭1.5秒のみ震え）→「一部のみ」と記述。"""
+        sec = 4.0
+        t = np.linspace(0, sec, int(SR * sec), endpoint=False)
+        base = _sweep(sec=sec)
+        am = 1.0 + 0.8 * np.sin(2 * np.pi * 25.0 * t) * (t < 1.5)
+        path = _write_wav(base * am / np.abs(base * am).max() * 0.8)
+        try:
+            p = texture.modulation_profile(path)
+        finally:
+            os.unlink(path)
+        self.assertIsNotNone(p)
+        self.assertLess(p["flutter_ratio"], 0.7)
+        self.assertGreater(p["flutter_ratio"], 0.0)
+        d = texture.describe(p)
+        self.assertIn("一部", d)
+        self.assertIn("残りの区間はなめらか", d)
 
     def test_plain_sweep_has_no_flutter(self):
         """変調なしスイープ（サイレン相当）→ 震えは検出されない。"""
@@ -61,7 +80,25 @@ class TextureProfile(unittest.TestCase):
             os.unlink(path)
         self.assertIsNotNone(p)
         d = texture.describe(p)
-        self.assertEqual(d, "規則的な振幅の震えは検出されない（なめらかな発声）")
+        self.assertEqual(d, "規則的な振幅の震え（毎秒4〜45回の帯域）は検出されない")
+
+    def test_low_voice_sweep_f0_not_reported_as_pulses(self):
+        """回帰（2026-08-14 実事故）: 低い声のサイレン（f0 94→382Hz・倍音つき）の
+        基本周波数を「パルス状の震え」と誤検出しない。"""
+        sec = 4.0
+        t = np.linspace(0, sec, int(SR * sec), endpoint=False)
+        f0_t = 94.0 * (382.0 / 94.0) ** (t / sec)  # 対数スイープ
+        phase = 2 * np.pi * np.cumsum(f0_t) / SR
+        # のこぎり波（声帯パルスに似た倍音構造）で声らしい信号を作る
+        y = 0.4 * (2 * ((phase / (2 * np.pi)) % 1.0) - 1.0)
+        path = _write_wav(y)
+        try:
+            p = texture.modulation_profile(path)
+        finally:
+            os.unlink(path)
+        self.assertIsNotNone(p)
+        d = texture.describe(p)
+        self.assertIn("検出されない", d, f"f0漏れをパルスと主張しない: {p}")
 
     def test_slow_am_is_vibrato_band(self):
         """6Hz の緩い揺れ → ビブラート帯域の記述。"""
