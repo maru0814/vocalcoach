@@ -61,11 +61,11 @@ class BudgetLedgerCounting(unittest.TestCase):
         self.assertAlmostEqual(llm_budget.month_spend_jpy(), 3.0, places=2)
 
 
-class IntentAwareListening(unittest.TestCase):
-    """zero-base の意図判定（docs/52 FR-04）。
+class IntentTagRetirement(unittest.TestCase):
+    """docs/105: INTENT タグ プロトコル廃止後の防御的挙動。
 
-    「勧めた基礎練の実演」を zero-base が曲として講評して、resolve_kind の修正を
-    上書きしてしまう再発（表示テキストと状態遷移の食い違い）の回帰ガード。
+    旧 docs/52 FR-04（モデルがタグ宣言→書き戻し）は識別レイヤーの専権化で廃止。
+    タグは残骸として出ても剥がすだけで、値は使わない。
     """
 
     def test_split_intent_tag_practice(self):
@@ -86,8 +86,8 @@ class IntentAwareListening(unittest.TestCase):
         self.assertIsNone(heard)
         self.assertEqual(rest, "タグの無い普通の講評。")
 
-    def test_generate_feedback_strips_tag_and_writes_back(self):
-        """モデルが INTENT タグ付きで返したら、タグは本文から消え intent_ctx に書き戻る。"""
+    def test_generate_feedback_strips_stray_tag_without_writeback(self):
+        """残骸タグは本文から消える。heard の書き戻しは行われない（docs/105）。"""
         from unittest import mock
         from app.coaching import llm
 
@@ -107,7 +107,9 @@ class IntentAwareListening(unittest.TestCase):
         state = {"phase": "practice", "current_task": "breathy_closure",
                  "last_analysis": {"duration_sec": 5.0}, "baseline_analysis": None,
                  "song_ref_url": None, "song_ref_path": None}
-        ictx = {"kind_hint": "song", "task_label": "息漏れを減らす", "practice_name": "ボーカルフライからのアタック"}
+        ictx = {"task_label": "息漏れを減らす", "practice_name": "ボーカルフライからのアタック",
+                "identity": {"kind": "practice", "name": "ボーカルフライ",
+                             "confidence": "high", "description": None, "source": "blind"}}
         orig_flag, orig_key = settings.enable_zero_base_fb, settings.gemini_api_key
         settings.enable_zero_base_fb, settings.gemini_api_key = True, "TEST_DUMMY"
         try:
@@ -116,69 +118,9 @@ class IntentAwareListening(unittest.TestCase):
         finally:
             settings.enable_zero_base_fb, settings.gemini_api_key = orig_flag, orig_key
         self.assertIsNotNone(reply)
-        self.assertNotIn("INTENT", reply, "意図タグをユーザーに見せない")
+        self.assertNotIn("INTENT", reply, "残骸タグをユーザーに見せない")
         self.assertIn("ガラガラ", reply)
-        self.assertEqual(ictx.get("heard"), "practice", "聴いた判定が書き戻る")
-
-    @staticmethod
-    def _call_with_prompt_capture(ictx):
-        """generate_feedback を呼び、LLMに渡ったテキストプロンプトを返す。"""
-        from unittest import mock
-        from app.coaching import llm
-
-        captured = {}
-
-        class _Resp:
-            text = "INTENT: practice\n\nサイレンの録音ですね。低音から高音までなめらかに繋がっています。"
-
-        class _Models:
-            def generate_content(self, **kw):
-                for content in kw.get("contents", []):
-                    for p in content.parts:
-                        if getattr(p, "text", None):
-                            captured["prompt"] = p.text
-                return _Resp()
-
-        class _Client:
-            def __init__(self, **kw):
-                self.models = _Models()
-
-        state = {"phase": "practice", "current_task": "weak_resonance",
-                 "last_analysis": {"duration_sec": 5.0}, "baseline_analysis": None,
-                 "song_ref_url": None, "song_ref_path": None}
-        orig_flag, orig_key = settings.enable_zero_base_fb, settings.gemini_api_key
-        settings.enable_zero_base_fb, settings.gemini_api_key = True, "TEST_DUMMY"
-        try:
-            with mock.patch("google.genai.Client", _Client):
-                reply = llm.generate_feedback(state, user_wav=b"RIFFfake", intent_ctx=ictx)
-        finally:
-            settings.enable_zero_base_fb, settings.gemini_api_key = orig_flag, orig_key
-        return captured.get("prompt", ""), reply
-
-    def test_prompt_has_mismatch_branch_when_practice_recommended(self):
-        """AC-09: 基礎練勧奨中は「実演＝勧めた基礎練」と決めつけない指示が入る。
-
-        再現事故: 宿題がハミング→母音の状態でサイレンを送ったら、ハミング練習を
-        やったことにして「ハミングから母音へ移す際に…」と録音に無い動作を講評した。
-        """
-        ictx = {"kind_hint": "song", "task_label": "響きを前に集める（芯・通り）",
-                "practice_name": "ハミング → 母音（マスクに集める）"}
-        prompt, reply = self._call_with_prompt_capture(ictx)
-        self.assertIn("実演が勧めた基礎練と一致するとは限らない", prompt)
-        self.assertIn("一致しない・確信が持てない時", prompt)
-        self.assertIn("録音に無い動作", prompt)
-        self.assertIn("サイレン", prompt, "意図判定の練習例にサイレンを含める")
-        self.assertIsNotNone(reply)
-        self.assertEqual(ictx.get("heard"), "practice")
-
-    def test_prompt_without_recommended_practice_skips_match_logic(self):
-        """基礎練を勧めていない時は一致判定を出さず、聴こえた練習の特定から入る。"""
-        ictx = {"kind_hint": "practice", "task_label": None, "practice_name": None}
-        prompt, _ = self._call_with_prompt_capture(ictx)
-        self.assertIn("特定の基礎練はまだ勧めていません", prompt)
-        self.assertNotIn("実演が勧めた基礎練と一致するとは限らない", prompt)
-        self.assertIn("何の練習に聞こえるか", prompt)
-        self.assertIn("録音に無い動作を描写しない", prompt)
+        self.assertNotIn("heard", ictx, "書き戻しは廃止（ルーティングは識別レイヤー）")
 
 
 if __name__ == "__main__":

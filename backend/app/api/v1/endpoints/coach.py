@@ -1019,8 +1019,9 @@ def send_audio(
         # 予算超過でルールベースFBへ格下げされないようにする。
         _premium = billing_service.is_premium(db, user.id)
         if llm_budget.zero_base_allowed(_premium, _est):
-            # 意図文脈（docs/52 FR-04）: モデル自身が「曲か・発声練習の実演か」を聴いて判定する。
-            _ictx: dict = {"kind_hint": kind}
+            # 識別レイヤー（docs/105）: 「これは何の録音か」をここで一度だけ確定する。
+            # 講評段は identity を再判定しない（旧 INTENT タグ プロトコルは廃止）。
+            _ictx: dict = {}
             _task = rule_engine.get_task(s.current_task) if s.current_task else None
             if _task:
                 _ictx["task_label"] = _task["label"]
@@ -1028,9 +1029,8 @@ def send_audio(
             try:
                 _uw = open(wav_path, "rb").read()
                 _rw = open(ref_wav, "rb").read() if (ref_wav and os.path.exists(ref_wav)) else None
-                # 第1段: 会話文脈なしで録音だけを聴く（リトライ1回込み・docs/95 FR-05）。
-                # 録音自体の質感計測（震えの速さ・規則性）を消去法の物差しとして添える（docs/104）
                 if _blind_planned:
+                    # ブラインド聴取（リトライ1回込み・docs/95 FR-05）＋質感計測（docs/104）
                     try:
                         from app.audio import texture
                         _parts = [
@@ -1049,15 +1049,16 @@ def send_audio(
                         logger.warning("listen_blind が例外（想定外）", exc_info=True)
                         _blind = None
                     if _blind:
-                        _ictx["blind"] = _blind
-                        # FR-06: 確信度highの「練習」判定は覆させない。歌前提の材料（原曲音声・
-                        # 原曲比較）はアンカーになるため第2段にそもそも渡さない（2026-08-13 の
-                        # 実事故: 原曲付きセッションで「練習」メモが文脈の物量に負けて歌講評化）。
-                        if _blind["kind"] == "practice" and _blind.get("confidence") == "high":
-                            _ictx["forced_intent"] = "practice"
-                            kind = "practice"
-                            _rw = None
-                            logger.info("ブラインド確定(practice/high): 歌講評を禁止し原曲アンカーを除去")
+                        # 練習名は確信度highの時だけ確定（それ未満は描写＋一言確認で講評）
+                        _conf = _blind.get("confidence") or "low"
+                        _ictx["identity"] = {
+                            "kind": _blind["kind"],
+                            "name": (_blind.get("practice")
+                                     if _blind["kind"] == "practice" and _conf == "high" else None),
+                            "confidence": _conf,
+                            "description": _blind.get("desc"),
+                            "source": "blind",
+                        }
                     else:
                         # 聴けなかったのに当て推量で講評しない（docs/95 FR-05）。
                         # 昔の悪癖（文脈からの決めつけ）が失敗時だけ復活する事故を塞ぐ。
@@ -1075,13 +1076,24 @@ def send_audio(
                             db.refresh(r)
                         return ChatResponse(phase=s.phase, current_task=s.current_task,
                                             messages=[_msg_out(r) for r in rows])
-                # 第2段: ブラインド判定・申告を聴取事実として注入した上で講評
-                _st = _session_state(s)
-                if _ictx.get("forced_intent") == "practice" and isinstance(_st.get("last_analysis"), dict):
-                    # 原曲比較データ（in-tune/リズム）も歌アンカーなので第2段から落とす（FR-06）
-                    _st["last_analysis"] = {
-                        k: v for k, v in _st["last_analysis"].items() if k != "_compare"
+                else:
+                    # フラグOFF時は音響ヒューリスティック（resolve_kind 済みの kind）を低確信の
+                    # identity として使う（docs/105 §2: source=heuristic）
+                    _ictx["identity"] = {
+                        "kind": kind if kind in ("song", "practice") else "song",
+                        "name": None, "confidence": "low", "description": None,
+                        "source": "heuristic",
                     }
+                # ルーティングは識別レイヤーの専権（講評段の出力からは決めない）
+                kind = _ictx["identity"]["kind"]
+                # 第2段: 識別結果でフィルタした文脈で講評（練習なら歌アンカーを渡さない）
+                _st = _session_state(s)
+                if kind == "practice":
+                    _rw = None
+                    if isinstance(_st.get("last_analysis"), dict):
+                        _st["last_analysis"] = {
+                            k: v for k, v in _st["last_analysis"].items() if k != "_compare"
+                        }
                 zero_base_reply = llm.generate_feedback(
                     _st, user_wav=_uw, ref_wav=_rw, intent_ctx=_ictx,
                     user_comment=user_comment,
@@ -1091,11 +1103,6 @@ def send_audio(
             if zero_base_reply:
                 # 有料・無料とも原価は記録（週次の原価・粗利監視のため）。docs/52 FR-03
                 llm_budget.record(_est)
-                # 聴いた意図をルーティングに反映: 実演なら基礎練チェック、曲なら歌い直し/診断へ。
-                # （表示テキストと状態遷移が同じ意図で揃う。タグ無しはヒューリスティックのまま）
-                _heard = _ictx.get("heard")
-                if _heard in ("song", "practice"):
-                    kind = _heard
         else:  # 無料ユーザーが上限到達 → 当月1回だけ通知してルールベースFBへ
             llm_budget.notify_budget_reached_once()
 
