@@ -289,15 +289,18 @@ CONTEXT_TOOL_DECLS = {
 
 
 def to_openai_tool(decl: dict) -> dict:
-    """Gemini の FunctionDeclaration 形式を OpenAI の tools 形式へ変換する（docs/103）。
+    """Gemini の FunctionDeclaration 形式を OpenAI Responses API の tools 形式へ変換する。
 
-    両社とも中身は同じ JSON Schema で、包み方だけが違う:
-      Gemini: {name, description, parameters}
-      OpenAI: {"type": "function", "function": {name, description, parameters}}
+    両社とも中身は同じ JSON Schema で、包み方だけが違う（docs/103）:
+      Gemini              : {name, description, parameters}
+      OpenAI Responses API: {"type": "function", name, description, parameters}（平坦）
+    ⚠️ chat.completions の {"type":"function","function":{...}}（入れ子）とは別形式。
+       入れ子で Responses API に渡すと 400 "Missing required parameter: tools[0].name"
+       になり、ツールが丸ごと無効化される（実測）。
     宣言そのもの（＝ツールをいつ呼ぶかの判断基準）は1か所で管理し、
     プロバイダごとに文言が分岐しないようにする。
     """
-    return {"type": "function", "function": dict(decl)}
+    return {"type": "function", **decl}
 
 
 def dispatch(name: str, args: Optional[dict]) -> dict:

@@ -20,15 +20,18 @@ from app.coaching.tools import CATALOG_VIDEO_URLS
 
 from . import states as S
 
+# 生の単位の検出（docs/42 §6）。秒は許可なので含めない。
+_RAW_UNIT_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:cents?|セント|dB|db|Hz|hz|ヘルツ|[%％])")
+
 LABELS = {
     "H1": "時刻捏造", "H2": "数値捏造", "H3": "音名捏造", "H5": "歌詞・母音断定",
     "H7": "照合なし正確さ断定", "H8": "URL捏造",
-    "N3": "敬体/人称の揺れ", "N4": "冗長/長すぎ",
+    "N3": "敬体/人称の揺れ", "N4": "冗長/長すぎ", "N5": "生の数値を口に出した",
     "P1": "非会話出力", "P2": "カード約束",
 }
 SEV = {
     "H1": "S1", "H2": "S1", "H3": "S1", "H5": "S1", "H7": "S1", "H8": "S2",
-    "N3": "S3", "N4": "S3", "P1": "S2", "P2": "S2",
+    "N3": "S3", "N4": "S3", "N5": "S2", "P1": "S2", "P2": "S2",
 }
 RULES = {
     "H1": ["docs/12 FR-03", "docs/12 AC-04", "docs/12 AC-07"],
@@ -37,6 +40,7 @@ RULES = {
     "H5": ["docs/12 FR-04", "docs/12 AC-08"],
     "H7": ["docs/42 §5", "docs/12 FR-01"],
     "H8": ["実装ガード _scrub_foreign_urls"],
+    "N5": ["docs/42 §6 比較は体感の言葉で語る"],
     "N3": ["docs/42 §1"],
     "N4": ["docs/42 §2"],
     "P1": ["docs/42 §2"],
@@ -257,5 +261,16 @@ def check_reply(reply: str, context: str, state: dict,
         if s:
             out.append(_f("P2", s, "出ないカードを約束している（チャット返信にカードは無い）。",
                           "docs/42 §2"))
+
+    # N5 生の数値（docs/42 §6・2026-08-08 運用者FB）。
+    # 文面に出してよい単位は秒数・半音・音名だけ。cents/dB/％/Hz/点は体感語へ翻訳する。
+    # 「78点」等はユーザー自身の発言の復唱もあり得るので、文脈に無いものだけを挙げる。
+    for m in _RAW_UNIT_RE.finditer(reply):
+        span = m.group(0)
+        out.append(_f(
+            "N5", span,
+            f"生の数値『{span}』をそのまま文面に出している（体感の言葉へ翻訳すべき）",
+            "docs/42 §6: cents・dB・％・Hz は文面に出さない（例外は秒数・半音・音名）",
+        ))
 
     return out
