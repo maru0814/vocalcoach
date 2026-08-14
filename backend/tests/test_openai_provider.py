@@ -41,19 +41,24 @@ class ToolDeclSharing(unittest.TestCase):
         decl = coach_tools.SEARCH_ORIGINAL_SONG_DECL
         wrapped = coach_tools.to_openai_tool(decl)
         self.assertEqual(wrapped["type"], "function")
-        self.assertEqual(wrapped["function"]["name"], decl["name"])
-        self.assertEqual(wrapped["function"]["description"], decl["description"])
-        self.assertEqual(wrapped["function"]["parameters"], decl["parameters"])
+        self.assertEqual(wrapped["name"], decl["name"])
+        self.assertEqual(wrapped["description"], decl["description"])
+        self.assertEqual(wrapped["parameters"], decl["parameters"])
+
+    def test_shape_is_flat_not_nested(self):
+        """Responses API は平坦形（入れ子だと 400 でツールが全滅する。実測）。"""
+        w = coach_tools.to_openai_tool(coach_tools.FIND_REFERENCE_VIDEO_DECL)
+        self.assertNotIn("function", w)
+        self.assertIn("name", w)
 
     def test_wrapper_does_not_mutate_source(self):
         decl = dict(coach_tools.FIND_REFERENCE_VIDEO_DECL)
-        coach_tools.to_openai_tool(coach_tools.FIND_REFERENCE_VIDEO_DECL)["function"]["name"] = "x"
+        coach_tools.to_openai_tool(coach_tools.FIND_REFERENCE_VIDEO_DECL)["name"] = "x"
         self.assertEqual(coach_tools.FIND_REFERENCE_VIDEO_DECL, decl)
 
     def test_all_context_tools_convertible(self):
         for name, decl in coach_tools.CONTEXT_TOOL_DECLS.items():
-            w = coach_tools.to_openai_tool(decl)
-            self.assertEqual(w["function"]["name"], decl["name"], name)
+            self.assertEqual(coach_tools.to_openai_tool(decl)["name"], decl["name"], name)
 
 
 class MessageConversion(unittest.TestCase):
@@ -65,21 +70,16 @@ class MessageConversion(unittest.TestCase):
             self.role = role
             self.parts = [MessageConversion._P(text)]
 
-    def test_roles_and_system_are_mapped(self):
+    def test_roles_are_mapped(self):
+        """model→assistant に写り、順序が保たれる。人格は input ではなく instructions で渡す。"""
         contents = [self._C("user", "こんにちは"), self._C("model", "こんにちは！"),
                     self._C("user", "高い声のコツは？")]
-        msgs = llm._contents_to_openai(contents, "あなたはソラ先生です")
-        self.assertEqual(msgs[0], {"role": "system", "content": "あなたはソラ先生です"})
-        self.assertEqual([m["role"] for m in msgs[1:]], ["user", "assistant", "user"])
+        msgs = llm._contents_to_openai(contents)
+        self.assertEqual([m["role"] for m in msgs], ["user", "assistant", "user"])
         self.assertEqual(msgs[-1]["content"], "高い声のコツは？")
 
     def test_empty_parts_are_skipped(self):
-        msgs = llm._contents_to_openai([self._C("user", "   ")], "sys")
-        self.assertEqual(len(msgs), 1)  # system のみ
-
-    def test_system_defaults_to_persona(self):
-        msgs = llm._contents_to_openai([], None)
-        self.assertEqual(msgs[0]["content"], llm.SYSTEM_PROMPT)
+        self.assertEqual(llm._contents_to_openai([self._C("user", "   ")]), [])
 
 
 class SharedToolPostProcessing(unittest.TestCase):

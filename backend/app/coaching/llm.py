@@ -875,14 +875,15 @@ def _chat_provider(model: Optional[str]) -> str:
     return "openai" if _OPENAI_MODEL_RE.match((model or "").strip()) else "gemini"
 
 
-def _contents_to_openai(contents, system_text: Optional[str]) -> list[dict]:
-    """Gemini の contents（types.Content の列）を OpenAI の messages 形式へ写す。
+def _contents_to_openai(contents) -> list[dict]:
+    """Gemini の contents（types.Content の列）を OpenAI Responses API の input へ写す。
 
     _build_contents は Gemini 型で会話を組み立てるが、中身は素のテキストの往復なので
     role とテキストだけを写せば等価になる。_build_contents 側は変更しない
     （会話の組み立て・事実注入のロジックをプロバイダごとに分岐させないため）。
+    人格＋レッスン状況は input ではなく instructions で渡す（Responses API の作法）。
     """
-    msgs: list[dict] = [{"role": "system", "content": system_text or SYSTEM_PROMPT}]
+    msgs: list[dict] = []
     for c in contents or []:
         role = "assistant" if getattr(c, "role", "user") == "model" else "user"
         text = "".join((getattr(p, "text", None) or "") for p in (getattr(c, "parts", None) or []))
@@ -911,20 +912,24 @@ def _complete_openai(contents, timeout_sec: Optional[float] = None,
                      system_text: Optional[str] = None) -> Optional[str]:
     """OpenAI を1往復呼び出してテキストを返す（_complete の OpenAI 版）。
 
-    temperature は送らない。新世代（gpt-5 系）は非既定のサンプリング指定を拒否する場合が
-    あり、Gemini 側の 400 事故（docs/91/92）と同型の失敗を避けるため既定に委ねる。
+    Responses API を使う。chat.completions では gpt-5.6 系が関数ツールを拒否し
+    （"use /v1/responses or set reasoning_effort to none"）、ツール経路が丸ごと
+    無効になることを実測したため、テキスト経路も同じ API に揃える（docs/103）。
+    temperature は送らない。新世代は非既定のサンプリング指定を拒否する場合があり、
+    Gemini 側の 400 事故（docs/91/92）と同型の失敗を避けるため既定に委ねる。
     捏造抑制はプロンプト（docs/42 の3原則）と事後スクラブが担当する。
     """
     client = _openai_client(timeout_sec)
     if client is None:
         return None
     try:
-        resp = client.chat.completions.create(
+        resp = client.responses.create(
             model=model or settings.llm_chat_model,
-            messages=_contents_to_openai(contents, system_text),
-            max_completion_tokens=max_tokens or settings.llm_max_tokens,
+            input=_contents_to_openai(contents),
+            instructions=system_text or SYSTEM_PROMPT,
+            max_output_tokens=max_tokens or settings.llm_max_tokens,
         )
-        return ((resp.choices[0].message.content or "").strip()) or None
+        return ((resp.output_text or "").strip()) or None
     except Exception as e:
         logger.warning("OpenAI 応答生成に失敗（フォールバックします）: %s", e)
         return None
@@ -1165,14 +1170,15 @@ def _tool_loop_openai(contents, force_tool: Optional[str], model: Optional[str],
     """OpenAI 版のツールループ（_complete_with_tools の OpenAI 経路。docs/103）。
 
     ツール宣言・実行・事後保証は Gemini 経路と共通のものを使い、
-    ここが吸収するのは呼び出し規約の差（tools の包み方・tool_calls の往復形式）だけ。
+    ここが吸収するのは呼び出し規約の差（tools の包み方・往復形式）だけ。
+    Responses API を使う理由: chat.completions では gpt-5.6 系が関数ツールを
+    400 で拒否し、ツールが丸ごと無効になる（実測。動画・原曲・聴取が全滅する）。
     """
     from app.coaching import tools as coach_tools
 
     client = _openai_client()
     if client is None:
         return None
-    names = ["find_reference_video", "search_original_song", "search_practice_video"]
     decls = [coach_tools.FIND_REFERENCE_VIDEO_DECL,
              coach_tools.SEARCH_ORIGINAL_SONG_DECL,
              coach_tools.SEARCH_PRACTICE_VIDEO_DECL]
@@ -1180,43 +1186,35 @@ def _tool_loop_openai(contents, force_tool: Optional[str], model: Optional[str],
         decl = coach_tools.CONTEXT_TOOL_DECLS.get(name)
         if decl:
             decls.append(decl)
-            names.append(name)
     oai_tools = [coach_tools.to_openai_tool(d) for d in decls]
 
-    msgs = _contents_to_openai(contents, system_text)
+    inp = _contents_to_openai(contents)
     mdl = model or settings.llm_chat_model
     last_text = None
     for _i in range(max(1, settings.coach_tool_loop_max)):
         # 初回だけ指定ツールを強制。以降は自動に戻して自然文を生成させる（Gemini 経路と同方針）
         kwargs = {}
         if force_tool and _i == 0:
-            kwargs["tool_choice"] = {"type": "function", "function": {"name": force_tool}}
-        resp = client.chat.completions.create(
-            model=mdl, messages=msgs, tools=oai_tools,
-            max_completion_tokens=settings.llm_max_tokens, **kwargs,
+            kwargs["tool_choice"] = {"type": "function", "name": force_tool}
+        resp = client.responses.create(
+            model=mdl, input=inp, tools=oai_tools,
+            instructions=system_text or SYSTEM_PROMPT,
+            max_output_tokens=settings.llm_max_tokens, **kwargs,
         )
-        msg = resp.choices[0].message
-        last_text = (msg.content or "").strip() or last_text
-        calls = list(msg.tool_calls or [])
+        last_text = (resp.output_text or "").strip() or last_text
+        calls = [o for o in resp.output if getattr(o, "type", "") == "function_call"]
         if not calls:
             break
-        msgs.append({
-            "role": "assistant",
-            "content": msg.content,
-            "tool_calls": [
-                {"id": tc.id, "type": "function",
-                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                for tc in calls
-            ],
-        })
-        for tc in calls:
+        for call in calls:
+            # モデルの要求そのものを戻し、続けて実行結果を返すのが Responses API の作法
+            inp.append(call)
             try:
-                args = json.loads(tc.function.arguments or "{}")
+                args = json.loads(call.arguments or "{}")
             except Exception:
                 args = {}
-            result = _exec_tool(tc.function.name, args, tool_ctx, facts_sink, acc)
-            msgs.append({"role": "tool", "tool_call_id": tc.id,
-                         "content": json.dumps(result, ensure_ascii=False)})
+            result = _exec_tool(call.name, args, tool_ctx, facts_sink, acc)
+            inp.append({"type": "function_call_output", "call_id": call.call_id,
+                        "output": json.dumps(result, ensure_ascii=False)})
     return last_text
 
 
