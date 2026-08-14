@@ -73,8 +73,25 @@ class TextureProfile(unittest.TestCase):
         self.assertLess(p["flutter_ratio"], 0.7)
         self.assertGreater(p["flutter_ratio"], 0.0)
         d = texture.describe(p)
-        self.assertIn("一部", d)
-        self.assertIn("残りの区間はなめらか", d)
+        self.assertIn("割の区間で", d)
+        # 矮小化表現の禁止（較正第1号: 「のみ」「なめらか」がモデルの聴覚を上書きした）
+        self.assertNotIn("のみ", d)
+        self.assertNotIn("なめらか", d)
+
+    def test_13hz_flutter_gets_lip_tongue_annotation(self):
+        """回帰（較正第1号・2026-08-14）: 実物のリップロールは13.8Hzで震えることがある。
+        10〜15Hz帯にも「唇・舌の震え」の帯域注釈を付ける（旧: 注釈なしの谷間）。"""
+        t = np.linspace(0, 3.0, int(SR * 3.0), endpoint=False)
+        y = _sweep() * (1.0 + 0.8 * np.sin(2 * np.pi * 13.0 * t)) / 1.8
+        path = _write_wav(y)
+        try:
+            p = texture.modulation_profile(path)
+        finally:
+            os.unlink(path)
+        self.assertIsNotNone(p)
+        self.assertTrue(10 <= p["mod_rate_hz"] < 15, f"rate={p['mod_rate_hz']}")
+        self.assertTrue(texture.has_modulation(p))
+        self.assertIn("唇・舌の震えやエッジボイスに典型的な帯域", texture.describe(p))
 
     def test_plain_sweep_has_no_flutter(self):
         """変調なしスイープ（サイレン相当）→ 震えは検出されない。"""
