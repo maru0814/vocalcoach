@@ -1,0 +1,47 @@
+name: Ops Query (read-only)
+
+# SRE運用: 本番の運用者アカウント直近セッションを読み取り専用でダンプする。
+# 手動実行のみ。出力はこのリポジトリの Actions ログ（コラボレータのみ閲覧可）に出る。
+# 書き込み・再起動は一切しない。
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ops-query
+  cancel-in-progress: false
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Dump owner session (read-only)
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            scripts/ops/dump_owner_session.py "$VPS_USER@$VPS_HOST:/tmp/dump_owner_session.py"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T backend python - < /tmp/dump_owner_session.py"
+
+      - name: Blind/texture log lines (backend)
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml logs --tail 500 backend | grep -E '質感計測|ブラインド合意|ブラインド聴取' | tail -30 || true"
