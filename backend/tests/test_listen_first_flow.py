@@ -193,6 +193,62 @@ class BlindListen(unittest.TestCase):
             settings.enable_blind_listen, settings.gemini_api_key = orig_flag, orig_key
 
 
+class ReconcileBlind(unittest.TestCase):
+    """合意ゲート（docs/105 改訂・docs/106 §4）: 一致した時だけ名前を断定する。"""
+
+    def _r(self, kind="practice", practice=None, conf="high", desc="d"):
+        return {"kind": kind, "practice": practice, "confidence": conf, "desc": desc}
+
+    def test_agreement_asserts_name(self):
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(practice="リップロール"),
+                                  self._r(practice="リップロール"))
+        self.assertEqual(out["practice"], "リップロール")
+        self.assertEqual(out["confidence"], "high")
+
+    def test_disagreement_keeps_candidates_without_assertion(self):
+        """実録音第2号の型: 耳=リップロール vs 事実=サイレン → 断定せず候補を残す。"""
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(practice="リップロール", desc="唇を震わせている"),
+                                  self._r(practice="サイレン", desc="連続的に移動"))
+        self.assertIsNone(out["practice"])
+        self.assertEqual(out["confidence"], "mid")
+        self.assertIn("リップロール", out["desc"])
+        self.assertIn("サイレン", out["desc"])
+        self.assertIn("候補", out["desc"])
+
+    def test_agreement_with_low_confidence_is_mid(self):
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(practice="ハミング", conf="mid"),
+                                  self._r(practice="ハミング"))
+        self.assertEqual(out["practice"], "ハミング")
+        self.assertEqual(out["confidence"], "mid")
+
+    def test_kind_disagreement_takes_ear_kind_low_confidence(self):
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(kind="song"), self._r(practice="サイレン"))
+        self.assertEqual(out["kind"], "song")
+        self.assertEqual(out["confidence"], "low")
+        self.assertIsNone(out["practice"])
+
+    def test_single_channel_passthrough(self):
+        from app.coaching import llm
+        ear = self._r(practice="サイレン")
+        self.assertEqual(llm.reconcile_blind(ear, None), ear)
+        self.assertEqual(llm.reconcile_blind(None, ear), ear)
+
+    def test_both_none_is_none(self):
+        from app.coaching import llm
+        self.assertIsNone(llm.reconcile_blind(None, None))
+
+    def test_song_agreement(self):
+        from app.coaching import llm
+        out = llm.reconcile_blind(self._r(kind="song"), self._r(kind="song"))
+        self.assertEqual(out["kind"], "song")
+        self.assertIsNone(out["practice"])
+        self.assertEqual(out["confidence"], "high")
+
+
 class IdentityBlock(unittest.TestCase):
     """docs/105: 識別コントラクトの注入と「再判定させない」プロンプト構造。"""
 
