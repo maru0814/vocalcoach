@@ -70,8 +70,14 @@ class BlindListen(unittest.TestCase):
         self.assertIn("サイレン", prompt, "練習メニュー（語彙）は渡してよい")
         self.assertIn("先入観なし", prompt)
 
+    def test_facts_injection_default_off(self):
+        """較正第1・2号（docs/106 §4）: 事実注入は既定OFF。素の聴覚が実録音10/10正解なのに
+        事実文がそれを上書きして誤認させたため。再ONは実録音evalでの実証が条件（docs/104 改訂その3）。"""
+        self.assertFalse(settings.blind_listen_inject_facts)
+
     def test_acoustic_facts_injected_as_ruler(self):
-        """docs/104: 質感計測は「物差し」として注入され、文脈語は依然入らない。"""
+        """docs/104: 質感計測は「物差し」として注入され、文脈語は依然入らない。
+        （注入機構は eval・opt-in 用に維持。既定では coach が facts を渡さない）"""
         from app.coaching import llm
         captured: dict = {}
         orig_key = settings.gemini_api_key

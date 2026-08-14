@@ -1022,8 +1022,11 @@ def send_audio(
                         _facts = None
                     if _facts:
                         logger.info("質感計測: %s", _facts)
+                    # 注入は既定OFF（較正第1・2号: 事実文が素の聴覚を上書きして誤認させた。
+                    # docs/104 改訂その3・docs/106 §4）。計測・ログは観測とevalのため継続
+                    _inject = _facts if settings.blind_listen_inject_facts else None
                     try:
-                        _blind = llm.listen_blind(_uw, acoustic_facts=_facts)
+                        _blind = llm.listen_blind(_uw, acoustic_facts=_inject)
                     except Exception:
                         logger.warning("listen_blind が例外（想定外）", exc_info=True)
                         _blind = None
