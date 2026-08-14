@@ -28,7 +28,8 @@ except Exception:
 
 import approval_queue as q
 import line_client
-from generate_and_post import IMG_DIR, _budget_check, _log_post, post_to_x
+import threads_client
+from generate_and_post import IMG_DIR, _budget_check, _log_post, post_all
 
 app = FastAPI(title="sns-approval-webhook")
 
@@ -121,12 +122,21 @@ def _handle_postback(data: str, reply_token: str) -> None:
         line_client.reply(reply_token, f"⏸ 投稿を中止: {why}")
         return
 
-    ok, tweet_id, info = post_to_x(draft.get("text", ""), reply_body,
-                                   draft.get("link"), post_link, draft.get("image"))
+    ok, tweet_id, threads_id, info = post_all(draft.get("text", ""), reply_body,
+                                              draft.get("link"), post_link, draft.get("image"))
     if ok:
-        _log_post(tweet_id, draft.get("pillar", ""), post_link, bool(reply_body))
+        _log_post(tweet_id, draft.get("pillar", ""), post_link, bool(reply_body), threads_id)
         q.mark_decided(draft_id, "posted", tweet_id=tweet_id, info=info)
-        line_client.reply(reply_token, f"✅ 投稿しました！\nid={tweet_id}（{why}）")
+        if not threads_client.flag_enabled():
+            line_client.reply(reply_token, f"✅ 投稿しました！\nid={tweet_id}（{why}）")
+        elif threads_id:
+            line_client.reply(reply_token,
+                              f"✅ 投稿しました！\nX id={tweet_id} / Threads id={threads_id}（{why}）")
+        else:
+            # X成功・Threads失敗（分離失敗設計）。失敗理由は info 末尾に入っている。
+            t_note = info.split(" / Threads失敗: ", 1)[-1]
+            line_client.reply(reply_token,
+                              f"✅ Xに投稿しました（id={tweet_id}）\n⚠ Threadsは失敗: {t_note}")
     else:
         q.mark_decided(draft_id, "failed", info=info)
         line_client.reply(reply_token, f"❌ 投稿に失敗しました: {info}")
