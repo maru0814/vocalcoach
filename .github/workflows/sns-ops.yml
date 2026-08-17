@@ -16,6 +16,19 @@ on:
           - lead-metrics      # クエリ別フォロバ率の集計
           - healthz           # /sns/healthz の疎通確認（SSH不要）
           - diag              # VPSの状態診断（メモリ/コンテナ/OOM痕跡/リードログ）
+          - post-draft        # 完成稿をLINE承認キューに流す（text_b64必須。Xには承認まで投稿しない）
+      text_b64:
+        description: 'post-draft用: 本投稿の本文（UTF-8をbase64、改行なし1行）'
+        required: false
+        type: string
+      reply_b64:
+        description: 'post-draft用: 自己リプ本体（base64。省略時は単発投稿）'
+        required: false
+        type: string
+      pillar:
+        description: 'post-draft用: 型タグ（画像/採点/ログ用。既定 contrarian）'
+        required: false
+        type: string
 
 concurrency:
   group: sns-ops
@@ -41,8 +54,38 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
+      # 完成稿を本番snsコンテナの generate_and_post.py --text に流す。
+      # ops-query.yml と同じ「スクリプトをssh stdin経由でコンテナのpythonに渡す」方式。
+      # DRY_RUN=0 で承認キュー＋LINE送信まで行うが、APPROVAL_MODE=1 なので
+      # X への投稿は LINE の [承認] を押すまで行われない（専門家ゲートも通常どおり効く）。
+      - name: Post draft to LINE approval queue
+        if: inputs.task == 'post-draft'
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          TEXT_B64: ${{ inputs.text_b64 }}
+          REPLY_B64: ${{ inputs.reply_b64 }}
+          PILLAR: ${{ inputs.pillar }}
+        run: |
+          if [ -z "$TEXT_B64" ]; then echo "text_b64 は必須です"; exit 2; fi
+          cat > /tmp/post_draft.py <<'PY'
+          import base64, os, sys
+          text = base64.b64decode(os.environ["TEXT_B64"]).decode("utf-8")
+          reply = base64.b64decode(os.environ.get("REPLY_B64") or "").decode("utf-8")
+          sys.argv = ["generate_and_post.py", "--text", text,
+                      "--pillar", os.environ.get("PILLAR") or "contrarian"]
+          if reply:
+              sys.argv += ["--reply", reply]
+          import generate_and_post
+          raise SystemExit(generate_and_post.main())
+          PY
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T -e DRY_RUN=0 -e APPROVAL_MODE=1 -e TEXT_B64='$TEXT_B64' -e REPLY_B64='$REPLY_B64' -e PILLAR='$PILLAR' sns python -" \
+            < /tmp/post_draft.py
+
       - name: Run task on VPS
-        if: inputs.task != 'healthz'
+        if: inputs.task != 'healthz' && inputs.task != 'post-draft'
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
