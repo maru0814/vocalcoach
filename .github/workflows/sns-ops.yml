@@ -29,6 +29,10 @@ on:
         description: 'post-draft用: 型タグ（画像/採点/ログ用。既定 contrarian）'
         required: false
         type: string
+      image_spec_b64:
+        description: 'post-draft用: 図解スペックJSON（base64）。未指定だとカード画像になる'
+        required: false
+        type: string
 
 concurrency:
   group: sns-ops
@@ -66,22 +70,26 @@ jobs:
           TEXT_B64: ${{ inputs.text_b64 }}
           REPLY_B64: ${{ inputs.reply_b64 }}
           PILLAR: ${{ inputs.pillar }}
+          IMAGE_SPEC_B64: ${{ inputs.image_spec_b64 }}
         run: |
           if [ -z "$TEXT_B64" ]; then echo "text_b64 は必須です"; exit 2; fi
           cat > /tmp/post_draft.py <<'PY'
           import base64, os, sys
           text = base64.b64decode(os.environ["TEXT_B64"]).decode("utf-8")
           reply = base64.b64decode(os.environ.get("REPLY_B64") or "").decode("utf-8")
+          spec = base64.b64decode(os.environ.get("IMAGE_SPEC_B64") or "").decode("utf-8")
           sys.argv = ["generate_and_post.py", "--text", text,
                       "--pillar", os.environ.get("PILLAR") or "contrarian"]
           if reply:
               sys.argv += ["--reply", reply]
+          if spec:
+              sys.argv += ["--image-spec", spec]
           import generate_and_post
           raise SystemExit(generate_and_post.main())
           PY
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             "$VPS_USER@$VPS_HOST" \
-            "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T -e DRY_RUN=0 -e APPROVAL_MODE=1 -e TEXT_B64='$TEXT_B64' -e REPLY_B64='$REPLY_B64' -e PILLAR='$PILLAR' sns python -" \
+            "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T -e DRY_RUN=0 -e APPROVAL_MODE=1 -e TEXT_B64='$TEXT_B64' -e REPLY_B64='$REPLY_B64' -e PILLAR='$PILLAR' -e IMAGE_SPEC_B64='$IMAGE_SPEC_B64' sns python -" \
             < /tmp/post_draft.py
 
       - name: Run task on VPS
