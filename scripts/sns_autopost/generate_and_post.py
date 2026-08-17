@@ -317,7 +317,6 @@ def main() -> int:
 
     app_url = os.getenv("APP_URL", themes.APP_URL_DEFAULT).rstrip("/")
     today = datetime.date.today()
-    day_index = today.toordinal()
     slot = args.slot or int(os.getenv("POST_SLOT", "1"))
 
     ig_override = None
@@ -348,6 +347,10 @@ def main() -> int:
             ig_override = {"mode": "card", "text": args.text, "reply": args.reply}
     else:
         pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
+    # 弾倉の選択index。日付の通し番号ではなく「その型の通算出番」で回し、
+    # 同じ内容が短周期で再登場するのを防ぐ（themes.rotation_index 参照）。
+    day_index = themes.rotation_index(pillar, today, slot)
+    if not args.text:
         post = generate_post(pillar, day_index, app_url)
     text, reply, link = post["text"], post.get("reply"), post.get("link")
     link = _with_utm(link, pillar, slot)
