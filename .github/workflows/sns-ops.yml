@@ -17,6 +17,7 @@ on:
           - healthz           # /sns/healthz の疎通確認（SSH不要）
           - diag              # VPSの状態診断（メモリ/コンテナ/OOM痕跡/リードログ）
           - post-draft        # 完成稿をLINE承認キューに流す（text_b64必須。Xには承認まで投稿しない）
+          - queue-status      # 承認キュー/投稿ログの末尾を表示（read-only）
       text_b64:
         description: 'post-draft用: 本投稿の本文（UTF-8をbase64、改行なし1行）'
         required: false
@@ -92,8 +93,40 @@ jobs:
             "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T -e DRY_RUN=0 -e APPROVAL_MODE=1 -e TEXT_B64='$TEXT_B64' -e REPLY_B64='$REPLY_B64' -e PILLAR='$PILLAR' -e IMAGE_SPEC_B64='$IMAGE_SPEC_B64' sns python -" \
             < /tmp/post_draft.py
 
+      # 承認キューと投稿ログの末尾を読み取り専用で表示（承認/却下/投稿結果の確認用）。
+      - name: Queue status (read-only)
+        if: inputs.task == 'queue-status'
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          cat > /tmp/queue_status.py <<'PY'
+          import json, os
+          base = os.getenv("SNS_DATA_DIR") or "/data"
+          for name in ("pending_queue.jsonl", "posts_log.jsonl"):
+              path = os.path.join(base, name)
+              print(f"=== {name}（末尾5件） ===")
+              try:
+                  rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+              except FileNotFoundError:
+                  print("（まだ無い）")
+                  continue
+              for r in rows[-5:]:
+                  if name == "pending_queue.jsonl":
+                      print(r.get("created_at"), r.get("id"), r.get("status"),
+                            r.get("pillar"), "tweet_id=" + str(r.get("tweet_id") or "-"),
+                            (r.get("info") or "")[:80], r.get("decided_at") or "")
+                  else:
+                      print(r.get("ts"), r.get("pillar"), r.get("tweet_id"),
+                            "reply=", r.get("reply"))
+          PY
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T sns python -" \
+            < /tmp/queue_status.py
+
       - name: Run task on VPS
-        if: inputs.task != 'healthz' && inputs.task != 'post-draft'
+        if: inputs.task != 'healthz' && inputs.task != 'post-draft' && inputs.task != 'queue-status'
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
