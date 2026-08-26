@@ -59,7 +59,11 @@ def find_burned(rows: list[dict]) -> list[dict]:
             reason = None
             if t_text and t_text in texts:
                 reason = "text_exact"
-            elif t_reply and t_reply in replies:
+            elif (pillar not in themes.DIAGNOSIS_PILLARS
+                  and t_reply and t_reply in replies):
+                # リプ一致は、リプ本体が弾ごとに固有な型（tip等）だけに適用する。
+                # 診断導線のリプは全弾共通の「8タイプ早見」なので、これで一致を取ると
+                # 一度も出ていないフック変奏まで全弾焼却してしまう（2026-08-26 dry-runで検出）。
                 reason = "reply_exact"
             elif t_first in firsts:
                 reason = "first_line"

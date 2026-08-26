@@ -142,6 +142,10 @@ check("TC-NR08 無関係な弾は焼かない", len(burned) == 3, f"=> {len(burn
 dedup.record_used(burned)
 check("TC-NR08 記録後は使用済み",
       all(b["ammo_key"] in dedup.used_ammo_keys() for b in burned))
+# 診断導線のリプは全弾共通の早見なので、リプ一致では焼かない（本番dry-runで検出した過剰焼却の回帰防止）
+hist_diag = [{"pillar": "voice_type", "text": "Geminiが新しく書いた声タイプ導線のフック",
+              "reply": themes.cheatsheet_reply()}]
+check("TC-NR08 共通早見リプでは焼かない", bf.find_burned(hist_diag) == [])
 
 failed = [tc for tc, ok, _ in results if not ok]
 print("\n" + "─" * 40)
