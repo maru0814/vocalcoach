@@ -30,6 +30,14 @@
 		reverse_proxy sns:8088
 	}
 
+	# TenYen（別リポジトリ /opt/sns-pipeline）のLINE承認Webhook。
+	# コンテナは外部ネットワーク edge 上（docker network create edge が前提）。
+	# TenYen側のLINEチャネルの Webhook URL は https://{$DOMAIN}/tenyen/line/webhook。
+	@tenyen path /tenyen/*
+	handle @tenyen {
+		reverse_proxy tenyen-sns:8090
+	}
+
 	# フロントエンド（Next.js standalone）
 	handle {
 		reverse_proxy frontend:3000

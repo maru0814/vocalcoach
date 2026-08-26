@@ -19,6 +19,11 @@ services:
       - frontend
       - backend
       - sns
+    # edge: 別リポジトリ(/opt/sns-pipeline)のTenYen Webhookコンテナへ /tenyen/* を
+    # 流すための外部ネットワーク（VPSで docker network create edge を1回実行）。
+    networks:
+      - default
+      - edge
 
   backend:
     build:
@@ -107,3 +112,7 @@ volumes:
   caddy_config:
   app_data:
   sns_data:
+
+networks:
+  edge:
+    external: true
