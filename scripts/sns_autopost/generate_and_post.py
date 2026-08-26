@@ -44,6 +44,7 @@ import re
 import sys
 import uuid
 
+import dedup
 import images
 import infographic
 import themes
@@ -96,9 +97,11 @@ def _read_jsonl(path: str) -> list:
     return rows
 
 
-def _log_post(tweet_id: str, pillar: str, had_link: bool, had_reply: bool = False) -> None:
+def _log_post(tweet_id: str, pillar: str, had_link: bool, had_reply: bool = False,
+              text_hash: str = "", ammo_key: str = "") -> None:
+    """投稿記録。text_hash/ammo_key は同一内容の再投稿を永久に禁止するための指紋（dedup.py）。"""
     rec = {"tweet_id": tweet_id, "pillar": pillar, "link": bool(had_link),
-           "reply": bool(had_reply),
+           "reply": bool(had_reply), "text_hash": text_hash, "ammo_key": ammo_key,
            "ts": datetime.datetime.now().isoformat(timespec="seconds")}
     with open(POSTS_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -144,8 +147,10 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
         if pillar in themes.DIAGNOSIS_PILLARS:
             # 診断導線: フックだけGeminiでワクワク重視にリライト。早見リプ(8タイプの正本)は
             # テンプレ固定でGeminiに触らせない（型名・並びが診断ページとズレるのを防ぐ）。
+            # 過去フックを除外リストで渡し、同じ・似た文面の再登場を防ぐ（docs/108）。
             resp = client.models.generate_content(
-                model=model, contents=themes.gemini_diagnosis_hook_prompt(pillar, day_index, app_url))
+                model=model, contents=themes.gemini_diagnosis_hook_prompt(
+                    pillar, day_index, app_url, avoid=dedup.used_texts(pillar)))
             hook = (resp.text or "").strip()
             if len(hook) >= 20 and "http" not in hook:
                 return {"text": hook, "reply": post.get("reply"), "link": post.get("link")}
@@ -171,6 +176,49 @@ def generate_post(pillar: str, day_index: int, app_url: str) -> dict:
     except Exception as e:
         print(f"[warn] Gemini生成に失敗 → テンプレ使用: {e}", file=sys.stderr)
         return post
+
+
+def generate_fresh_post(pillar: str, app_url: str) -> dict | None:
+    """弾切れ時の【新作】生成（docs/108）。過去に作った内容を除外リストでGeminiに渡し、
+    まったく新しいテーマ（診断導線は新しいフック文面）で1本作る。作れなければ None。
+    artist_analysis は実名のでっち上げ禁止（docs/84）のため常に None（人間が themes.py に補充）。"""
+    if pillar == "artist_analysis":
+        return None
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("SNS_LLM_MODEL", "gemini-flash-lite-latest")
+        base = themes.template_post(pillar, 0, app_url)
+        if pillar in themes.DIAGNOSIS_PILLARS:
+            # 診断導線: 早見リプは正本のまま、フックだけ過去文面を除外して新作。
+            resp = client.models.generate_content(
+                model=model, contents=themes.gemini_diagnosis_hook_prompt(
+                    pillar, datetime.date.today().toordinal(), app_url,
+                    avoid=dedup.used_texts(pillar)))
+            hook = (resp.text or "").strip()
+            if len(hook) >= 20 and "http" not in hook and not dedup.is_posted_duplicate(hook):
+                return {"text": hook, "reply": base.get("reply"), "link": base.get("link")}
+            return None
+        # tip / contrarian: 過去テーマ一覧を除外して新テーマの2部構成を生成。
+        resp = client.models.generate_content(
+            model=model,
+            contents=themes.gemini_fresh_twopart_prompt(pillar, dedup.used_first_lines(pillar)))
+        m = re.search(r"\{.*\}", (resp.text or "").strip(), re.S)
+        if not m:
+            return None
+        data = json.loads(m.group(0))
+        hook = (data.get("hook") or "").strip()
+        body = (data.get("body") or "").strip()
+        if (len(hook) >= 10 and len(body) >= 20 and "http" not in hook
+                and "http" not in body and not dedup.is_posted_duplicate(hook)):
+            return {"text": hook, "reply": body, "link": base.get("link")}
+        return None
+    except Exception as e:
+        print(f"[warn] 新作生成に失敗: {e}", file=sys.stderr)
+        return None
 
 
 def build_image(pillar: str, slot: int, day_index: int, app_url: str,
@@ -317,7 +365,6 @@ def main() -> int:
 
     app_url = os.getenv("APP_URL", themes.APP_URL_DEFAULT).rstrip("/")
     today = datetime.date.today()
-    day_index = today.toordinal()
     slot = args.slot or int(os.getenv("POST_SLOT", "1"))
 
     ig_override = None
@@ -328,6 +375,11 @@ def main() -> int:
         pillar = args.pillar or "contrarian"
         if not args.pillar:
             print(f"[note] --pillar 未指定 → '{pillar}' として扱います（画像/採点/ログの型）")
+        # 同一内容の再投稿は永久に禁止（docs/108）。完成稿でも過去投稿と同文なら受け付けない。
+        if dedup.is_posted_duplicate(args.text):
+            print("[err] この本文は過去に投稿済みです。同じ内容のツイートは二度と出しません"
+                  "（docs/108）。内容を変えて再実行してください。", file=sys.stderr)
+            return 2
         post = {"text": args.text, "reply": args.reply or None, "link": None}
         # 図解は B(構造化) で作る: --image-spec があればその図解。
         # 無ければ“崩れた自動図解”を避けて安全なカードに落とす（mode=card）。
@@ -348,7 +400,33 @@ def main() -> int:
             ig_override = {"mode": "card", "text": args.text, "reply": args.reply}
     else:
         pillar = args.pillar or themes.pillar_for(today.weekday(), slot)
-        post = generate_post(pillar, day_index, app_url)
+    # 弾倉の選択index。「その型の通算出番」をローテの起点にしつつ、一度使った弾は
+    # 永久に選ばない（dedup.pick_unused_index）。全弾使用済みなら新作を生成し、
+    # 新作も作れなければこの枠は見送る＝同じ内容は絶対に出さない（docs/108）。
+    day_index = themes.rotation_index(pillar, today, slot)
+    ammo = dedup.text_hash(args.text) if args.text else ""
+    if not args.text:
+        idx = dedup.pick_unused_index(pillar, day_index, app_url)
+        if idx is not None:
+            day_index = idx
+            ammo = dedup.ammo_key(pillar, day_index, app_url)
+            post = generate_post(pillar, day_index, app_url)
+        else:
+            print(f"[note] {pillar} の弾倉は全て使用済み → 過去テーマを除外した新作を生成します")
+            post = generate_fresh_post(pillar, app_url)
+            if post is None:
+                msg = (f"⚠️ SNS投稿を見送りました: {pillar} の弾切れです（未使用の下敷きが無く、"
+                       "新作の自動生成もできませんでした）。themes.py への弾補充（週次運用）をお願いします。")
+                print(msg)
+                if not (args.dry_run or _truthy(os.getenv("DRY_RUN", "1"))):
+                    import line_client
+                    line_client.push_text(msg)
+                return 0
+            ammo = dedup.text_hash(post["text"])
+            if pillar not in themes.DIAGNOSIS_PILLARS:
+                # 新作はテンプレ図解の裏付けが無い → 本文見出しから安全なカード画像にする
+                ig_override = {"mode": "card", "text": post["text"],
+                               "reply": post.get("reply")}
     text, reply, link = post["text"], post.get("reply"), post.get("link")
     link = _with_utm(link, pillar, slot)
     # URL投稿は $0.20 と高くリーチも落ちるため既定OFF。POST_LINK=1 の時だけリプにリンク。
@@ -400,12 +478,13 @@ def main() -> int:
         # 専門家チェックを通過しなければ LINE には出さず保留（運用者の確認も入らない）。
         if not gate["approved"]:
             held = q.enqueue(pillar, slot, text, reply, link, post_link,
-                             image_path, status="held", expert_note=gate["report"])
+                             image_path, status="held", expert_note=gate["report"],
+                             ammo_key=ammo)
             print(f"⛔ 専門家チェック未通過のため LINE には送りません（保留 id={held['id']}）。")
             print("   基準を満たす投稿になるまで保留します（held_queue で確認可）。")
             return 0
         draft = q.enqueue(pillar, slot, text, reply, link, post_link,
-                          image_path, expert_note=gate["report"])
+                          image_path, expert_note=gate["report"], ammo_key=ammo)
         ok_line, info = line_client.push_approval(draft)
         if ok_line:
             print(f"📨 専門家チェック通過 → 承認待ちに送信（id={draft['id']}）。LINEで承認/却下してください。")
@@ -420,6 +499,10 @@ def main() -> int:
     if not gate["approved"]:
         print("⛔ 専門家チェック未通過のため投稿しません（即投稿経路でもゲートは必須）。")
         return 0
+    # 最終ゲート（docs/108）: どの経路で作られた本文でも、過去に投稿済みと同文なら出さない。
+    if dedup.is_posted_duplicate(text):
+        print("⛔ 同じ内容をすでに投稿済みのため投稿しません（同一内容の再投稿は永久に禁止）。")
+        return 0
     ok_budget, why = _budget_check(post_has_link=post_link,
                                    post_has_reply=bool(reply), force=args.force)
     if args.force:
@@ -430,7 +513,8 @@ def main() -> int:
 
     ok, tweet_id, info = post_to_x(text, reply, link, post_link, image_path)
     if ok:
-        _log_post(tweet_id, pillar, post_link, bool(reply))
+        _log_post(tweet_id, pillar, post_link, bool(reply),
+                  text_hash=dedup.text_hash(text), ammo_key=ammo)
         print(f"✅ 投稿しました: id={tweet_id} ({info})  [{why}]")
         return 0
     print(f"❌ 投稿に失敗: {info}", file=sys.stderr)

@@ -16,6 +16,26 @@ on:
           - lead-metrics      # クエリ別フォロバ率の集計
           - healthz           # /sns/healthz の疎通確認（SSH不要）
           - diag              # VPSの状態診断（メモリ/コンテナ/OOM痕跡/リードログ）
+          - post-draft        # 完成稿をLINE承認キューに流す（text_b64必須。Xには承認まで投稿しない）
+          - queue-status      # 承認キュー/投稿ログの末尾を表示（read-only）
+          - backfill-ammo-dry # 過去に使った弾の焼却バックフィルのdry-run（表示のみ）
+          - backfill-ammo     # 過去に使った弾を used_ammo.jsonl に焼却記録（docs/108）
+      text_b64:
+        description: 'post-draft用: 本投稿の本文（UTF-8をbase64、改行なし1行）'
+        required: false
+        type: string
+      reply_b64:
+        description: 'post-draft用: 自己リプ本体（base64。省略時は単発投稿）'
+        required: false
+        type: string
+      pillar:
+        description: 'post-draft用: 型タグ（画像/採点/ログ用。既定 contrarian）'
+        required: false
+        type: string
+      image_spec_b64:
+        description: 'post-draft用: 図解スペックJSON（base64）。未指定だとカード画像になる'
+        required: false
+        type: string
 
 concurrency:
   group: sns-ops
@@ -41,17 +61,85 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
+      # 完成稿を本番snsコンテナの generate_and_post.py --text に流す。
+      # ops-query.yml と同じ「スクリプトをssh stdin経由でコンテナのpythonに渡す」方式。
+      # DRY_RUN=0 で承認キュー＋LINE送信まで行うが、APPROVAL_MODE=1 なので
+      # X への投稿は LINE の [承認] を押すまで行われない（専門家ゲートも通常どおり効く）。
+      - name: Post draft to LINE approval queue
+        if: inputs.task == 'post-draft'
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          TEXT_B64: ${{ inputs.text_b64 }}
+          REPLY_B64: ${{ inputs.reply_b64 }}
+          PILLAR: ${{ inputs.pillar }}
+          IMAGE_SPEC_B64: ${{ inputs.image_spec_b64 }}
+        run: |
+          if [ -z "$TEXT_B64" ]; then echo "text_b64 は必須です"; exit 2; fi
+          cat > /tmp/post_draft.py <<'PY'
+          import base64, os, sys
+          text = base64.b64decode(os.environ["TEXT_B64"]).decode("utf-8")
+          reply = base64.b64decode(os.environ.get("REPLY_B64") or "").decode("utf-8")
+          spec = base64.b64decode(os.environ.get("IMAGE_SPEC_B64") or "").decode("utf-8")
+          sys.argv = ["generate_and_post.py", "--text", text,
+                      "--pillar", os.environ.get("PILLAR") or "contrarian"]
+          if reply:
+              sys.argv += ["--reply", reply]
+          if spec:
+              sys.argv += ["--image-spec", spec]
+          import generate_and_post
+          raise SystemExit(generate_and_post.main())
+          PY
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T -e DRY_RUN=0 -e APPROVAL_MODE=1 -e TEXT_B64='$TEXT_B64' -e REPLY_B64='$REPLY_B64' -e PILLAR='$PILLAR' -e IMAGE_SPEC_B64='$IMAGE_SPEC_B64' sns python -" \
+            < /tmp/post_draft.py
+
+      # 承認キューと投稿ログの末尾を読み取り専用で表示（承認/却下/投稿結果の確認用）。
+      - name: Queue status (read-only)
+        if: inputs.task == 'queue-status'
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          cat > /tmp/queue_status.py <<'PY'
+          import json, os
+          base = os.getenv("SNS_DATA_DIR") or "/data"
+          for name in ("pending_queue.jsonl", "posts_log.jsonl"):
+              path = os.path.join(base, name)
+              print(f"=== {name}（末尾5件） ===")
+              try:
+                  rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+              except FileNotFoundError:
+                  print("（まだ無い）")
+                  continue
+              for r in rows[-5:]:
+                  if name == "pending_queue.jsonl":
+                      print(r.get("created_at"), r.get("id"), r.get("status"),
+                            r.get("pillar"), "tweet_id=" + str(r.get("tweet_id") or "-"),
+                            (r.get("info") or "")[:80], r.get("decided_at") or "")
+                  else:
+                      print(r.get("ts"), r.get("pillar"), r.get("tweet_id"),
+                            "reply=", r.get("reply"))
+          PY
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$VPS_USER@$VPS_HOST" \
+            "cd /opt/vocalcoach/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T sns python -" \
+            < /tmp/queue_status.py
+
       - name: Run task on VPS
-        if: inputs.task != 'healthz'
+        if: inputs.task != 'healthz' && inputs.task != 'post-draft' && inputs.task != 'queue-status'
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           case "${{ inputs.task }}" in
-            lead-finder-dry) CMD="python lead_finder.py --dry-run" ;;
-            lead-finder)     CMD="python lead_finder.py" ;;
-            lead-metrics)    CMD="python lead_metrics.py" ;;
-            diag)            CMD="" ;;
+            lead-finder-dry)   CMD="python lead_finder.py --dry-run" ;;
+            lead-finder)       CMD="python lead_finder.py" ;;
+            lead-metrics)      CMD="python lead_metrics.py" ;;
+            backfill-ammo-dry) CMD="python backfill_used_ammo.py" ;;
+            backfill-ammo)     CMD="python backfill_used_ammo.py --apply" ;;
+            diag)              CMD="" ;;
             *) echo "unknown task"; exit 2 ;;
           esac
           if [ "${{ inputs.task }}" = "diag" ]; then
