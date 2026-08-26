@@ -18,6 +18,8 @@ on:
           - diag              # VPSの状態診断（メモリ/コンテナ/OOM痕跡/リードログ）
           - post-draft        # 完成稿をLINE承認キューに流す（text_b64必須。Xには承認まで投稿しない）
           - queue-status      # 承認キュー/投稿ログの末尾を表示（read-only）
+          - backfill-ammo-dry # 過去に使った弾の焼却バックフィルのdry-run（表示のみ）
+          - backfill-ammo     # 過去に使った弾を used_ammo.jsonl に焼却記録（docs/108）
       text_b64:
         description: 'post-draft用: 本投稿の本文（UTF-8をbase64、改行なし1行）'
         required: false
@@ -132,10 +134,12 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           case "${{ inputs.task }}" in
-            lead-finder-dry) CMD="python lead_finder.py --dry-run" ;;
-            lead-finder)     CMD="python lead_finder.py" ;;
-            lead-metrics)    CMD="python lead_metrics.py" ;;
-            diag)            CMD="" ;;
+            lead-finder-dry)   CMD="python lead_finder.py --dry-run" ;;
+            lead-finder)       CMD="python lead_finder.py" ;;
+            lead-metrics)      CMD="python lead_metrics.py" ;;
+            backfill-ammo-dry) CMD="python backfill_used_ammo.py" ;;
+            backfill-ammo)     CMD="python backfill_used_ammo.py --apply" ;;
+            diag)              CMD="" ;;
             *) echo "unknown task"; exit 2 ;;
           esac
           if [ "${{ inputs.task }}" = "diag" ]; then

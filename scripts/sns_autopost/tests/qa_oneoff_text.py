@@ -89,10 +89,11 @@ _orig_enqueue, _orig_push = q.enqueue, line_client.push_approval
 
 
 def _fake_enqueue(pillar, slot, text, reply, link, post_link, image=None,
-                  status="pending", expert_note=""):
+                  status="pending", expert_note="", ammo_key=""):
     rec = {"id": "test123", "pillar": pillar, "slot": slot, "text": text,
            "reply": reply, "link": link, "post_link": post_link,
-           "image": image, "status": status, "expert_note": expert_note}
+           "image": image, "status": status, "expert_note": expert_note,
+           "ammo_key": ammo_key}
     captured["rec"] = rec
     return rec
 

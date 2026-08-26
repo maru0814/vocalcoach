@@ -27,6 +27,7 @@ except Exception:
     pass
 
 import approval_queue as q
+import dedup
 import line_client
 from generate_and_post import IMG_DIR, _budget_check, _log_post, post_to_x
 
@@ -111,7 +112,15 @@ def _handle_postback(data: str, reply_token: str) -> None:
         line_client.reply(reply_token, "⚠️ 不明な操作です。")
         return
 
-    # --- 承認 → 予算ガードを通して実投稿（2部構成ならリプ本体も投稿）---
+    # --- 承認 → 最終ゲート＆予算ガードを通して実投稿（2部構成ならリプ本体も投稿）---
+    # 最終ゲート（docs/108）: 過去に投稿済みと同じ本文は、承認されても投稿しない。
+    # 同文の下書きが複数キューに残っていて両方承認された場合の二重投稿もここで止まる。
+    if dedup.is_posted_duplicate(draft.get("text", "")):
+        q.mark_decided(draft_id, "rejected", info="duplicate_of_posted")
+        line_client.reply(reply_token,
+                          "🛑 同じ内容をすでに投稿済みのため、自動却下しました（二重投稿防止）。")
+        return
+
     post_link = bool(draft.get("post_link"))
     reply_body = draft.get("reply")
     ok_budget, why = _budget_check(post_has_link=post_link,
@@ -124,7 +133,9 @@ def _handle_postback(data: str, reply_token: str) -> None:
     ok, tweet_id, info = post_to_x(draft.get("text", ""), reply_body,
                                    draft.get("link"), post_link, draft.get("image"))
     if ok:
-        _log_post(tweet_id, draft.get("pillar", ""), post_link, bool(reply_body))
+        _log_post(tweet_id, draft.get("pillar", ""), post_link, bool(reply_body),
+                  text_hash=dedup.text_hash(draft.get("text", "")),
+                  ammo_key=draft.get("ammo_key", ""))
         q.mark_decided(draft_id, "posted", tweet_id=tweet_id, info=info)
         line_client.reply(reply_token, f"✅ 投稿しました！\nid={tweet_id}（{why}）")
     else:

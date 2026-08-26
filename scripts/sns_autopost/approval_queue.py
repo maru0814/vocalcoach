@@ -74,12 +74,14 @@ def _write_all(rows: list[dict], path: str = QUEUE_PATH) -> None:
 
 def enqueue(pillar: str, slot: int, text: str, reply: str | None,
             link: str | None, post_link: bool, image: str | None = None,
-            status: str = "pending", expert_note: str = "") -> dict:
+            status: str = "pending", expert_note: str = "",
+            ammo_key: str = "") -> dict:
     """下書きを承認待ちとして追加し、作成したレコードを返す。
     reply=自己返信に置く本体（2部構成）。診断導線など単発型は None。
     image=添付画像のローカルパス（無ければ None）。
     status: pending=LINE承認待ち / held=専門家ゲート未通過で保留（LINEに出さない）。
-    expert_note: 専門家レビューの判定（LINE本文の先頭に表示する）。"""
+    expert_note: 専門家レビューの判定（LINE本文の先頭に表示する）。
+    ammo_key: 使った弾（テンプレ下敷き）の指紋。同じ内容を二度と使わないための記録（dedup.py）。"""
     rec = {
         "id": uuid.uuid4().hex[:12],
         "kind": "post",  # 投稿。リード獲得は engaged_log.jsonl を直接使う（suggest_leads()参照）
@@ -92,6 +94,7 @@ def enqueue(pillar: str, slot: int, text: str, reply: str | None,
         "image": image,
         "status": status,
         "expert_note": expert_note,
+        "ammo_key": ammo_key,
         "tweet_id": "",
         "info": "",
         "created_at": _now(),

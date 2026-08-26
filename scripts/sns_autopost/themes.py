@@ -377,20 +377,9 @@ def artist_bridge(type_id: str) -> str:
             "あなたの声がどのタイプかは、15秒歌えばAIが当てます（プロフィールから無料）。")
 
 
-def template_post(pillar: str, day_index: int, app_url: str) -> dict:
-    """Geminiを使わない場合のフォールバック。{text, reply, link} を返す。
-    text=本投稿 / reply=自己返信に置く“本体” or None（短文の診断導線型は単発）/ link=リプ用URL。"""
-    # アーティスト発声解説（docs/84）= 実名フック＋発声分解リプ＋診断ブリッジの2部構成。
-    if pillar == "artist_analysis":
-        e = ARTIST_ANALYSIS[day_index % len(ARTIST_ANALYSIS)]
-        return {"text": e["hook"] + ARTIST_NUDGE,
-                "reply": e["body"] + artist_bridge(e["type"]),
-                "link": _diagnose_link(app_url)}
-    # 診断導線（self_type / voice_type / visual）= “似てる歌手の正体当て”フック＋8タイプ早見リプの2部構成。
-    # ラベル陳列（旧「【声タイプ図鑑】◯◯」）はやめ、好奇心ギャップで止めて診断に送る。
-    # フックは固定文だと毎回同じ投稿になるため、切り口違いの変奏を day_index でローテする。
-    if pillar == "self_type":
-        hooks = [
+def _self_type_hooks() -> list[str]:
+    """self_type（自己分類の診断導線）のフック変奏。pool_size と選択の両方が参照する。"""
+    return [
             ("あなたの声、歌手なら誰に似てる？🎤\n\n"
              f"たとえば {artists_for('rock')}、{artists_for('dramatic')}…\n"
              "自分の声が“誰系”かは、意外と自分ではわからないもの。\n"
@@ -416,17 +405,11 @@ def template_post(pillar: str, day_index: int, app_url: str) -> dict:
              "15秒歌えば、AIがあなたのタイプと似てる歌手を当てます。\n\n"
              "👇 8タイプ（近い歌手の例つき）はリプに置きました。"),
         ]
-        return {"text": hooks[day_index % len(hooks)],
-                "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
-    if pillar == "voice_type":
-        n, e, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
-        return {"text": (f"{artists_for(n, 3)} みたいな声、憧れませんか？🎤\n\n"
-                         f"この“{d}”は、診断だと【{n}{e}】タイプ。\n"
-                         "あなたの声は8つのうちどれ？ AIが似てる歌手まで当てます。\n\n"
-                         "👇 全8タイプ（近い歌手の例つき）はリプに置きました。"),
-                "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
-    if pillar == "visual":
-        hooks = [
+
+
+def _visual_hooks() -> list[str]:
+    """visual（ビジュアル診断導線）のフック変奏。pool_size と選択の両方が参照する。"""
+    return [
             ("あなたの声は、どのタイプ？🎤\n\n"
              f"{artists_for('mysterious')}系？ {artists_for('crystal')}系？\n"
              "15秒歌うだけで、AIが8つの声タイプと「似てる歌手」を診断。\n\n"
@@ -439,7 +422,43 @@ def template_post(pillar: str, day_index: int, app_url: str) -> dict:
              f"あなたが {artists_for('pop')} 系か {artists_for('moody')} 系かで、ラクに歌える歌は変わります。\n"
              "15秒歌えば、AIがあなたのタイプと似てる歌手を判定。\n\n"
              "👇 8タイプ（近い歌手の例つき）はリプに。結果はそのままシェアOK。"),
-        ]
+    ]
+
+
+def pool_size(pillar: str) -> int:
+    """その型の弾数。未使用弾の管理（dedup.py）と一巡判定が参照する。"""
+    return {
+        "tip": len(TIPS), "contrarian": len(CONTRARIAN),
+        "voice_type": len(VOICE_TYPES), "artist_analysis": len(ARTIST_ANALYSIS),
+        "self_type": len(_self_type_hooks()), "visual": len(_visual_hooks()),
+    }.get(pillar, 1)
+
+
+def template_post(pillar: str, day_index: int, app_url: str) -> dict:
+    """Geminiを使わない場合のフォールバック。{text, reply, link} を返す。
+    text=本投稿 / reply=自己返信に置く“本体” or None（短文の診断導線型は単発）/ link=リプ用URL。"""
+    # アーティスト発声解説（docs/84）= 実名フック＋発声分解リプ＋診断ブリッジの2部構成。
+    if pillar == "artist_analysis":
+        e = ARTIST_ANALYSIS[day_index % len(ARTIST_ANALYSIS)]
+        return {"text": e["hook"] + ARTIST_NUDGE,
+                "reply": e["body"] + artist_bridge(e["type"]),
+                "link": _diagnose_link(app_url)}
+    # 診断導線（self_type / voice_type / visual）= “似てる歌手の正体当て”フック＋8タイプ早見リプの2部構成。
+    # ラベル陳列（旧「【声タイプ図鑑】◯◯」）はやめ、好奇心ギャップで止めて診断に送る。
+    # フックは固定文だと毎回同じ投稿になるため、切り口違いの変奏を day_index でローテする。
+    if pillar == "self_type":
+        hooks = _self_type_hooks()
+        return {"text": hooks[day_index % len(hooks)],
+                "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
+    if pillar == "voice_type":
+        n, e, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
+        return {"text": (f"{artists_for(n, 3)} みたいな声、憧れませんか？🎤\n\n"
+                         f"この“{d}”は、診断だと【{n}{e}】タイプ。\n"
+                         "あなたの声は8つのうちどれ？ AIが似てる歌手まで当てます。\n\n"
+                         "👇 全8タイプ（近い歌手の例つき）はリプに置きました。"),
+                "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
+    if pillar == "visual":
+        hooks = _visual_hooks()
         return {"text": hooks[day_index % len(hooks)],
                 "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "contrarian":
@@ -535,9 +554,40 @@ def gemini_twopart_prompt(pillar: str, day_index: int, app_url: str) -> str:
     )
 
 
-def gemini_diagnosis_hook_prompt(pillar: str, day_index: int, app_url: str) -> str:
+def gemini_fresh_twopart_prompt(pillar: str, used_titles: list[str]) -> str:
+    """弾切れ時の【新作】生成指示（tip / contrarian 専用）。
+    テンプレの下敷きが全て使用済みのとき、過去テーマを除外した新しいテーマで
+    2部構成（hook+body）を書かせる。artist_analysis は実名のでっち上げ禁止のため
+    新作生成はしない（呼び出し側で保留にする）。docs/108。"""
+    kind = ("【実践Tips】高音・ミックスボイス・換声点・呼吸・音程・リズム・ウォームアップなど、"
+            "“今日試せる具体的なやり方”を番号付き手順で書く型" if pillar == "tip" else
+            "【逆張り】歌にまつわる“よくある誤解”を1行で否定し、なぜ違うかを根拠つきで解説する型")
+    used = "\n".join(f"- {t}" for t in used_titles[:40]) or "- （なし）"
+    return (
+        "あなたはAIボイストレーナー『ソラ先生』のSNS担当（人間味のある“中の人”）です。"
+        f"X(旧Twitter)向けに、{kind}の投稿を**新しいテーマで1本**書きます。\n\n"
+        "【過去に出したテーマ（これらと同じ・実質同じ内容は絶対に禁止。切り口違いの焼き直しも不可）】\n"
+        f"{used}\n\n"
+        "【内容の鉄則】\n"
+        "- ボイストレーニングの定説・一般に安全とされる範囲だけを扱う（独自研究・断定的な医学的主張は禁止）。\n"
+        "- 喉を痛めうる練習（大音量の張り上げ・痛みを我慢する等）を勧めない。\n"
+        "- 効果を誇張しない（『誰でも一瞬で』等NG）。実在の歌手名は出さない。\n\n"
+        "【形式】次の2つを作り、**JSONで {\"hook\": \"...\", \"body\": \"...\"} だけ**出力"
+        "（前後に説明・コードフェンスを付けない）。\n"
+        "1) hook（本投稿）= 誰の悩みか＋結論の方向だけ示し、具体的な手順は書かず"
+        "“続きが気になる”状態で止める。全角90〜150字。末尾に『手順（本体）はリプに置いた』と"
+        "分かる一文（👇可）。読者にリプを促すのは禁止。\n"
+        "2) body（自己返信に置く本体）= 番号付きの具体手順や根拠。全角200〜380字。"
+        "専門用語は一言で噛み砕く。\n"
+        "共通: hook・bodyとも**URL/リンクは入れない**。ハッシュタグはbody末尾に2個まで。絵文字は各1〜3個。\n"
+    )
+
+
+def gemini_diagnosis_hook_prompt(pillar: str, day_index: int, app_url: str,
+                                 avoid: list[str] | None = None) -> str:
     """診断導線（self_type/voice_type/visual）の“本投稿フックだけ”を生成させる指示。
-    早見リプ(cheatsheet_reply)は正本なのでGeminiに触らせず、入口のワクワクだけ磨く。"""
+    早見リプ(cheatsheet_reply)は正本なのでGeminiに触らせず、入口のワクワクだけ磨く。
+    avoid=過去に使ったフック文面。同じ・似た文面を禁止する（同内容の再登場防止。docs/108）。"""
     base = template_post(pillar, day_index, app_url)["text"]
     if pillar == "voice_type":
         n, _, d = VOICE_TYPES[day_index % len(VOICE_TYPES)]
@@ -553,6 +603,10 @@ def gemini_diagnosis_hook_prompt(pillar: str, day_index: int, app_url: str) -> s
         marquee = "／".join(artists_for(t, 2) for t in picks)
         extra = (f"\n『{marquee}…あなたは誰系？』のように、**具体的な歌手の実名を必ず2〜3人**本文に出して"
                  "自分ごと化させる（型名だけの占いにしない）。")
+    if avoid:
+        past = "\n".join(f"- {a.splitlines()[0]}" for a in avoid[:15] if a.strip())
+        extra += ("\n【過去に投稿したフック（1行目の一覧）。これらと同じ・似た文面は絶対に禁止。"
+                  "問いの立て方から変えること】\n" + past)
     return (
         "あなたはAIボイストレーナー『ソラ先生』のSNS担当（人間味のある“中の人”）です。"
         "X(旧Twitter)の【声タイプ診断】への導線ポストの、**本投稿（フック）だけ**を書きます。\n"
