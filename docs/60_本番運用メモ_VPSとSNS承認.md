@@ -387,3 +387,31 @@ bash scripts/sns_autopost/setup_approval.sh --test --cron
 - **教訓**: 「本番で実験しない」原則の具体形。**PR前のコードをVPSに直接置いて検証すると、
   そのファイルがマージ時の地雷になる**。検証はローカル compose か worktree で行い、VPSの
   作業ツリーは常に「remote_deploy.sh だけが動かす」状態を保つ。
+
+## 事例: X APIクレジット枯渇でread/write両方が402→lead_finder運用停止（2026-07-20）
+- **症状**: LINE承認からのX投稿が `HTTP 402: {"detail":"credits depleted",...}` で失敗（2件: 07-19昼
+  visual型・07-20朝 tip型）。同時刻帯の `lead_finder`（フォロー候補探索・フォロワー取得・メンション取得）
+  ・`lead_metrics`（週次計測）も同じ402で全滅していた。
+- **原因**: X APIの従量課金クレジットが**投稿(write)とlead_finder系(read)で同じ口座残高を共有**しており、
+  その残高が枯渇した。実績ログ（`/data/lead_reads_log.jsonl` `/data/posts_log.jsonl`）を集計すると、
+  read（`user_read`=フォロワー一覧取得 $0.010/件・`post_read`=検索 $0.005/件）が直近16日で**$5.10**、
+  write（投稿）が49件で**$1.28**と、**readがwriteの約4倍**を占めていた。1日$0.35〜0.40ペースの消費で、
+  「最低$5チャージ」が約13〜14日で尽きる計算になり、実際の枯渇タイミングと一致。
+- **対応**: 運用者判断で「フォロー候補の特定（lead_finder）を諦める」ことに決定。cronのみ停止（コード・
+  ドキュメントは残置し、将来の再開判断に委ねる）。
+  1. 本番crontabから `lead_finder.py`(毎朝10時) / `lead_metrics.py`(日曜22:30) の2行を削除
+     （`crontab -l > /root/crontab.bak.<timestamp>` でバックアップ後に除去）。
+  2. `scripts/deploy/remote_deploy.sh` と `scripts/sns_autopost/setup_approval.sh` の `CRON_LINES`/`LINES`
+     から同じ2行を削除（残さないと次回デプロイ時に冪等登録で復活する）。`setup_approval.sh` の
+     `CRON_MARKER`（reconcile用）は意図的にそのまま残した＝ `--cron` を再実行すると生き残っている
+     旧lead_finder/lead_metrics行があれば一掃される「保険」として機能する。
+  3. 投稿（`generate_and_post.py`/`fetch_metrics.py`）のcronは影響なく継続。
+- **クレジット再チャージ**: console.x.com でのチャージは運用者本人の課金操作のため代行不可。再開する
+  場合はチャージ後、失敗した2件の下書きを手動で流し直す必要がある（失敗した下書きは自動再送されない）。
+- **教訓**:
+  1. **read（探索）とwrite（投稿）が同じ課金プールを共有する**ため、read側の消費ペースがwrite側の
+     可用性にも直結する。片方だけ見ていると原因を見誤る。
+  2. cronを止めるだけでは不十分。**登録元（remote_deploy.sh / setup_approval.sh）を直さないと
+     次デプロイで復活する**（このリポジトリの冪等登録の性質上）。
+  3. lead_finder関連のコード（`lead_finder.py`/`leads.py`/`lead_metrics.py`等）とdocs/58/59の記述は
+     意図的に削除せず残置。将来「やっぱり再開する」判断があれば、cron行を`LINES`に戻すだけで復帰できる。
