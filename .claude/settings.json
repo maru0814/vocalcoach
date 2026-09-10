@@ -23,6 +23,11 @@
     "ask": [
       "Bash(git push:*)",
       "Bash(rm -rf:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./backend/.env)",
+      "Read(./frontend/.env.local)"
     ]
   },
   "hooks": {
