@@ -74,8 +74,9 @@ export function VoiceTypeBlock({
   );
 }
 
-/** Xシェア＋画像保存。診断結果を拡散の入口にする。 */
-export function ShareButtons({ vt, score, shareRef }: { vt: any; score: number; shareRef: any }) {
+/** Xシェア＋画像保存。診断結果を拡散の入口にする。
+ *  onDark=true はタイプ別ステージパネル（docs/72）など暗い背景に置くとき用。 */
+export function ShareButtons({ vt, score, shareRef, onDark = false }: { vt: any; score: number; shareRef: any; onDark?: boolean }) {
   if (!vt) return null;
   // タイプ別の共有ランディング（Xでカード画像＝OGPが出る）。スコアを ?s= で渡しOGタイトルに反映。
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -102,13 +103,13 @@ export function ShareButtons({ vt, score, shareRef }: { vt: any; score: number; 
   }
   return (
     <div className="space-y-1.5">
-      <p className="px-1 text-center text-[11px] font-bold text-slate-500">
+      <p className={`px-1 text-center text-[11px] font-bold ${onDark ? "text-white/80" : "text-slate-500"}`}>
         友達と結果を見せ合うと盛り上がります。シェアして「君は何タイプ？」
       </p>
       <div className="flex gap-2">
         <a
           href={xUrl} target="_blank" rel="noreferrer"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-slate-900 px-3 py-2 text-sm font-bold text-white transition active:scale-95"
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-full bg-slate-900 px-3 py-2 text-sm font-bold text-white transition active:scale-95 ${onDark ? "ring-1 ring-white/25" : ""}`}
         >
           𝕏 で結果をシェア
         </a>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Recorder } from "@/components/coach/Recorder";
 import { VoiceTypeBlock, ShareButtons } from "@/components/voice/VoiceTypeResult";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
-import { VOICE_TYPE_LIST } from "@/components/voice/voiceTypes";
+import { VOICE_TYPE_LIST, vtypeTheme } from "@/components/voice/voiceTypes";
 import { analyzeVoiceType, getMe, VoiceTypeResult } from "@/lib/api";
 import { VoiceTypeProfileArticle } from "@/components/voice/VoiceTypeProfileArticle";
 import type { VoiceProfile } from "@/content/voiceProfiles";
@@ -192,8 +192,16 @@ export default function VoiceTypePage() {
   const mm = String(Math.floor(elapsed / 60));
   const ss = String(elapsed % 60).padStart(2, "0");
 
+  // タイプ別テーマ（docs/72）。フル結果を見られる状態（ログイン済＋結果あり）のときだけ
+  // ページ全体の照明をタイプ色に切り替える。未ログインのぼかし結果は色でタイプが漏れるため適用しない。
+  const theme = vtypeTheme(result?.voice_type?.id);
+  const themed = !!result && auth === "in";
+
   return (
-    <div className="bg-studio min-h-[100dvh] pb-16">
+    <div
+      className={`min-h-[100dvh] pb-16 ${themed ? "" : "bg-studio"}`}
+      style={themed ? { background: theme.studio } : undefined}
+    >
       <header className="mx-auto flex max-w-2xl items-center justify-between p-5">
         <Link href={auth === "in" ? "/coach" : "/"}><BrandWordmark size={40} /></Link>
         <Link href={auth === "in" ? "/coach" : "/"} className="text-sm font-medium text-slate-500 hover:text-brand-600">
@@ -289,12 +297,16 @@ export default function VoiceTypePage() {
         {/* 結果カード */}
         {result && auth === "in" && (
           <section ref={resultRef} className="scroll-mt-4 space-y-3">
-            <div className="rounded-2xl bg-white/90 p-4 shadow-card">
+            {/* タイプ色の夜ステージパネル（docs/72 SCR-VT-01）。結果カードをタイプの照明で包む */}
+            <div
+              className="grain relative overflow-hidden rounded-2xl p-4 shadow-soft"
+              style={{ background: theme.stage }}
+            >
               <div ref={shareRef} className="space-y-0">
                 <VoiceTypeBlock vt={result.voice_type} score={result.score} />
               </div>
               <div className="mt-3">
-                <ShareButtons vt={result.voice_type} score={result.score} shareRef={shareRef} />
+                <ShareButtons vt={result.voice_type} score={result.score} shareRef={shareRef} onDark />
               </div>
             </div>
 
@@ -303,7 +315,7 @@ export default function VoiceTypePage() {
               <p className="text-center">
                 <a
                   href="#profile"
-                  className="text-xs font-bold text-brand-600 underline decoration-brand-200 underline-offset-2 transition hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                  className={`text-xs font-bold underline underline-offset-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${theme.accentLink}`}
                 >
                   ↓ {profile.nameJa}のプロフィールを読む
                 </a>
@@ -320,7 +332,7 @@ export default function VoiceTypePage() {
               </button>
               <Link
                 href="/coach"
-                className="flex-1 rounded-full bg-brand-600 px-4 py-3 text-center text-sm font-bold text-white shadow-[0_4px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] active:shadow-[0_1px_0_#5b21b6]"
+                className={`flex-1 rounded-full px-4 py-3 text-center text-sm font-bold transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] ${theme.button}`}
               >
                 レッスンを受ける →
               </Link>
@@ -339,11 +351,14 @@ export default function VoiceTypePage() {
                 >
                   {profile.nameJa}のプロフィール
                 </h2>
-                <VoiceTypeProfileArticle profile={profile} />
+                <VoiceTypeProfileArticle profile={profile} theme={theme} />
 
                 {/* 読了直後にレッスンへ橋を架ける（docs/69 FR-06・docs/70）。
                     夜のステージ調でヒーローと呼応させ、読み物の終わり＝行動の始まりを示す。 */}
-                <section className="bg-stage grain relative overflow-hidden rounded-2xl p-6 text-center text-white shadow-soft">
+                <section
+                  className="grain relative overflow-hidden rounded-2xl p-6 text-center text-white shadow-soft"
+                  style={{ background: theme.stage }}
+                >
                   <StageDecor notes={false} />
                   <div className="relative z-10">
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
@@ -360,7 +375,7 @@ export default function VoiceTypePage() {
                     </p>
                     <Link
                       href="/coach"
-                      className="mt-5 inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-bold text-brand-700 shadow-[0_4px_0_rgba(255,255,255,0.35)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white active:translate-y-[3px] active:shadow-[0_1px_0_rgba(255,255,255,0.35)]"
+                      className={`mt-5 inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-bold shadow-[0_4px_0_rgba(255,255,255,0.35)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white active:translate-y-[3px] active:shadow-[0_1px_0_rgba(255,255,255,0.35)] ${theme.buttonGhostText}`}
                     >
                       ソラ先生のレッスンを受ける →
                     </Link>
@@ -371,7 +386,7 @@ export default function VoiceTypePage() {
                 <p className="text-center">
                   <Link
                     href={`/voice-type/${result.voice_type.id}`}
-                    className="text-xs font-bold text-brand-600 underline decoration-brand-200 underline-offset-2 transition hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                    className={`text-xs font-bold underline underline-offset-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${theme.accentLink}`}
                   >
                     この記事を単独ページで開く →
                   </Link>

@@ -196,17 +196,20 @@ export function Icon({
 export function IconChip({
   icon,
   size = 48,
+  tone,
   className = "",
   label,
 }: {
   icon: IconName;
   size?: number;
+  /** 地色の差し替え（声タイプ別テーマ docs/72 用。例: VTYPE_THEME[*].chipBg）。省略時は brand-600 */
+  tone?: string;
   className?: string;
   label?: string;
 }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-soft ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-2xl ${tone || "bg-brand-600"} text-white shadow-soft ${className}`}
       style={{ width: size, height: size }}
       role={label ? "img" : undefined}
       aria-label={label}

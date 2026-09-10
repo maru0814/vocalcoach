@@ -54,7 +54,7 @@ export const DRAMATIC_PROFILE: VoiceProfile = {
       id: "personality",
       nav: "性格",
       icon: "user",
-      pose: "bow",
+      pose: "clap",
       title: "この声の持ち主に多い性格",
       kind: "text",
       paragraphs: [
@@ -68,7 +68,7 @@ export const DRAMATIC_PROFILE: VoiceProfile = {
       id: "aruaru",
       nav: "あるある",
       icon: "check",
-      pose: "clap",
+      pose: "bow",
       title: "カラオケ・日常での「あるある」",
       kind: "list",
       items: [

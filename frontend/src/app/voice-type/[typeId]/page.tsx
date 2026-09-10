@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { BrandWordmark } from "@/components/brand/Brand";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
-import { VOICE_TYPE_LIST, VOICE_TYPE_META, SITE_URL } from "@/components/voice/voiceTypes";
+import { VOICE_TYPE_LIST, VOICE_TYPE_META, SITE_URL, vtypeTheme } from "@/components/voice/voiceTypes";
 import { VOICE_PROFILES } from "@/content/voiceProfiles";
 import { Button } from "@/components/ui/Button";
 import { ProfileShareButtons } from "@/components/voice/ProfileShareButtons";
@@ -53,9 +53,11 @@ export default function VoiceTypeProfilePage({ params }: { params: { typeId: str
   if (!meta) notFound();
   const profile = VOICE_PROFILES[params.typeId];
   const others = VOICE_TYPE_LIST.filter((t) => t.id !== params.typeId);
+  // タイプ別テーマ（docs/72 SCR-VT-02）: ページ照明・キッカー・CTAをタイプ色にする
+  const theme = vtypeTheme(params.typeId);
 
   return (
-    <div className="bg-studio min-h-[100dvh] pb-16">
+    <div className="min-h-[100dvh] pb-16" style={{ background: theme.studio }}>
       <header className="mx-auto flex max-w-3xl items-center justify-between p-5">
         <Link href="/">
           <BrandWordmark size={40} />
@@ -75,7 +77,7 @@ export default function VoiceTypeProfilePage({ params }: { params: { typeId: str
             <VoiceTypeArt id={params.typeId} fallbackMascotSize={120} className="h-full w-full" />
           </div>
           <div className="px-6 py-7 text-center sm:px-10 sm:py-8">
-            <p className="text-xs font-bold tracking-wide text-brand-600">
+            <p className={`text-xs font-bold tracking-wide ${theme.accentText}`}>
               声タイプ図鑑 — {meta.name} {meta.emoji}
             </p>
             <h1 className="mt-2.5 font-rounded text-3xl font-black tracking-tight text-slate-900 sm:text-[2.6rem]">
@@ -100,7 +102,7 @@ export default function VoiceTypeProfilePage({ params }: { params: { typeId: str
 
         {profile ? (
           /* 記事本体は診断結果ビューと共有（docs/68 §3-2） */
-          <VoiceTypeProfileArticle profile={profile} />
+          <VoiceTypeProfileArticle profile={profile} theme={theme} />
         ) : (
           /* 準備中フォールバック（docs/62 §14）: 短い要約だけで成立させる */
           <section className="rounded-[2rem] bg-white/90 p-6 text-center shadow-card sm:p-10">
@@ -120,7 +122,7 @@ export default function VoiceTypeProfilePage({ params }: { params: { typeId: str
             15秒くらい歌うだけ。AIが発声を解析して、8つの声タイプから診断します。
           </p>
           <div className="mt-5 flex justify-center">
-            <Button href="/voice-type">自分の声タイプを診断する</Button>
+            <Button href="/voice-type" tone={theme.button}>自分の声タイプを診断する</Button>
           </div>
           {profile && (
             <div className="mt-8 border-t border-slate-100 pt-7">

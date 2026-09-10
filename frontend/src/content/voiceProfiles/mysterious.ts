@@ -26,7 +26,7 @@ export const MYSTERIOUS_PROFILE: VoiceProfile = {
       id: "weakness",
       nav: "実は苦手なこと",
       icon: "frown",
-      pose: "thinking",
+      pose: "bow",
       title: "実は苦手なこと・不利な戦い方",
       kind: "text",
       paragraphs: [
@@ -54,7 +54,7 @@ export const MYSTERIOUS_PROFILE: VoiceProfile = {
       id: "personality",
       nav: "性格",
       icon: "user",
-      pose: "bow",
+      pose: "thinking",
       title: "この声の持ち主に多い性格",
       kind: "text",
       paragraphs: [
@@ -67,7 +67,7 @@ export const MYSTERIOUS_PROFILE: VoiceProfile = {
       id: "aruaru",
       nav: "あるある",
       icon: "check",
-      pose: "clap",
+      pose: "cheer",
       title: "カラオケ・日常での「あるある」",
       kind: "list",
       items: [
@@ -85,7 +85,7 @@ export const MYSTERIOUS_PROFILE: VoiceProfile = {
       id: "songs",
       nav: "輝く曲",
       icon: "note",
-      pose: "cheer",
+      pose: "clap",
       title: "あなたの声が一番輝く曲・歌い方",
       kind: "text",
       paragraphs: [

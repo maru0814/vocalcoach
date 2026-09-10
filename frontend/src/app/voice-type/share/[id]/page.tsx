@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
-import { VOICE_TYPE_LIST, VOICE_TYPE_META, SITE_URL, VTYPE_STYLE } from "@/components/voice/voiceTypes";
+import { VOICE_TYPE_LIST, VOICE_TYPE_META, SITE_URL, vtypeTheme } from "@/components/voice/voiceTypes";
 
 type SP = { [k: string]: string | string[] | undefined };
 function parseScore(searchParams?: SP): number | null {
@@ -55,11 +55,13 @@ export default function VoiceTypeShareLanding(
 ) {
   const m = VOICE_TYPE_META[params.id];
   if (!m) notFound();
-  const grad = VTYPE_STYLE[params.id] || "from-brand-500 to-pink-500";
+  // タイプ別テーマ（docs/72 SCR-VT-03）: X経由の初見にもタイプの世界観で迎える
+  const theme = vtypeTheme(params.id);
+  const grad = theme.grad;
   const score = parseScore(searchParams);
 
   return (
-    <div className="bg-studio min-h-[100dvh] pb-16">
+    <div className="min-h-[100dvh] pb-16" style={{ background: theme.studio }}>
       <main className="mx-auto max-w-2xl space-y-5 px-5 pt-6">
         <div className={`overflow-hidden rounded-2xl bg-gradient-to-br ${grad} text-white shadow-soft`}>
           <div className="relative aspect-[16/9] w-full">
@@ -94,7 +96,7 @@ export default function VoiceTypeShareLanding(
           </div>
           <Link
             href="/voice-type"
-            className="mt-6 inline-flex items-center gap-2 rounded-full bg-brand-600 px-7 py-3.5 font-bold text-white shadow-[0_4px_0_#5b21b6] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] active:shadow-[0_1px_0_#5b21b6]"
+            className={`mt-6 inline-flex items-center gap-2 rounded-full px-7 py-3.5 font-bold transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 active:translate-y-[3px] ${theme.button}`}
           >
             無料で自分の声タイプを診断する →
           </Link>

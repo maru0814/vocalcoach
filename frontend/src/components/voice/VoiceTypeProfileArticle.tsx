@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import type { VoiceProfile } from "@/content/voiceProfiles";
 import { IconChip } from "@/components/site/IconChip";
-import { CoachAvatar } from "@/components/character/Coach";
+import { SectionArt } from "./SectionArt";
+import { VTYPE_FALLBACK_THEME, type VTypeTheme } from "./voiceTypes";
 
 // 声タイプ図鑑のプロフィール記事本体（正本: docs/62。共有化: docs/70 §3-2）。
 // 詳細ページ（/voice-type/[typeId]）と診断結果ビュー（/voice-type）の両方で使う。
@@ -21,7 +22,14 @@ function em(text: string): ReactNode {
   );
 }
 
-export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) {
+export function VoiceTypeProfileArticle({
+  profile,
+  theme = VTYPE_FALLBACK_THEME,
+}: {
+  profile: VoiceProfile;
+  /** 声タイプ別テーマ（docs/72）。記事内アクセント（チップ・ラベル・点・締め・目次hover）に反映 */
+  theme?: VTypeTheme;
+}) {
   return (
     <>
       {/* 導入 */}
@@ -37,14 +45,14 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
           <a
             key={s.id}
             href={`#${s.id}`}
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:border-brand-300 hover:text-brand-700"
+            className={`rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition ${theme.tocHover}`}
           >
             {String(i + 1).padStart(2, "0")} {s.nav}
           </a>
         ))}
         <a
           href="#artists"
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:border-brand-300 hover:text-brand-700"
+          className={`rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition ${theme.tocHover}`}
         >
           {String(profile.sections.length + 1).padStart(2, "0")} 有名人
         </a>
@@ -59,9 +67,9 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
           className="scroll-mt-24 rounded-[2rem] bg-white/90 p-7 shadow-card sm:p-10"
         >
           <div className="flex items-center gap-4 border-b border-slate-100 pb-5">
-            <IconChip icon={s.icon} size={48} />
+            <IconChip icon={s.icon} size={48} tone={theme.chipBg} />
             <div className="min-w-0 flex-1">
-              <span className="font-rounded text-xs font-black tracking-wide text-brand-300">
+              <span className={`font-rounded text-xs font-black tracking-wide ${theme.sectionLabel}`}>
                 SECTION {String(i + 1).padStart(2, "0")}
               </span>
               <h2
@@ -71,8 +79,9 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
                 {s.title}
               </h2>
             </div>
-            {/* セクションに添えるソラ先生のポーズ（docs/61 §3-6・ポーズはページ内で一意） */}
-            <CoachAvatar pose={s.pose} size={72} />
+            {/* セクション内容に合わせた専用イラスト。未制作の間はソラ先生のポーズに
+                フォールバック（docs/61 §3-6・ポーズはページ内で一意） */}
+            <SectionArt typeId={profile.id} sectionId={s.id} pose={s.pose} size={72} />
           </div>
           {s.kind === "text" ? (
             <div className="mt-6 space-y-6">
@@ -92,7 +101,7 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
                   <li key={j} className="flex gap-3.5">
                     <span
                       aria-hidden="true"
-                      className="mt-3 h-2 w-2 shrink-0 rounded-full bg-brand-400"
+                      className={`mt-3 h-2 w-2 shrink-0 rounded-full ${theme.bullet}`}
                     />
                     <p className="font-body text-base leading-[2.05] tracking-[0.01em] text-slate-700">
                       {em(item)}
@@ -100,7 +109,7 @@ export function VoiceTypeProfileArticle({ profile }: { profile: VoiceProfile }) 
                   </li>
                 ))}
               </ul>
-              <p className="mt-7 rounded-2xl bg-brand-50/70 px-5 py-4 font-body text-base leading-[2.05] tracking-[0.01em] text-slate-600">
+              <p className={`mt-7 rounded-2xl px-5 py-4 font-body text-base leading-[2.05] tracking-[0.01em] text-slate-600 ${theme.closingBg}`}>
                 {em(s.closing)}
               </p>
             </>

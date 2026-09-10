@@ -1,10 +1,10 @@
 import type { VoiceProfile } from "./types";
 import { WHISPER_ARTISTS } from "./whisperArtists";
 
-// スウィートタイプ確定本文（正本: docs/62 §12-2。文言を変える時は docs/62 を先に更新する）
+// ウィスパータイプ確定本文（正本: docs/62 §12-2。文言を変える時は docs/62 を先に更新する）
 export const WHISPER_PROFILE: VoiceProfile = {
   id: "whisper",
-  nameJa: "スウィートタイプ",
+  nameJa: "ウィスパータイプ",
   heroTitle: "聴く人の力を抜く、木漏れ日の声",
   lede:
     "8タイプでいちばん、力の抜けた声。軽やかな裏声に、やわらかな息、透明で澄んだ響き。強さの要素がひとつもないのに——いえ、ないからこそ——あなたの声には特別な作用があります。**聴いた人の、肩の力が抜ける**のです。あなたの声は木漏れ日です。まぶしくないのに、当たると気持ちいい。歌が「聴かせるもの」ではなく「寄り添うもの」になる、唯一のタイプ。この診断では、そのやわらかさの正体を解き明かしていきます。",
@@ -41,7 +41,7 @@ export const WHISPER_PROFILE: VoiceProfile = {
       id: "speaking",
       nav: "話し声と印象",
       icon: "chat",
-      pose: "explain",
+      pose: "bow",
       title: "普段の話し声と、周りから持たれやすい印象",
       kind: "text",
       paragraphs: [
@@ -55,7 +55,7 @@ export const WHISPER_PROFILE: VoiceProfile = {
       id: "personality",
       nav: "性格",
       icon: "user",
-      pose: "bow",
+      pose: "explain",
       title: "この声の持ち主に多い性格",
       kind: "text",
       paragraphs: [
@@ -69,7 +69,7 @@ export const WHISPER_PROFILE: VoiceProfile = {
       id: "aruaru",
       nav: "あるある",
       icon: "check",
-      pose: "clap",
+      pose: "cheer",
       title: "カラオケ・日常での「あるある」",
       kind: "list",
       items: [
@@ -87,7 +87,7 @@ export const WHISPER_PROFILE: VoiceProfile = {
       id: "songs",
       nav: "輝く曲",
       icon: "note",
-      pose: "cheer",
+      pose: "clap",
       title: "あなたの声が一番輝く曲・歌い方",
       kind: "text",
       paragraphs: [
