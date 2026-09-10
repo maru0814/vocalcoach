@@ -12,7 +12,8 @@ export const VTYPE_STYLE: Record<string, string> = {
   moody: "from-slate-600 to-indigo-900",
 };
 
-// 診断結果表示中のページ全体の背景（タイプ色を薄く敷く。白カードが映える濃度に留める）。
+// タイプが確定している画面のページ全体の背景（タイプ色を薄く敷く。白カードが映える濃度に留める）。
+// 使用箇所: /voice-type の診断結果表示中、/voice-type/[typeId] の図鑑記事。
 // VTYPE_STYLE（カードの濃いグラデ）と対で管理し、色相を一致させる。
 export const VTYPE_PAGE_BG: Record<string, string> = {
   rock: "from-rose-100 via-orange-50 to-orange-100",

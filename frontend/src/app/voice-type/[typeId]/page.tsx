@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { BrandWordmark } from "@/components/brand/Brand";
 import { VoiceTypeArt } from "@/components/voice/VoiceTypeArt";
-import { VOICE_TYPE_LIST, VOICE_TYPE_META, SITE_URL } from "@/components/voice/voiceTypes";
+import { VOICE_TYPE_LIST, VOICE_TYPE_META, VTYPE_PAGE_BG, SITE_URL } from "@/components/voice/voiceTypes";
 import { VOICE_PROFILES } from "@/content/voiceProfiles";
 import { Button } from "@/components/ui/Button";
 import { ProfileShareButtons } from "@/components/voice/ProfileShareButtons";
@@ -53,9 +53,15 @@ export default function VoiceTypeProfilePage({ params }: { params: { typeId: str
   if (!meta) notFound();
   const profile = VOICE_PROFILES[params.typeId];
   const others = VOICE_TYPE_LIST.filter((t) => t.id !== params.typeId);
+  // 診断ページ（/voice-type の結果表示）と同じく、記事もタイプ色の薄いグラデを敷く。
+  const pageBg = VTYPE_PAGE_BG[params.typeId];
 
   return (
-    <div className="bg-studio min-h-[100dvh] pb-16">
+    <div
+      className={
+        pageBg ? `min-h-[100dvh] bg-gradient-to-b pb-16 ${pageBg}` : "bg-studio min-h-[100dvh] pb-16"
+      }
+    >
       <header className="mx-auto flex max-w-3xl items-center justify-between p-5">
         <Link href="/">
           <BrandWordmark size={40} />
