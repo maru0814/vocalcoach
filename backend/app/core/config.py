@@ -44,12 +44,18 @@ class Settings(BaseSettings):
     # ⚠️ "-latest" エイリアスは使わない（docs/91 原因1）: Google 側で新世代（Gemini 3 系）に
     #    切り替わった際、thinking_budget=0 が INVALID_ARGUMENT になりテキスト会話が全滅した。
     #    バージョンは明示的に固定する。
-    llm_model: str = "gemini-2.5-flash-lite"
+    # ⚠️ ただし固定IDは「退役」する（docs/91 原因3）: gemini-2.5-flash-lite は 2026-08 に
+    #    404 NOT_FOUND（"no longer available"）になり、チャットが全滅した。models.list() には
+    #    退役後も残るため一覧では気付けない。生存確認は scripts/ops/check_llm_models.py で行う。
+    # 実測 2026-08-06（max_output_tokens=400・thinking_config なし）:
+    #    gemini-3.5-flash-lite 1.2s/完結・ツール呼び出し0.6s ← 採用
+    #    gemini-3.6-flash 等の非 lite 3系は thinking が出力枠を食い finish=MAX_TOKENS で本文が切れる
+    llm_model: str = "gemini-3.5-flash-lite"
     # 対話ターン（会話返答・コーチコメント）専用モデル（docs/66）。
-    # 既定は llm_model（flash-lite）と同じ。格上げ（gemini-2.5-flash）は before/after 測定の結果、
+    # 既定は llm_model（flash-lite）と同じ。格上げ（Flash 系）は before/after 測定の結果、
     # カジュアル/感情は改善したが「多ターンの噛み合い」が悪化＋コスト3倍のため既定では採らない
-    # （丸山CEO判断 2026-07-12: 会話モードのプロンプト側だけ採用）。必要なら env で 2.5-flash に格上げ可。
-    llm_chat_model: str = "gemini-2.5-flash-lite"
+    # （丸山CEO判断 2026-07-12: 会話モードのプロンプト側だけ採用）。必要なら env で格上げ可。
+    llm_chat_model: str = "gemini-3.5-flash-lite"
     # 発音の聞き取り（音声入力）用。Flash-Lite は音声が弱いので Flash を使う。
     llm_audio_model: str = "gemini-2.5-flash"
     llm_max_tokens: int = 400

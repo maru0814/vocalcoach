@@ -109,13 +109,21 @@ def create_app() -> FastAPI:
         analyzer.warmup()
         # Gemini クライアント(TLS接続/SDK初期化)も温める。初回コーチコメントの
         # コールド遅延を無くす（best-effort。失敗してもFB自体は出る）。
+        # 兼: 設定モデルの生存確認。空返しは「モデル退役・キー失効でチャットが
+        # 全滅している」徴候なので ERROR で鳴らす（黙って落ち続けた docs/91 の再発防止）。
         try:
             from app.coaching import llm
 
-            llm.generate_coach_comment(
+            ok = llm.generate_coach_comment(
                 "ウォームアップ", "「準備OK」とだけ短く返す。",
                 timeout_sec=_settings.llm_coach_timeout_sec,
             )
+            if _settings.llm_enabled and not ok:
+                logging.getLogger(__name__).error(
+                    "%s 起動時ウォームアップ: チャットモデル '%s' から応答が得られません。"
+                    "チャットはルールベースに落ちます（scripts/ops/check_llm_models.py で確認）。",
+                    llm.LLM_CONFIG_FAULT_MARKER, _settings.llm_chat_model,
+                )
         except Exception:
             pass
 

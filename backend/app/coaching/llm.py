@@ -363,7 +363,7 @@ def generate_feedback(
         reply = scrub_card_promise(reply)
         return reply or None
     except Exception as e:
-        logger.warning("ゼロベースFB生成に失敗（ルールベースにフォールバック）: %s", e)
+        _log_llm_failure("ゼロベースFB生成", settings.llm_analysis_model, e)
         return None
 
 
@@ -828,9 +828,41 @@ def _scrub_invented_seconds(reply: str, allowed: set[int]) -> str:
     return _SCRUB_SEC_RE.sub(repl, reply)
 
 
+_GEMINI_25_RE = re.compile(r"gemini-2\.5\b")
+
+
 def _supports_thinking_budget(model: Optional[str]) -> bool:
-    """thinking_budget の明示指定を受け付けるモデルか（Gemini 2.5 系のみ）。"""
-    return "2.5" in (model or "")
+    """thinking_budget の明示指定を受け付けるモデルか（Gemini 2.5 系のみ）。
+
+    実測 2026-08-06: gemini-3.5-flash-lite / gemini-3.6-flash は thinking_budget=0 を
+    400 INVALID_ARGUMENT で拒否する。バージョン部分で判定する（"2.5" の部分文字列一致だと
+    将来のモデル名を誤判定しうるため）。
+    """
+    return bool(_GEMINI_25_RE.search(model or ""))
+
+
+# 「モデルが無い／引数が不正」＝設定ミスの徴候。ネットワーク瞬断やレート制限と違い、
+# 放置すると全リクエストが黙ってルールベースに落ち続ける（docs/91）。warning に埋もれ
+# させず ERROR + 固定マーカーで出し、ログ検索とアラートで拾えるようにする。
+_LLM_CONFIG_FAULT_SIGNS = (
+    "not_found", "no longer available", "is not found",
+    "invalid_argument", "permission_denied", "api key not valid",
+)
+# ログ検索用の固定マーカー（`docker compose logs backend | grep LLM_CONFIG_FAULT`）
+LLM_CONFIG_FAULT_MARKER = "LLM_CONFIG_FAULT"
+
+
+def _log_llm_failure(where: str, model: Optional[str], exc: Exception) -> None:
+    """LLM 呼び出し失敗を、設定不備（恒久）と一過性で切り分けて記録する。"""
+    msg = str(exc).lower()
+    if any(sign in msg for sign in _LLM_CONFIG_FAULT_SIGNS):
+        logger.error(
+            "%s %s: モデル '%s' が使えません（設定不備の疑い。退役・改名・権限を確認）。"
+            "以降ルールベースにフォールバックし続けます: %s",
+            LLM_CONFIG_FAULT_MARKER, where, model, exc,
+        )
+    else:
+        logger.warning("%s に失敗（フォールバックします） model=%s: %s", where, model, exc)
 
 
 def _thinking_off(model: Optional[str]):
@@ -886,7 +918,7 @@ def _complete(contents, timeout_sec: Optional[float] = None,
         text = (resp.text or "").strip()
         return text or None
     except Exception as e:  # API エラー・ネットワーク・レート制限など
-        logger.warning("LLM 応答生成に失敗（フォールバックします）: %s", e)
+        _log_llm_failure("LLM 応答生成", model or settings.llm_model, e)
         return None
 
 
@@ -1105,7 +1137,7 @@ def _complete_with_tools(contents, force_tool: Optional[str] = None,
                 last_text = last_text.rstrip() + f"\n→ {song_candidate['url']}"
         return last_text or None, tool_urls
     except Exception as e:  # API エラー・ネットワーク・レート制限など
-        logger.warning("ツール付きLLM応答に失敗（ツール無しにフォールバック）: %s", e)
+        _log_llm_failure("ツール付きLLM応答", model or settings.llm_model, e)
         return None, tool_urls
 
 
@@ -1257,10 +1289,10 @@ def classify_register_audio(user_wav: bytes, dsp_hint: Optional[str] = None) -> 
                 import time as _t
                 _t.sleep(1.2)
         if last_err:
-            logger.warning("声区の聞き分けに失敗: %s", last_err)
+            _log_llm_failure("声区の聞き分け", settings.llm_audio_model, last_err)
         return None
     except Exception as e:
-        logger.warning("声区の聞き分けに失敗(初期化): %s", e)
+        _log_llm_failure("声区の聞き分け(初期化)", settings.llm_audio_model, e)
         return None
 
 
@@ -1316,7 +1348,7 @@ def analyze_pronunciation(user_wav: bytes, ref_wav: Optional[bytes] = None) -> O
         )
         return (resp.text or "").strip() or None
     except Exception as e:
-        logger.warning("発音解析（音声入力）に失敗: %s", e)
+        _log_llm_failure("発音解析（音声入力）", settings.llm_audio_model, e)
         return None
 
 

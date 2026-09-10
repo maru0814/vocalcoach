@@ -186,11 +186,14 @@ class ThinkingBudgetGuard(unittest.TestCase):
         self.assertIsNone(llm._thinking_off("gemini-flash-lite-latest"))
 
     def test_default_models_are_pinned_versions(self):
-        # "-latest" エイリアス禁止（世代切替でテキスト会話が壊れた障害の再発防止）
+        # "-latest" エイリアス禁止（世代切替でテキスト会話が壊れた障害の再発防止）。
+        # 世代そのもの（"2.5" 等）は固定しない: 固定IDは退役する（gemini-2.5-flash-lite が
+        # 404 になった＝docs/91 原因3）ので、乗り換えをテストが妨げないようにする。
+        # 世代と thinking の整合は tests/test_llm_model_config.py が担保する。
         for field in ("llm_model", "llm_chat_model", "llm_audio_model", "llm_analysis_model"):
             default = Settings.model_fields[field].default
             self.assertNotIn("latest", default, field)
-            self.assertIn("2.5", default, field)
+            self.assertRegex(default, r"gemini-\d+(\.\d+)?-", field)
 
 
 if __name__ == "__main__":

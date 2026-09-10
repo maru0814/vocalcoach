@@ -106,7 +106,11 @@ def _llm_generate(facts: str) -> DetailedReport | None:
         )
         return DetailedReport.model_validate_json(resp.text or "")
     except (ValidationError, Exception) as e:  # noqa: BLE001
-        logger.warning("詳細レポートのLLM生成に失敗: %s", e)
+        # 有料の詳細レポートが黙ってルールベースに落ちると気付けない。設定不備は
+        # ERROR + マーカーで出す（docs/91）。
+        from app.coaching.llm import _log_llm_failure
+
+        _log_llm_failure("詳細レポートのLLM生成", settings.llm_model, e)
         return None
 
 
