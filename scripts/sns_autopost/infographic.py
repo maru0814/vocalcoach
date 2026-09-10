@@ -183,12 +183,12 @@ def parse_diagnosis(pillar: str, day_index: int) -> dict:
              for name, _e, _d in themes.VOICE_TYPES]
     if pillar == "visual":
         title = "あなたの声は、どのタイプ？15秒で診断"
-        subtitle = "15秒歌うだけで、AIが8タイプ＋似た声質の歌手まで診断"
+        subtitle = "15秒話すだけで、AIが8タイプ＋似た声質の歌手まで診断"
         cta = {"main": "プロフィールのリンクから無料で診断🎤", "sub": "結果はそのままシェアOK"}
     else:  # self_type
         title = "あなたの声は、実はこの8タイプのどれか"
         subtitle = "直感でどれっぽい？プロフィールから無料で診断できます"
-        cta = {"main": "プロフィールのリンクから無料で診断🎤", "sub": "15秒歌うだけ"}
+        cta = {"main": "プロフィールのリンクから無料で診断🎤", "sub": "15秒話すだけ"}
     return {"type": "diagnosis", "title": title, "subtitle": subtitle,
             "types": types, "cta": cta}
 

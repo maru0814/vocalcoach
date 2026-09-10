@@ -137,7 +137,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             <div style={{ display: "flex", alignItems: "center", marginTop: 16 }}>
               <div style={{ display: "flex", width: 46, height: 8, borderRadius: 4, background: `linear-gradient(to right, ${c1}, ${c2})` }} />
               <div style={{ display: "flex", marginLeft: 14, fontSize: 25, color: "rgba(255,255,255,0.85)" }}>
-                あなたの声も15秒歌うだけで無料診断{SITE_HOST ? ` → ${SITE_HOST}` : ""}
+                あなたの声も15秒話すだけで無料診断{SITE_HOST ? ` → ${SITE_HOST}` : ""}
               </div>
             </div>
           </div>

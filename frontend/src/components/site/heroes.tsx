@@ -170,7 +170,7 @@ export function HeroShindan() {
         <Marker tone="dark">何タイプ？</Marker>
       </h1>
       <p className="mt-5 max-w-md text-base text-white/85 sm:text-lg">
-        15秒歌うだけ。AIが8タイプで“声診断”。近い歌手も分かります。
+        15秒話すだけ。AIが8タイプで“声診断”。近い歌手も分かります。
       </p>
       <div className="mt-8 flex flex-wrap items-center gap-4">
         <Button href="/voice-type" variant="secondary">

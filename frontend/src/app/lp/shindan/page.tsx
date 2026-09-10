@@ -7,7 +7,7 @@ import { LpBody, StickyCta } from "@/components/site/LpBody";
 // WHO=診断広告経由 / WHAT=自分の声のタイプが15秒で分かる / HOW=見出し・CTA・追従バーを診断に一本化
 const LP_TITLE = "あなたの声、何タイプ？";
 const LP_DESC =
-  "15秒歌うだけ、AIが8タイプで“声診断”。登録なしで試せます（結果の保存だけ無料登録）。専用マイク不要。";
+  "15秒話すだけ、AIが8タイプで“声診断”。登録なしで試せます（結果の保存だけ無料登録）。専用マイク不要。";
 // OGPは8タイプ全員集合の一枚絵（再生成: 一時ImageResponseルートで作成 → docs/28 §11）
 const LP_OG_IMAGE = "/brand/og-shindan.jpg";
 

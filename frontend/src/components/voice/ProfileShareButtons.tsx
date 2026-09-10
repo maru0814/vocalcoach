@@ -24,7 +24,7 @@ export function ProfileShareButtons({
   const text =
     `🎤 わたしの声タイプは【${nameJa}】でした！\n` +
     `「${heroTitle}」\n\n` +
-    `あなたは何タイプ？15秒歌うだけで無料診断できるよ👇`;
+    `あなたは何タイプ？15秒話すだけで無料診断できるよ👇`;
   const hashtags = "声診断,ボイトレ,ソラ先生";
 
   const xUrl =

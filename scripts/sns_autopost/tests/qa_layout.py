@@ -35,7 +35,7 @@ cases = {
     "diagnosis_gallery": {"type": "diagnosis", "title": LONG, "subtitle": LONG,
         "types": [{"name": "Mysterious" + str(i), "image": CHAR, "featured": i == 5,
                    "artists": LONG} for i in range(8)],
-        "cta": {"main": "プロフィールのリンクから無料で診断🎤", "sub": "15秒歌うだけ"}},
+        "cta": {"main": "プロフィールのリンクから無料で診断🎤", "sub": "15秒話すだけ"}},
 }
 
 MEASURE = """() => {

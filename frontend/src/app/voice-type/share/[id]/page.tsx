@@ -24,7 +24,7 @@ export function generateMetadata(
   const score = parseScore(searchParams);
   const scoreSuffix = score != null ? ` 総合${score}点` : "";
   const title = `あなたの声タイプは【${m.name}${m.emoji}】${scoreSuffix}`;
-  const description = `${m.desc} あなたの声も15秒歌うだけで無料診断🎤`;
+  const description = `${m.desc} あなたの声も15秒話すだけで無料診断🎤`;
   const path = `/voice-type/share/${params.id}`;
   // 診断結果の一枚絵（スコア入りカード）を動的生成。失敗時はルート側で静的OGへフォールバック
   const ogImage = `/api/og/voice-type/${params.id}${score != null ? `?s=${score}` : ""}`;
@@ -83,7 +83,7 @@ export default function VoiceTypeShareLanding(
         <div className="rounded-2xl bg-white/90 p-6 text-center shadow-card">
           <h1 className="text-xl font-black text-slate-800">あなたの声は、どのタイプ？</h1>
           <p className="mt-2 text-sm text-slate-600">
-            AIボーカルトレーナー「ソラ先生」が、15秒歌うだけであなたの声を8タイプで診断します。
+            AIボーカルトレーナー「ソラ先生」が、15秒話すだけであなたの声を8タイプで診断します。
             似た声質のアーティストつき。診断のあとは、その声に合った発声レッスンへ。
           </p>
           <div className="mx-auto mt-5 grid max-w-md grid-cols-4 gap-2">

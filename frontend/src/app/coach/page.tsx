@@ -120,7 +120,7 @@ export default function CoachListPage() {
           <IconChip icon="search" size={48} />
           <div className="min-w-0 flex-1">
             <div className="font-bold text-slate-800">声タイプ診断</div>
-            <div className="text-xs text-slate-500">15秒歌うだけ。8タイプから診断＆シェア（いつでもOK）</div>
+            <div className="text-xs text-slate-500">15秒話すだけ。8タイプから診断＆シェア（いつでもOK）</div>
           </div>
           <span className="text-xl text-brand-400 transition group-hover:translate-x-1">→</span>
         </Link>

@@ -194,7 +194,7 @@ def template_post(pillar: str, day_index: int, app_url: str) -> dict:
         return {"text": ("あなたの声、歌手なら誰に似てる？🎤\n\n"
                          f"たとえば {artists_for('rock')}、{artists_for('dramatic')}…\n"
                          "自分の声が“誰系”かは、意外と自分ではわからないもの。\n"
-                         "15秒歌うだけで、AIが「似てる歌手」と声タイプを当てます。\n\n"
+                         "15秒話すだけで、AIが「似てる歌手」と声タイプを当てます。\n\n"
                          "👇 8タイプ（近い歌手の例つき）はリプに置きました。"),
                 "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "voice_type":
@@ -207,7 +207,7 @@ def template_post(pillar: str, day_index: int, app_url: str) -> dict:
     if pillar == "visual":
         return {"text": ("あなたの声は、どのタイプ？🎤\n\n"
                          f"{artists_for('mysterious')}系？ {artists_for('crystal')}系？\n"
-                         "15秒歌うだけで、AIが8つの声タイプと「似てる歌手」を診断。\n\n"
+                         "15秒話すだけで、AIが8つの声タイプと「似てる歌手」を診断。\n\n"
                          "👇 8タイプ（近い歌手の例つき）はリプに。結果はそのままシェアOK。"),
                 "reply": cheatsheet_reply(), "link": _diagnose_link(app_url)}
     if pillar == "contrarian":
@@ -316,7 +316,7 @@ def gemini_diagnosis_hook_prompt(pillar: str, day_index: int, app_url: str) -> s
         "（好奇心ギャップ＝診断したくなるワクワク）。ラベル陳列・カタログ説明で始めない。\n"
         "- **声質が近い例の歌手を実名で必ず出す**（上記の指定アーティスト。でっち上げ・別の歌手名の追加は禁止）。"
         "実名で“自分ごと”を作りつつ、『あなた自身が誰に一番近いか』は診断結果に取っておく（＝診断へ誘導）。\n"
-        "- 『15秒歌うだけ』『8タイプ＋似てる歌手を当てる』『結果はシェアできる』のどれかでベネフィットを一言。\n"
+        "- 『15秒話すだけ』『8タイプ＋似てる歌手を当てる』『結果はシェアできる』のどれかでベネフィットを一言。\n"
         "- 末尾に『8タイプの早見はリプに置いた』と分かる一文（👇可）。読者にリプを促すのは禁止。\n"
         "- **URL・リンクは絶対に入れない**（誘導はプロフィール固定）。誇張NG。絵文字1〜3個。全角90〜160字。"
         f"{extra}\n\n"

@@ -214,7 +214,7 @@ export default function VoiceTypePage() {
               あなたの声は、どのタイプ？
             </h1>
             <p className="mt-2 text-sm text-white/90">
-              15秒くらい歌うだけ。AIが発声を解析して、8つの声タイプから診断します。
+              15秒くらい話すだけ。AIが発声を解析して、8つの声タイプから診断します。
               似た声質のアーティストつき。結果はそのままシェアできます。
             </p>
           </div>
@@ -278,7 +278,7 @@ export default function VoiceTypePage() {
                 </button>
                 <input ref={fileRef} type="file" accept="audio/*" onChange={onFile} className="hidden" />
                 <p className="px-1 text-center text-[11px] text-slate-400">
-                  サビなど、しっかり声を出している部分を15秒ほど歌うのがおすすめです
+                  自己紹介など、ふだんどおりの声で15秒ほど話すのがおすすめです（歌ってもOK）
                 </p>
               </div>
             )}

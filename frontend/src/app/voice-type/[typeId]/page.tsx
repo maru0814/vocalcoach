@@ -25,8 +25,8 @@ export function generateMetadata({ params }: { params: { typeId: string } }): Me
     ? `${profile.nameJa}（${meta.name}）とは？歌声・話し声・性格まで徹底解説`
     : `${meta.name} とは｜声タイプ図鑑`;
   const description = profile
-    ? `${profile.heroTitle}。歌声の魅力から苦手なこと、普段の話し声の印象、性格の傾向、似た声のアーティストまで。15秒歌うだけの無料声タイプ診断🎤`
-    : `${meta.desc} あなたの声も15秒歌うだけで無料診断🎤`;
+    ? `${profile.heroTitle}。歌声の魅力から苦手なこと、普段の話し声の印象、性格の傾向、似た声のアーティストまで。15秒話すだけの無料声タイプ診断🎤`
+    : `${meta.desc} あなたの声も15秒話すだけで無料診断🎤`;
   const path = `/voice-type/${params.typeId}`;
   // SNSでリンクを貼ったときにタイプのイラストで開くよう、OG/Twitterカード画像を付ける
   const ogImage = `/voice-types/og/${params.typeId}.jpg`;
@@ -117,7 +117,7 @@ export default function VoiceTypeProfilePage({ params }: { params: { typeId: str
             あなたの声は、どのタイプ？
           </h2>
           <p className="mt-2 font-body text-sm leading-relaxed text-slate-600">
-            15秒くらい歌うだけ。AIが発声を解析して、8つの声タイプから診断します。
+            15秒くらい話すだけ。AIが発声を解析して、8つの声タイプから診断します。
           </p>
           <div className="mt-5 flex justify-center">
             <Button href="/voice-type">自分の声タイプを診断する</Button>

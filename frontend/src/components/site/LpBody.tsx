@@ -209,8 +209,8 @@ export function LpBody({ variant = "default" }: { variant?: LpVariant }) {
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-white/80">
               {takane
-                ? "15秒歌うだけ。AIがあなたの声タイプと、高音がきつくなるポイント（声区の傾向）を見立てます。"
-                : `AIボーカルトレーナー${COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。15秒ほど歌うだけ。似た声質のアーティストつきで、結果はそのままシェアできます。`}
+                ? "15秒話すだけ。AIがあなたの声タイプと、高音がきつくなるポイント（声区の傾向）を見立てます。"
+                : `AIボーカルトレーナー${COACH_NAME}は、はじめにあなたの声を8タイプで“見立て”ます。15秒ほど話すだけ。似た声質のアーティストつきで、結果はそのままシェアできます。`}
             </p>
             <p className="mx-auto mt-2 max-w-xl text-sm font-bold text-brand-200">
               {takane
