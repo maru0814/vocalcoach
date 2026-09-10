@@ -414,7 +414,8 @@ TASKS: list[dict] = [
                     "その喉のまま『ハー』と4〜8秒伸ばす。",
                 ],
                 "checkpoint": "喉に力みが入らず、ラクに声が出ていれば成功。",
-                "video": {"title": "響く声になるあくび声トレ", "url": "https://www.youtube.com/watch?v=tE_JxKjWka4"},
+                # 笑い発声そのものの実演動画はカタログに無い（found=False で実検索に委ねる）。
+                # あくび声トレ動画の使い回しは取り違え事故（docs/106 §1A）のため撤去。
             },
         ],
     },
@@ -437,7 +438,8 @@ TASKS: list[dict] = [
                     "ストローを外し、同じ感覚で『ウー』→母音『オー』に置き換える。",
                 ],
                 "checkpoint": "ストロー中に唇と頬が軽く震え、声がブレずに続けば成功（声帯の閉じが整っているサイン）。",
-                "video": {"title": "リップロール／ストローのやり方と練習法", "url": "https://www.youtube.com/watch?v=TakKKIdIGgQ"},
+                # ストロー発声そのものの実演動画はカタログに無い（found=False で実検索に委ねる）。
+                # リップロール動画の使い回しは取り違え事故（docs/106 §1A）のため撤去。
             },
             {
                 "name": "ハミング → 母音（前に集める）",
@@ -538,6 +540,19 @@ TASKS: list[dict] = [
                 ],
                 "checkpoint": "細いけれど芯がある声になっていれば、ミックスに近づいています。",
                 "video": {"title": "日本一わかりやすいミックスボイス講座", "url": "https://www.youtube.com/watch?v=QdP927ia0oQ"},
+            },
+            {
+                # ①〜③の段階練習とは別枠の、換声点の段差ならし（docs/42 §4: 段差→サイレン処方）
+                "name": "サイレン（地声→裏声をなめらかにつなぐ）",
+                "aliases": ["サイレン", "サイレン発声", "サイレンボイス"],
+                "steps": [
+                    "「ウ」または「ア」で、楽に出せる低めの音から救急車のサイレンのように音をなめらかに上げていく。",
+                    "いちばん上まで行ったら、同じなめらかさでゆっくり下りてくる。",
+                    "切り替わる高さ（換声点）で段差やひっくり返りが出たら、声量を落として細く通過する。",
+                    "上り下り1往復を8秒くらいかけて、5回くり返す。",
+                ],
+                "checkpoint": "地声から裏声への切り替わりで「ガクッ」という段差が出ずに繋がれば成功。",
+                "video": {"title": "高音の出し方！サイレン編（高い声を出す練習）", "url": "https://www.youtube.com/watch?v=46ZLaJZM-0M"},
             },
         ],
     },
@@ -666,6 +681,23 @@ TASKS: list[dict] = [
 ]
 
 
+# 同一動画URLを複数の練習で共有してよい唯一の例外リスト。
+# キー: URL、値: そのURLを共有してよい練習名の集合（完全一致）。
+# 動画の内容が「どの練習の実演としても正しい」場合だけ載せる（例: ハミング系）。
+# ここに無いURLの重複登録は tests/test_video_catalog_integrity.py が落とす。
+# 別内容の動画を使い回した取り違え事故（docs/93 §0・docs/106 §1A）の再発防止。
+SHARED_VIDEO_ALLOWLIST: dict[str, frozenset[str]] = {
+    # ハミングの実演動画。3練習ともハミングそのものなので共有は妥当
+    "https://www.youtube.com/watch?v=s1Ju6C1iP6k": frozenset(
+        {
+            "ハミング → 母音（前に集める）",
+            "① ハミング（鼻に響かせる）",
+            "ハミング → 母音（マスクに集める）",
+        }
+    ),
+}
+
+
 def diagnose_task(
     analysis: dict, compare_data: Optional[dict], exclude: Optional[list[str]] = None
 ) -> Optional[dict]:
@@ -755,6 +787,18 @@ def passaggio_estimate(a: dict) -> Optional[dict]:
         elif seen_chest and vt in ("mix", "head") and last_chest_f0:
             mid = (last_chest_f0 * s["mean_f0_hz"]) ** 0.5
             return {"note": _note_label(mid), "from_hz": last_chest_f0, "to_hz": s["mean_f0_hz"]}
+    return None
+
+
+def first_practice_with_video(task: Optional[dict]) -> Optional[dict]:
+    """課題内で実在動画URLを持つ最初の練習を返す。無ければ None。
+
+    動画を持たない練習（例: ストロー発声・docs/106 §1A）が先頭でも、
+    代替提示が動画リンク付きでできるようにする。
+    """
+    for prac in (task or {}).get("practices") or []:
+        if (prac.get("video") or {}).get("url"):
+            return prac
     return None
 
 

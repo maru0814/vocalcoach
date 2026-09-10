@@ -33,18 +33,20 @@ SEV = {
     "H1": "S1", "H2": "S1", "H3": "S1", "H5": "S1", "H7": "S1", "H8": "S2",
     "N3": "S3", "N4": "S3", "N5": "S2", "P1": "S2", "P2": "S2",
 }
+# RULES の "FB-042-*" は docs/42 のルールID（来歴・docs/107）。
+# backend/tests/test_fb_rule_traceability.py がこの宣言を実装紐づけとして数える。
 RULES = {
-    "H1": ["docs/12 FR-03", "docs/12 AC-04", "docs/12 AC-07"],
-    "H2": ["docs/12 FR-02", "docs/12 AC-02", "docs/12 AC-06"],
-    "H3": ["docs/12 FR-01", "docs/12 AC-01"],
-    "H5": ["docs/12 FR-04", "docs/12 AC-08"],
-    "H7": ["docs/42 §5", "docs/12 FR-01"],
-    "H8": ["実装ガード _scrub_foreign_urls"],
-    "N5": ["docs/42 §6 比較は体感の言葉で語る"],
-    "N3": ["docs/42 §1"],
-    "N4": ["docs/42 §2"],
-    "P1": ["docs/42 §2"],
-    "P2": ["docs/42 §2"],
+    "H1": ["docs/12 FR-03", "docs/12 AC-04", "docs/12 AC-07", "FB-042-05-1", "FB-042-05-2"],
+    "H2": ["docs/12 FR-02", "docs/12 AC-02", "docs/12 AC-06", "FB-042-05-1"],
+    "H3": ["docs/12 FR-01", "docs/12 AC-01", "FB-042-05-1"],
+    "H5": ["docs/12 FR-04", "docs/12 AC-08", "FB-042-05-1"],
+    "H7": ["docs/42 §5", "docs/12 FR-01", "FB-042-05-3"],
+    "H8": ["実装ガード _scrub_foreign_urls", "FB-042-04-9"],
+    "N5": ["docs/42 §6 比較は体感の言葉で語る", "FB-042-06-5"],
+    "N3": ["docs/42 §1", "FB-042-01-3"],
+    "N4": ["docs/42 §2", "FB-042-02-4"],
+    "P1": ["docs/42 §2", "FB-042-02-1", "FB-042-02-2"],
+    "P2": ["docs/42 §2", "FB-042-02-3"],
 }
 
 _SENT_SPLIT = re.compile(r"[。！？!?\n]")

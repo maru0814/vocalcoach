@@ -305,7 +305,7 @@ class VideoDeliveryGuarantee(unittest.TestCase):
     def test_practice_name_topics_map_to_real_videos(self):
         # 練習名そのもの（コーチが名指しで提案する語彙）で実在動画が練習単位で引ける
         from app.coaching import tools
-        for topic in ["リップロール", "ストロー", "あくび", "ハミング"]:
+        for topic in ["リップロール", "あくび", "ハミング"]:
             r = tools.find_reference_video(topic)
             self.assertTrue(r.get("found"), topic)
             self.assertEqual(r.get("match"), "practice", topic)
@@ -313,6 +313,24 @@ class VideoDeliveryGuarantee(unittest.TestCase):
         # 事故になった実会話の話題: リップロールにはリップロールの実演動画が返る
         r = tools.find_reference_video("リップロール")
         self.assertIn("リップロール", r["video_title"])
+
+    def test_stroh_topic_is_honest_not_lip_roll(self):
+        """ストロー発声そのものの実演動画はカタログに無い（docs/106 §1A）。
+
+        旧カタログはリップロール動画を使い回しており、ストローの提案に
+        リップロール動画が付く取り違えが起きた。found=false ＋ 代替を
+        別練習と明示して返し、実演はsearch_practice_videoの実検索に委ねる。
+        """
+        from app.coaching import tools
+        r = tools.find_reference_video("ストロー")
+        self.assertFalse(r["found"])
+        self.assertIn("実演動画はカタログに無い", r.get("note", ""))
+        alt = r.get("alternative")
+        self.assertIsNotNone(alt)
+        # 代替は同課題（声帯の閉じ）内で動画を実際に持つ練習
+        self.assertIn("声帯の閉じ", alt["task_label"])
+        self.assertNotIn("ストロー", alt["practice_name"])
+        self.assertIn(alt["video_url"], tools.CATALOG_VIDEO_URLS)
 
 
 class RecordingIntentRouting(unittest.TestCase):

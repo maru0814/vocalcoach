@@ -21,6 +21,7 @@ from app.coaching.persona import COACH_NAME
 from app.coaching.taxonomy import (
     _ref_has_vibrato,
     diagnose_task,
+    first_practice_with_video,
     get_task,
     list_weaknesses,
     projection_point,
@@ -316,6 +317,7 @@ TOPIC_KEYWORDS: list[tuple[str, str]] = [
     # found=false + alternative（別練習と明示）で正直に返る（docs/93 §4.4）。
     ("リップロール", "pitch_wobble"), ("ストロー", "breathy_closure"),
     ("あくび", "throat_tension"), ("ハミング", "weak_resonance"),
+    ("サイレン", "mixed_voice"),
 ]
 
 
@@ -371,7 +373,8 @@ def handle_video_request(state: dict, text: str,
             "どの練習の動画がいいですか？😊 たとえば『ミックスボイス』『ビブラート』"
             "『リズム』『ロングトーン』『強弱』など、気になるテーマを教えてください。",
         )]
-    prac = task["practices"][0]
+    # 動画リンク付きで案内できる練習を優先する（動画なし練習が先頭の課題がある・docs/106 §1A）
+    prac = first_practice_with_video(task) or task["practices"][0]
     steps = "／".join(prac.get("steps", [])[:2])
     msg = (
         f"「{task['label']}」ですね！『{prac['name']}』がおすすめです。"
@@ -683,6 +686,7 @@ _PRACTICE_INSTR = (
 )
 
 # 同じ課題を続ける時の励まし指示（docs/91: 改善検知→具体的に励ましステップバイステップ）。
+# docs/42 来歴: [FB-042-06-3]（課題はクリアまで変えない）[FB-042-06-4]（微改善を実測根拠で励ます）
 _ENCOURAGE_INSTR = (
     "ソラ先生として、同じ課題に取り組み続けているユーザーを励ます。話し言葉で2〜4文・120字程度。"
     "点数・◎○△×・指標の数値羅列・箇条書き・見出しは使わない。"
@@ -768,6 +772,7 @@ def _audio_diagnose(
     # 見つからなければ task=None のまま＝良い録音として練習を出さない。
     # 主訴（ユーザーが「ここを直したい」と言った focus_task）は、解析で検知できるか
     # どうかに関わらず最優先で採用する（docs/91。感覚を否定せず寄り添う）。
+    # docs/42 来歴: [FB-042-06-6]（主訴最優先）
     task = None
     focus = state.get("focus_task")
     if focus and focus not in exclude:

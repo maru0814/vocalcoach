@@ -7,7 +7,7 @@
 from typing import Optional
 
 from app.coaching import rule_engine
-from app.coaching.taxonomy import TASKS, get_task
+from app.coaching.taxonomy import TASKS, first_practice_with_video, get_task
 
 
 def _catalog_video_urls() -> set[str]:
@@ -60,8 +60,8 @@ def find_reference_video(topic: str) -> dict:
     # ② 課題単位の一致 → 代替（別練習と明示して提案する材料）
     task_id = rule_engine.detect_topic_task(topic_s, history=None, fallback=None)
     task = get_task(task_id) if task_id else None
-    prac = (task.get("practices") or [None])[0] if task else None
-    if prac and (prac.get("video") or {}).get("url"):
+    prac = first_practice_with_video(task)
+    if prac:
         return {
             "found": False,
             "note": f"「{topic_s}」そのものを名指しした実演動画はカタログに無い",
@@ -71,6 +71,7 @@ def find_reference_video(topic: str) -> dict:
 
 
 # Gemini function calling 宣言（生の dict。llm.py で types.FunctionDeclaration へ変換）
+# docs/42 来歴: [FB-042-04-9]（動画URLはツール/カタログ由来の実在URLのみ・見つからなければ約束しない）
 FIND_REFERENCE_VIDEO_DECL = {
     "name": "find_reference_video",
     "description": (
