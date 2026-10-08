@@ -46,10 +46,11 @@ if changed '^docker/Caddyfile'; then "${DC[@]}" up -d --force-recreate caddy; fi
 # 一覧を変えるときは両ファイルを揃えること）。deployユーザーのcrontabに入る。
 C="cd $REPO/docker && docker compose -f docker-compose.prod.yml --env-file .env exec -T sns python"
 CRON_LINES=(
-  "0 12 * * * $C generate_and_post.py --slot 1 >> /var/log/sns_autopost.log 2>&1"
-  "0 21 * * * $C generate_and_post.py --slot 2 >> /var/log/sns_autopost.log 2>&1"
-  # 朝枠slot3（2026-08-01 運用者決定で1日3投稿化。MAX_POSTS_PER_DAY=3 は compose の environment で上書き）
-  "0 8 * * * $C generate_and_post.py --slot 3 >> /var/log/sns_autopost.log 2>&1"
+  # 自動投稿生成(generate_and_post slot1-3)は運用者指示で停止（2026-09-15。Gemini生成・画像・採点の課金削減）。
+  # CRON_MARKER には残す＝再同期でVPSの既存行が自動撤去される。再開時は3行を戻す（setup_approval.sh も揃える）:
+  #   "0 12 * * * $C generate_and_post.py --slot 1 >> /var/log/sns_autopost.log 2>&1"
+  #   "0 21 * * * $C generate_and_post.py --slot 2 >> /var/log/sns_autopost.log 2>&1"
+  #   "0 8 * * * $C generate_and_post.py --slot 3 >> /var/log/sns_autopost.log 2>&1"   # 朝枠(2026-08-01追加。MAX_POSTS_PER_DAY=3 は compose で上書き)
   "0 23 * * * $C fetch_metrics.py >> /var/log/sns_metrics.log 2>&1"
   # リード探索(lead_finder)/フォロバ計測(lead_metrics)は運用者指示で停止（2026-07-31。read課金削減）。
   # 行を消しても CRON_MARKER に残しているため、次回デプロイの再同期でVPSの既存行は自動撤去される。
